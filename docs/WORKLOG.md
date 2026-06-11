@@ -199,3 +199,32 @@
 
 ### 中斷點
 - 無半成品。M3 開工前先重讀 RULES_SPEC 第 6 節與 data/cards.json 的 skillJa 樣態
+
+---
+
+## 2026-06-11 — Session 8：git 初始化＋平行 session 規劃＋M6 牌組編輯器
+
+### 使用者交辦
+- M3、M7 開獨立 session（已建 2 個 task chip：M3 效果系統、M7 介面美化討論——M7 建議等 M3 完成再點）
+- M6 留在本 session 處理 → 已完成第一版
+
+### 完成
+- **git init**＋首個 commit `11dae1e`（平行 session 的前提；只在本地，使用者說「上傳」才 push 到 github.com/Darrenwu1006/BREAK2.0）
+- **M6 牌組編輯器**（細節見 BLUEPRINT M6）：
+  - vite.config.ts 內建 /api/decks（GET 讀 decks/ CSV 含候補列；POST 寫回，檔名防穿越）
+  - src/ui/DeckEditor.tsx：卡池牆＋篩選＋牌組面板＋合法性＋卡面選擇＋候補保留
+  - App.tsx 改 API 載入牌組（import.meta.glob 移除）；主選單加「牌組編輯」
+  - CSV 寫回格式：卡片名稱,卡片編號,數量,卡面（與原格式相容，importer 照常）
+  - Preview 實測：載入「烏野-日影攻擊軸」40/40 事件8/8 正常；API round-trip（含卡面欄）通過；測試檔已清
+- 全綠：tsc／vitest 20 件
+
+### 注意（平行 session 協調）
+- M3 session 會動 src/engine/ 與 data/cards.json 的 effect 欄；本 session 後續若再動 UI，留意合併
+- decks/ 的 CSV 現在由編輯器寫入：欄位多了「卡面」（選填），舊檔案不受影響
+
+### 下一步
+- 本 session：M6 待補項（進階篩選、機翻校對流程）或等使用者回饋
+- M3/M7：等使用者點 chip 開工
+
+### 中斷點
+- 無半成品

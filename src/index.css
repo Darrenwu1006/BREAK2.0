@@ -84,3 +84,27 @@ button:disabled { opacity: 0.4; cursor: default; }
 .log { flex: 1; overflow-y: auto; padding: 10px 12px; font-size: 12px; line-height: 1.8; color: #aab3c5; }
 .log-me { color: #9fd1ff; }
 .log-ai { color: #ffb3a0; }
+
+/* ---- 牌組編輯器 ---- */
+.editor { display: grid; grid-template-columns: 1fr 360px; height: 100vh; }
+.editor-main { display: flex; flex-direction: column; padding: 8px 12px; gap: 8px; overflow: hidden; }
+.editor .status-bar { gap: 10px; }
+.editor input, .editor select, .filters select, .filters input {
+  padding: 6px 10px; border-radius: 6px; background: #28324a; color: #fff; border: 1px solid #3a4663; font-size: 13px;
+}
+.btn-start-sm { background: #3a9d5a; }
+.filters { display: flex; gap: 10px; align-items: center; }
+.pool { display: flex; flex-wrap: wrap; gap: 8px; overflow-y: auto; align-content: flex-start; padding: 4px; }
+.deck-summary { display: flex; gap: 14px; align-items: baseline; padding: 12px; border-bottom: 1px solid #303c58; }
+.deck-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.deck-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.deck-row:hover { background: #28324a; }
+.deck-row-zero { opacity: 0.45; }
+.deck-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-row-controls { display: flex; gap: 4px; align-items: center; }
+.deck-row-controls button { padding: 2px 8px; font-size: 13px; background: #444c5c; }
+.deck-row-controls b { min-width: 20px; text-align: center; }
+.btn-x { background: #5a3038 !important; }
+.printing-sel { padding: 2px 4px !important; font-size: 11px !important; max-width: 64px; }
+.btn-editor { background: #3a9d5a; }
+.editor .detail { min-height: 150px; max-height: 220px; overflow-y: auto; }
