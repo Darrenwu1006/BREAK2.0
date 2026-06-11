@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.takaratomy.co.jp)",
+      "Bash(brew install *)",
+      "Bash(pdftotext -v)"
+    ]
+  }
+}

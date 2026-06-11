@@ -1,0 +1,86 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Noto Sans TC", -apple-system, sans-serif;
+  background: #1b2230;
+  color: #e8ecf3;
+}
+button {
+  background: #3a76d0; color: #fff; border: 0; border-radius: 6px;
+  padding: 8px 16px; font-size: 14px; cursor: pointer;
+}
+button:hover { filter: brightness(1.15); }
+button:disabled { opacity: 0.4; cursor: default; }
+.btn-danger { background: #b5454c; }
+.btn-exit { background: #444c5c; padding: 4px 10px; }
+.dim { color: #8b94a7; }
+.small { font-size: 12px; }
+.danger { color: #ff7b81; }
+.win { color: #ffd866; font-size: 18px; }
+
+/* ---- 主選單 ---- */
+.menu { max-width: 560px; margin: 80px auto; text-align: center; }
+.menu-row { display: flex; gap: 24px; justify-content: center; margin: 24px 0; }
+.menu label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.menu select { padding: 6px 10px; border-radius: 6px; background: #28324a; color: #fff; border: 1px solid #455; min-width: 200px; }
+.btn-start { font-size: 18px; padding: 12px 36px; }
+
+/* ---- 對戰版面 ---- */
+.game { display: grid; grid-template-columns: 1fr 320px; height: 100vh; }
+.board { display: flex; flex-direction: column; padding: 8px 12px; gap: 6px; overflow: hidden; }
+.status-bar {
+  display: flex; gap: 18px; align-items: center; font-size: 14px;
+  background: #232c40; border-radius: 8px; padding: 6px 12px;
+}
+.status-bar .btn-exit { margin-left: auto; }
+
+.side-info { display: flex; gap: 16px; font-size: 12px; color: #aab3c5; align-items: center; }
+.set-cards { display: inline-flex; gap: 3px; align-items: center; }
+
+.court { display: flex; gap: 10px; justify-content: center; flex: 1; min-height: 0; }
+.court-ai { flex-direction: row-reverse; }
+.net { border-top: 2px dashed #5b6578; margin: 2px 0; }
+
+.zone {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: #222b3f; border: 1px solid #303c58; border-radius: 8px; padding: 6px 8px; min-width: 96px;
+}
+.zone-active { border-color: #ffd866; box-shadow: 0 0 8px #ffd86655; }
+.zone-label { font-size: 12px; color: #9aa4b8; }
+.zone-empty { width: 72px; height: 100px; border: 1px dashed #3a4663; border-radius: 6px; }
+.block-row { display: flex; gap: 4px; align-items: flex-end; }
+
+.card { position: relative; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.card img { display: block; border-radius: 6px; }
+.card-clickable { cursor: pointer; }
+.card-clickable:hover { outline: 2px solid #7db4ff; }
+.card-selected { outline: 3px solid #ffd866 !important; }
+.card-dimmed { opacity: 0.35; }
+.card-badge {
+  position: absolute; top: 2px; left: 2px; background: #ffd866; color: #222;
+  font-size: 10px; font-weight: bold; border-radius: 4px; padding: 1px 4px;
+}
+.card-text-face {
+  height: 112px; background: #2c3854; font-size: 11px; padding: 4px;
+  display: flex; align-items: center; text-align: center; border-radius: 6px;
+}
+.card-back { background: repeating-linear-gradient(45deg, #2c3854, #2c3854 4px, #25304a 4px, #25304a 8px); border: 1px solid #3a4663; }
+
+.decision-bar {
+  display: flex; gap: 12px; align-items: center; min-height: 48px;
+  background: #2a3450; border-radius: 8px; padding: 8px 14px; font-size: 14px;
+}
+.decision-bar.dim { color: #8b94a7; }
+
+.hand { display: flex; gap: 6px; padding: 4px 0; overflow-x: auto; min-height: 130px; }
+
+/* ---- 側欄 ---- */
+.sidebar { display: flex; flex-direction: column; border-left: 1px solid #303c58; height: 100vh; }
+.detail { padding: 12px; min-height: 220px; border-bottom: 1px solid #303c58; font-size: 13px; }
+.params { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+.params td { border: 1px solid #3a4663; padding: 2px 8px; text-align: center; }
+.skill-text { white-space: pre-wrap; font-size: 12px; line-height: 1.6; background: #232c40; padding: 8px; border-radius: 6px; }
+.badge-machine { background: #b58a2e; color: #fff; font-size: 10px; border-radius: 4px; padding: 1px 5px; margin-left: 6px; }
+.log { flex: 1; overflow-y: auto; padding: 10px 12px; font-size: 12px; line-height: 1.8; color: #aab3c5; }
+.log-me { color: #9fd1ff; }
+.log-ai { color: #ffb3a0; }

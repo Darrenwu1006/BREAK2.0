@@ -1,0 +1,55 @@
+{
+ "name": "音駒-預組",
+ "school": "音駒",
+ "source": "decks/音駒/預組.csv",
+ "cards": [
+  {
+   "id": "HV-D02-001",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-002",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-003",
+   "count": 2
+  },
+  {
+   "id": "HV-D02-004",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-005",
+   "count": 2
+  },
+  {
+   "id": "HV-D02-006",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-007",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-008",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-009",
+   "count": 2
+  },
+  {
+   "id": "HV-D02-010",
+   "count": 2
+  },
+  {
+   "id": "HV-D02-011",
+   "count": 4
+  },
+  {
+   "id": "HV-D02-012",
+   "count": 4
+  }
+ ]
+}
