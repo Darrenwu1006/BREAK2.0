@@ -55,6 +55,13 @@ function deckApi(root: string): Plugin {
 
   return {
     name: "deck-api",
+    buildStart() {
+      this.emitFile({
+        type: "asset",
+        fileName: "decks.json",
+        source: JSON.stringify(listDecks()),
+      });
+    },
     configureServer(server) {
       server.middlewares.use("/api/decks", (req, res) => {
         try {
@@ -106,6 +113,7 @@ function deckApi(root: string): Plugin {
 }
 
 export default defineConfig({
+  base: "/BREAK2.0/",
   plugins: [react(), deckApi(__dirname)],
   test: {
     include: ["src/**/*.test.ts"],

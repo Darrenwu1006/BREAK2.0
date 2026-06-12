@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import type { Card } from "../data/types";
 
+const publicAsset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+
 export function cardImage(card: Card): string | null {
   const p = card.printings[0];
-  return p?.image ? `/${p.image}` : null;
+  return p?.image ? publicAsset(p.image) : null;
 }
 
 export function displayName(card: Card): string {
@@ -28,7 +30,7 @@ function normalizedSchool(school?: string): string | undefined {
 export function cardBackImage(school?: string): string {
   const normalized = normalizedSchool(school);
   const ext = normalized ? BACK_EXTENSIONS[normalized] : undefined;
-  return normalized && ext ? `/backs/${encodeURIComponent(normalized)}.${ext}` : "/backs/default.png";
+  return publicAsset(normalized && ext ? `backs/${encodeURIComponent(normalized)}.${ext}` : "backs/default.png");
 }
 
 export function CardView(props: {
@@ -130,7 +132,7 @@ export function CardBack(props: {
   useEffect(() => setFallback(false), [props.school]);
 
   const classes = ["card", "card-back", props.onClick && "card-clickable", props.className].filter(Boolean).join(" ");
-  const src = fallback ? "/backs/default.png" : cardBackImage(props.school);
+  const src = fallback ? publicAsset("backs/default.png") : cardBackImage(props.school);
   return (
     <div
       className={classes}

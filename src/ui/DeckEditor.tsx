@@ -69,6 +69,10 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
   }
 
   async function save() {
+    if (!import.meta.env.DEV) {
+      setMessage("GitHub Pages 為唯讀模式；請在本機開發環境儲存 CSV");
+      return;
+    }
     if (!school.trim() || !name.trim()) { setMessage("⚠ 請填寫學校與牌組名稱"); return; }
     const cards = [...entries.entries()].map(([id, e]) => ({ id, count: e.count, printing: e.printing }));
     const res = await fetch("/api/decks", {
@@ -109,7 +113,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
           <button onClick={() => { setSchool(""); setName(""); setEntries(new Map()); setDirty(false); setMessage(null); }}>新牌組</button>
           <input placeholder="學校" value={school} onChange={(e) => { setSchool(e.target.value); setDirty(true); }} style={{ width: 110 }} />
           <input placeholder="牌組名稱" value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} style={{ width: 150 }} />
-          <button className="btn-start-sm" onClick={save}>儲存{dirty ? "＊" : ""}</button>
+          <button className="btn-start-sm" onClick={save}>{import.meta.env.DEV ? `儲存${dirty ? "＊" : ""}` : "線上唯讀"}</button>
           {message && <span className={message.startsWith("✓") ? "win" : "danger"}>{message}</span>}
           <button className="btn-exit" onClick={props.onExit}>回主選單</button>
         </div>

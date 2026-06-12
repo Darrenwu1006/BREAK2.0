@@ -35,12 +35,14 @@ export function App() {
 
   async function refreshDecks() {
     try {
-      const res = await fetch("/api/decks");
+      const endpoint = import.meta.env.DEV ? "/api/decks" : `${import.meta.env.BASE_URL}decks.json`;
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const list = (await res.json()) as ApiDeck[];
       setDecks(list);
       setLoadError(null);
     } catch (e) {
-      setLoadError(`無法載入牌組（API 僅在 npm run dev 下可用）：${e}`);
+      setLoadError(`無法載入牌組：${e}`);
     }
   }
   useEffect(() => { void refreshDecks(); }, []);
