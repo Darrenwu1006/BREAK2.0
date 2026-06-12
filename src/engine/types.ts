@@ -2,6 +2,7 @@
 // 設計原則：純資料（可 structuredClone）、引擎推進到需要玩家決策時停下（pendingDecision）
 
 import type { Card } from "../data/types";
+import type { Action, Cost, CourtArea, DelayedTrigger, ParamName } from "./dsl";
 
 /** 卡片靜態資料查詢表（id → Card） */
 export type CardDb = ReadonlyMap<string, Card>;
@@ -57,24 +58,145 @@ export interface PointValue {
   source: "serve" | "block" | "attack" | "receive";
 }
 
+// ---- 效果系統（M3）----
+
+/** 數值修正層（†6-10-1 第 3 層；期限＝クリンナップ或對象非キャラ化 †6-10-3） */
+export interface Modifier {
+  target: number; // uid
+  param: ParamName;
+  amount: number;
+  source: number; // 發生源 uid
+}
+
+/** 遲發監看（watch action 註冊；期限内每次觸發＝待機一次 †6-6-1①） */
+export interface Watcher {
+  id: number;
+  player: PlayerId; // master
+  source: number;
+  trigger: DelayedTrigger;
+  actions: Action[];
+  /** 有效視窗（同一 Set 內的 turnNo 範圍；跨 Set 即失效 †7-4-1） */
+  setNo: number;
+  turnMin: number;
+  turnMax: number;
+  /** turnEnd 觸發已於該 turn 待機過（†5-12-2① 不重複待機） */
+  firedTurn?: number;
+  desc: string;
+}
+
+/** 登場限制（「次の相手のターン中、…登場させられない」；效果登場也受限 Q191/Q204） */
+export interface Restriction {
+  player: PlayerId; // 受限玩家
+  area: CourtArea;
+  /** 登場人數上限（0=禁止） */
+  maxCount?: number;
+  /** 禁止元々の param ≥ value 的キャラ登場 */
+  banBaseParamMin?: { param: ParamName; value: number };
+  setNo: number;
+  activeTurn: number;
+  desc: string;
+}
+
+/** 待機狀態（パッシブ型／遲發效果，CP 中解決 †5-4） */
+export interface PendingItem {
+  id: number;
+  player: PlayerId; // master
+  source: number;
+  kind: "passive" | "delayed";
+  /** passive：發生源 EffectDef.skills 的索引 */
+  skillIndex?: number;
+  /** delayed：要執行的 action 快照 */
+  actions?: Action[];
+  /** 觸發卡（「登場するたび、そのキャラ」） */
+  triggerUid?: number;
+  /** 登場觸發的來源領域（deployedFromHand 條件用；Q202） */
+  origin?: "hand" | "other";
+  desc: string;
+}
+
+/** ターン1 無效化記錄（†9-6：該 turn 中同卡名的自己的卡技能無效） */
+export interface Turn1Entry {
+  player: PlayerId;
+  name: string;
+  setNo: number;
+  turnNo: number;
+}
+
+/** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
+export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_dropHandCost"; count: number };
+
+export interface EffectFrame {
+  actions: RtAction[];
+  pc: number;
+}
+
+/** 效果解決中的待輸入點 */
+export type Awaiting =
+  | { kind: "confirm"; what: "gate" | "mill"; costs?: Cost[]; then: Action[]; prompt: string }
+  | {
+      kind: "cards";
+      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop";
+      candidates: number[];
+      min: number;
+      max: number;
+      /** target 用：選定後要套用的修正 */
+      param?: ParamName | "choose";
+      amount?: number;
+      /** deployFromDrop 用 */
+      area?: CourtArea;
+      then?: Action[];
+      prompt: string;
+    }
+  | { kind: "option"; purpose: "param"; targetUid: number; amount: number; options: ParamName[]; prompt: string };
+
+/** 效果解決 context（一次一個技能 †6-2-1；frame 堆疊處理巢狀 if/gate） */
+export interface EffectCtx {
+  player: PlayerId;
+  source: number;
+  frames: EffectFrame[];
+  /** 「そのキャラ」＝最近一次選擇/登場的對象 */
+  lastTarget: number | null;
+  /** 遲發觸發卡 */
+  triggerUid: number | null;
+  origin?: "hand" | "other";
+  /** 解決完且有任一部分執行 → 套用ターン1（†9-6-3） */
+  turn1: boolean;
+  anyExecuted: boolean;
+  awaiting: Awaiting | null;
+  desc: string;
+}
+
 // ---- 決策（引擎停下來等玩家輸入的點）----
 
 export type Decision =
   | { type: "serve-rights"; take: boolean } // 遊戲前手順：要不要首發球權 †4-2-1-2
   | { type: "mulligan"; returnUids: number[] } // 換牌（可空陣列＝不換）†4-2-1-4
-  | { type: "deploy-serve"; uid: number | null } // null = 不登場 → 自動 Lost †1-4-9-1
-  | { type: "deploy-block"; uids: number[]; center: number } // 1~3 張、center 必在 uids 中
+  | { type: "deploy-serve"; uid: number | null; nameChoice?: string } // null = 不登場 → 自動 Lost †1-4-9-1
+  | { type: "deploy-block"; uids: number[]; center: number; nameChoices?: Record<number, string> } // 1~3 張、center 必在 uids 中
   | { type: "deploy-block"; uids: null } // 不登場 → Lost（以 uids:null 表示）
-  | { type: "deploy-receive"; uid: number | null }
-  | { type: "deploy-toss"; uid: number | null }
-  | { type: "deploy-attack"; uid: number | null }
+  | { type: "deploy-receive"; uid: number | null; nameChoice?: string }
+  | { type: "deploy-toss"; uid: number | null; nameChoice?: string }
+  | { type: "deploy-attack"; uid: number | null; nameChoice?: string }
   | { type: "defense-choice"; choice: "block" | "receive" } // スタートフェイズ †5-6
-  | { type: "free"; action: "pass" | "lost" } // 自由步驟（M2：尚無技能/事件卡）†5-14
+  | { type: "free"; action: "pass" } // 自由步驟 †5-14
+  | { type: "free"; action: "lost" }
+  | { type: "free"; action: "skill"; uid: number; skillIndex: number } // 使用アクティブ型技能
+  | { type: "free"; action: "event"; uid: number } // 打出事件卡 †6-8
+  | { type: "resolve-pending"; id: number } // CP：選擇解決哪個待機技能 †5-4
+  | { type: "effect-confirm"; accept: boolean } // 「～ば使える」等 yes/no
+  | { type: "effect-cards"; uids: number[] } // 選卡（對象/付 Guts/棄手牌/檢索…）
+  | { type: "effect-option"; index: number } // 選項（選參數種類…）
   | { type: "pick-set-card"; index: number }; // インターバル③ 從 Set 區拿 1 張 †5-3
 
 export interface PendingDecision {
   player: PlayerId;
   type: Decision["type"];
+  /** effect 子決策／CP 的展示資料（UI 與 AI 共用） */
+  prompt?: string;
+  candidates?: number[]; // effect-cards 候選 uid／resolve-pending 候選 item id
+  min?: number;
+  max?: number;
+  options?: string[]; // effect-option 的選項標籤
 }
 
 export interface LogEntry {
@@ -100,6 +222,8 @@ export interface GameState {
   /** 場上的 OP / DP（不存在時為 null） */
   op: PointValue | null;
   dp: PointValue | null;
+  /** ジャッジ比較結果（block/receive phase 內部暫存） */
+  judgeSuccess: boolean | null;
   /** start phase 選的防守路線（攔網 turn 或接球 turn） */
   defenseChoice: "block" | "receive" | null;
   /** 宣告 Lost 的玩家（lostSet/interval 期間有值） */
@@ -108,5 +232,18 @@ export interface GameState {
   winner: PlayerId | null;
   /** 遊戲前手順進度（mulligan 順序等） */
   setupStage: "serve-rights" | "mulligan-first" | "mulligan-second" | "done";
+  // ---- 效果系統狀態（M3）----
+  modifiers: Modifier[];
+  /** 072/073 登場改名（uid → 卡名；期限＝turn 終了） */
+  nameOverrides: Record<number, string>;
+  watchers: Watcher[];
+  restrictions: Restriction[];
+  pendingQueue: PendingItem[];
+  turn1: Turn1Entry[];
+  effectCtx: EffectCtx | null;
+  /** 效果要求 Lost（ブロックアウト）；引擎主迴圈處理 */
+  lostRequest: PlayerId | null;
+  /** watcher/pending 流水號 */
+  nextId: number;
   log: LogEntry[];
 }

@@ -1,248 +1,405 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import type { Card } from "../data/types";
-import type { CardDb, Decision, GameState, PlayerId, Stack } from "../engine/types";
-import { applyDecision, canChooseBlock, createGame, deployableUids } from "../engine/engine";
+import type { CourtArea } from "../engine/dsl";
+import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions } from "../engine/engine";
+import { canDeployTo, deployNames } from "../engine/effects";
+import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "../ai/heuristic";
-import { CardBack, CardView, displayName } from "./CardView";
+import { CardView } from "./CardView";
+import { GameBoard } from "./GameBoard";
+import { CardDetails, CompactHud, DropBrowser, GameLog, LeftPanel, PHASE_NAME } from "./GamePanels";
+import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
+import { MotionLayer, useGameMotion } from "./useGameMotion";
 
 const HUMAN: PlayerId = 0;
 const AI: PlayerId = 1;
 
-const PHASE_NAME: Record<string, string> = {
-  setup: "準備", serve: "發球階段", start: "開始階段", block: "攔網階段", draw: "抽牌階段",
-  receive: "接球階段", toss: "托球階段", attack: "攻擊階段", end: "結束階段",
-  lostSet: "Lost", interval: "間隔", gameOver: "比賽結束",
+const DEPLOY_AREA: Record<string, CourtArea> = {
+  "deploy-serve": "serve",
+  "deploy-block": "block",
+  "deploy-receive": "receive",
+  "deploy-toss": "toss",
+  "deploy-attack": "attack",
 };
 
-const DEPLOY_AREA: Record<string, "serve" | "block" | "receive" | "toss" | "attack"> = {
-  "deploy-serve": "serve", "deploy-block": "block", "deploy-receive": "receive",
-  "deploy-toss": "toss", "deploy-attack": "attack",
+const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
+  serve: "發球",
+  receive: "接球",
+  toss: "托球",
+  attack: "攻擊",
 };
 
-export function Game(props: { db: CardDb; decks: [string[], string[]]; deckNames: [string, string]; onExit: () => void }) {
+type ToolMode = { type: "detail" } | { type: "drop"; player: PlayerId };
+
+function initialSpeed(): AiSpeed {
+  const stored = localStorage.getItem("breaktcg-ai-speed");
+  return stored === "0.5" || stored === "1" || stored === "2" || stored === "instant" ? stored : "1";
+}
+
+export function Game(props: {
+  db: CardDb;
+  decks: [string[], string[]];
+  deckMeta: [DeckMeta, DeckMeta];
+  onExit: () => void;
+}) {
   const { db } = props;
   const [state, setState] = useState<GameState>(() =>
     createGame(db, { seed: (Date.now() % 0xffffffff) >>> 0, decks: props.decks }),
   );
-  const [hovered, setHovered] = useState<Card | null>(null);
-  const [multiSel, setMultiSel] = useState<number[]>([]); // 攔網/換牌的多選
-  const logRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState<InspectedCard | null>(null);
+  const [inspected, setInspected] = useState<InspectedCard | null>(null);
+  const [multiSel, setMultiSel] = useState<number[]>([]);
+  const [nameAsk, setNameAsk] = useState<{ uid: number; names: string[] } | null>(null);
+  const [toolMode, setToolMode] = useState<ToolMode>({ type: "detail" });
+  const [mobilePanel, setMobilePanel] = useState<"log" | "detail" | null>(null);
+  const [activeGutsKey, setActiveGutsKey] = useState<string | null>(null);
+  const [speed, setSpeed] = useState<AiSpeed>(initialSpeed);
+  const [scoreBanner, setScoreBanner] = useState<string | null>(null);
+  const decisionRef = useRef<HTMLDivElement>(null);
+  const seenLogCount = useRef(state.log.length);
 
   const pd = state.pendingDecision;
   const isMyDecision = pd?.player === HUMAN && state.phase !== "gameOver";
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
   const deployable = isMyDecision && deployArea ? deployableUids(db, state, HUMAN, deployArea) : [];
+  const free = isMyDecision && pd?.type === "free" ? freeOptions(db, state) : { skills: [], events: [] };
+  const { motions, recentUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
 
-  function decide(d: Decision) {
-    setMultiSel([]);
-    setState((s) => applyDecision(db, s, d));
+  const visibleInspection = hovered ?? inspected;
+
+  function cardOf(uid: number): Card {
+    return db.get(state.cards[uid]!)!;
   }
 
-  // AI 決策（延遲一拍讓人看得到流程）
-  useEffect(() => {
-    if (pd?.player === AI && state.phase !== "gameOver") {
-      const t = setTimeout(() => {
-        setState((s) => (s.pendingDecision?.player === AI && s.phase !== "gameOver" ? applyDecision(db, s, heuristicAiDecision(db, s)) : s));
-      }, 650);
-      return () => clearTimeout(t);
-    }
-  }, [state, db, pd]);
+  function setHoverUid(uid: number | null) {
+    setHovered(uid === null ? null : { cardId: state.cards[uid]!, uid });
+  }
+
+  function inspectUid(uid: number) {
+    setInspected({ cardId: state.cards[uid]!, uid });
+    setToolMode({ type: "detail" });
+    setMobilePanel("detail");
+  }
+
+  function decide(decision: Decision) {
+    setMultiSel([]);
+    setNameAsk(null);
+    setActiveGutsKey(null);
+    setState((current) => applyDecision(db, current, decision));
+  }
+
+  function changeSpeed(next: AiSpeed) {
+    setSpeed(next);
+    localStorage.setItem("breaktcg-ai-speed", next);
+  }
 
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [state.log.length]);
+    if (pd?.player !== AI || state.phase === "gameOver") return;
+    const numeric = speed === "instant" ? Infinity : Number(speed);
+    const delay = speed === "instant" ? 0 : 650 / numeric;
+    const timer = window.setTimeout(() => {
+      setState((current) => current.pendingDecision?.player === AI && current.phase !== "gameOver"
+        ? applyDecision(db, current, heuristicAiDecision(db, current))
+        : current);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [db, pd, speed, state.phase]);
 
-  const cardOf = (uid: number): Card => db.get(state.cards[uid]!)!;
+  useEffect(() => {
+    const newEntries = state.log.slice(seenLogCount.current);
+    seenLogCount.current = state.log.length;
+    const lost = [...newEntries].reverse().find((entry) => entry.text.startsWith("宣告 Lost（"));
+    if (!lost) return;
+    setScoreBanner(lost.player === HUMAN ? "電腦得分" : "BREAK! 你得分");
+    const timer = window.setTimeout(() => setScoreBanner(null), 900);
+    return () => window.clearTimeout(timer);
+  }, [state.log]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, button");
+      if (event.key === "Escape") {
+        setMultiSel([]);
+        setNameAsk(null);
+        setActiveGutsKey(null);
+        setMobilePanel(null);
+        if (toolMode.type === "drop") setToolMode({ type: "detail" });
+        return;
+      }
+      if (event.code !== "Space" || typing || !isMyDecision) return;
+      const primary = decisionRef.current?.querySelector<HTMLButtonElement>('button[data-primary="true"]:not(:disabled)');
+      if (!primary) return;
+      event.preventDefault();
+      primary.click();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMyDecision, toolMode.type]);
 
   function onHandClick(uid: number) {
-    if (!isMyDecision || !pd) return;
-    if (pd.type === "mulligan") {
-      setMultiSel((sel) => (sel.includes(uid) ? sel.filter((u) => u !== uid) : [...sel, uid]));
-    } else if (pd.type === "deploy-block") {
-      if (!deployable.includes(uid)) return;
-      setMultiSel((sel) => (sel.includes(uid) ? sel.filter((u) => u !== uid) : sel.length < 3 ? [...sel, uid] : sel));
-    } else if (deployArea) {
-      if (deployable.includes(uid)) decide({ type: pd.type, uid } as Decision);
+    if (!isMyDecision || !pd) {
+      inspectUid(uid);
+      return;
     }
+    if (pd.type === "mulligan") {
+      setMultiSel((selected) => selected.includes(uid) ? selected.filter((item) => item !== uid) : [...selected, uid]);
+      return;
+    }
+    if (pd.type === "deploy-block") {
+      if (!deployable.includes(uid)) return;
+      setMultiSel((selected) => selected.includes(uid)
+        ? selected.filter((item) => item !== uid)
+        : selected.length < 3 ? [...selected, uid] : selected);
+      return;
+    }
+    if (!deployArea || !deployable.includes(uid)) {
+      inspectUid(uid);
+      return;
+    }
+    const names = deployNames(db, state, uid);
+    if (names) setNameAsk({ uid, names });
+    else decide({ type: pd.type, uid } as Decision);
   }
 
-  // ---------- 子元件 ----------
-
-  function Zone(z: { label: string; stack: Stack; highlight?: boolean }) {
-    const top = z.stack.length ? z.stack[z.stack.length - 1]! : null;
-    return (
-      <div className={"zone" + (z.highlight ? " zone-active" : "")}>
-        <div className="zone-label">{z.label}{z.stack.length > 1 ? `（G${z.stack.length - 1}）` : ""}</div>
-        {top !== null ? <CardView card={cardOf(top)} width={72} onHover={setHovered} /> : <div className="zone-empty" />}
-      </div>
-    );
+  function confirmBlockDeploy() {
+    const choices: Record<number, string> = {};
+    const used = new Set<string>();
+    for (const uid of multiSel) {
+      const names = deployNames(db, state, uid);
+      const name = names
+        ? names.find((candidate) => !used.has(candidate) && canDeployTo(db, state, HUMAN, uid, "block", candidate)) ?? names[0]!
+        : cardOf(uid).nameJa;
+      if (names) choices[uid] = name;
+      used.add(name);
+    }
+    decide({ type: "deploy-block", uids: multiSel, center: multiSel[0]!, nameChoices: choices });
   }
 
-  function Court(c: { p: PlayerId }) {
-    const ps = state.players[c.p];
-    const active = state.turnPlayer === c.p && state.phase !== "gameOver";
-    return (
-      <div className={"court" + (c.p === AI ? " court-ai" : "")}>
-        <Zone label="發球" stack={ps.serve} highlight={active && state.phase === "serve"} />
-        <div className={"zone" + (active && state.phase === "block" ? " zone-active" : "")}>
-          <div className="zone-label">攔網{ps.blockCenter.length > 1 ? `（G${ps.blockCenter.length - 1}）` : ""}</div>
-          <div className="block-row">
-            {ps.blockSides.map((u) => <CardView key={u} card={cardOf(u)} width={56} onHover={setHovered} />)}
-            {ps.blockCenter.length ? <CardView card={cardOf(ps.blockCenter[ps.blockCenter.length - 1]!)} width={72} onHover={setHovered} badge="中央" /> : <div className="zone-empty" />}
-          </div>
-        </div>
-        <Zone label="接球" stack={ps.receive} highlight={active && state.phase === "receive"} />
-        <Zone label="托球" stack={ps.toss} highlight={active && state.phase === "toss"} />
-        <Zone label="攻擊" stack={ps.attack} highlight={active && state.phase === "attack"} />
-      </div>
-    );
+  function onDropCard(uid: number, area: CourtArea) {
+    if (area !== deployArea || !deployable.includes(uid)) return;
+    onHandClick(uid);
   }
 
-  function SideInfo(c: { p: PlayerId }) {
-    const ps = state.players[c.p];
-    const pickSet = isMyDecision && pd?.type === "pick-set-card" && c.p === HUMAN;
-    return (
-      <div className="side-info">
-        <span>牌組 {ps.deck.length}</span>
-        <span className="set-cards">
-          Set：{ps.setArea.map((_, i) => <CardBack key={i} width={26} onClick={pickSet ? () => decide({ type: "pick-set-card", index: i }) : undefined} />)}
-          {ps.setArea.length === 0 && state.setupStage === "done" && <b className="danger">0（再 Lost 即敗北）</b>}
-        </span>
-        <span>棄牌 {ps.drop.length}</span>
-        <span>事件區 {ps.eventArea.length}</span>
-        {c.p === AI && <span>手牌 {ps.hand.length}</span>}
-      </div>
-    );
+  function onDragStart(event: DragEvent<HTMLDivElement>, uid: number) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/card-uid", String(uid));
   }
 
-  // ---------- 決策列 ----------
+  function bar(hint: string, buttons: React.ReactNode) {
+    return <div className="decision-bar"><span className="decision-hint">{hint}</span><div className="decision-actions">{buttons}</div></div>;
+  }
 
   function DecisionBar() {
     if (state.phase === "gameOver") {
-      return (
-        <div className="decision-bar">
-          <b className={state.winner === HUMAN ? "win" : "danger"}>{state.winner === HUMAN ? "🏆 你獲勝了！" : "💀 電腦獲勝"}</b>
-          <button onClick={props.onExit}>回主選單</button>
-        </div>
-      );
+      return bar(state.winner === HUMAN ? "你贏得了這場對戰" : "電腦贏得了這場對戰", (
+        <button data-primary="true" onClick={props.onExit}>回主選單</button>
+      ));
     }
-    if (!pd) return null;
-    if (!isMyDecision) return <div className="decision-bar dim">電腦思考中…（{PHASE_NAME[state.phase]}）</div>;
+    if (!pd) return <div className="decision-bar decision-idle"><span>規則引擎正在推進對局</span></div>;
+    if (!isMyDecision) return <div className="decision-bar decision-idle"><span>電腦思考中</span><small>{PHASE_NAME[state.phase]}</small></div>;
 
     switch (pd.type) {
       case "serve-rights":
         return bar("你被選中：要擁有首次發球權嗎？", <>
-          <button onClick={() => decide({ type: "serve-rights", take: true })}>擁有發球權</button>
-          <button onClick={() => decide({ type: "serve-rights", take: false })}>讓給對方</button>
+          <button data-primary="true" onClick={() => decide({ type: "serve-rights", take: true })}>擁有發球權</button>
+          <button className="btn-secondary" onClick={() => decide({ type: "serve-rights", take: false })}>讓給對方</button>
         </>);
       case "mulligan":
-        return bar(`換牌：點選要放回牌組的卡（已選 ${multiSel.length} 張）`, <>
-          <button onClick={() => decide({ type: "mulligan", returnUids: multiSel })}>{multiSel.length ? `換 ${multiSel.length} 張` : "不換牌"}</button>
-        </>);
+        return bar(`換牌：點選要放回牌組的卡（已選 ${multiSel.length} 張）`, (
+          <button data-primary="true" onClick={() => decide({ type: "mulligan", returnUids: multiSel })}>{multiSel.length ? `換 ${multiSel.length} 張` : "不換牌"}</button>
+        ));
       case "defense-choice": {
-        const blockOk = canChooseBlock(state);
-        return bar(
-          `對方 OP=${state.op?.value ?? "?"}（${state.op?.source === "serve" ? "發球" : state.op?.source === "block" ? "攔網回球" : "攻擊"}）：${blockOk ? "本回合要攔網還是接球？" : "發球/攔網回球只能接球"}`,
-          <>
-            <button disabled={!blockOk} title={blockOk ? "" : "對手的發球或攔網回球不能選擇攔網"} onClick={() => decide({ type: "defense-choice", choice: "block" })}>攔網</button>
-            <button onClick={() => decide({ type: "defense-choice", choice: "receive" })}>接球（先抽 1 張）</button>
-          </>,
-        );
+        const blockAllowed = canChooseBlock(state);
+        return bar(`對方 OP ${state.op?.value ?? "?"}：選擇防守方式`, <>
+          <button disabled={!blockAllowed} title={blockAllowed ? "" : "發球或攔網回球不能選擇攔網"} onClick={() => decide({ type: "defense-choice", choice: "block" })}>攔網</button>
+          <button data-primary="true" onClick={() => decide({ type: "defense-choice", choice: "receive" })}>接球</button>
+        </>);
       }
       case "free":
-        return bar("自由步驟", <>
-          <button onClick={() => decide({ type: "free", action: "pass" })}>結束（Pass）</button>
+        return bar("自由步驟：可發動技能或結束目前階段", <>
+          {free.skills.map((option) => (
+            <button key={`s${option.uid}-${option.skillIndex}`} className="btn-skill" onClick={() => decide({ type: "free", action: "skill", uid: option.uid, skillIndex: option.skillIndex })}>{option.label}</button>
+          ))}
+          {free.events.map((option) => (
+            <button key={`e${option.uid}`} className="btn-skill" onClick={() => decide({ type: "free", action: "event", uid: option.uid })}>{option.label}</button>
+          ))}
+          <button data-primary="true" onClick={() => decide({ type: "free", action: "pass" })}>結束（Pass）</button>
           <button className="btn-danger" onClick={() => decide({ type: "free", action: "lost" })}>宣告 Lost</button>
         </>);
+      case "resolve-pending":
+        return bar(pd.prompt ?? "選擇先解決的待機技能", pd.candidates?.map((id, index) => {
+          const item = state.pendingQueue.find((candidate) => candidate.id === id);
+          return <button key={id} data-primary={index === 0 ? "true" : undefined} onClick={() => decide({ type: "resolve-pending", id })}>{item?.desc ?? `技能 ${id}`}</button>;
+        }));
+      case "effect-confirm":
+        return bar(pd.prompt ?? "要使用技能嗎？", <>
+          <button data-primary="true" onClick={() => decide({ type: "effect-confirm", accept: true })}>使用</button>
+          <button className="btn-secondary" onClick={() => decide({ type: "effect-confirm", accept: false })}>不使用</button>
+        </>);
+      case "effect-option":
+        return bar(pd.prompt ?? "選擇效果", pd.options?.map((option, index) => (
+          <button key={option} data-primary={index === 0 ? "true" : undefined} onClick={() => decide({ type: "effect-option", index })}>{option}</button>
+        )));
+      case "effect-cards": {
+        const min = pd.min ?? 0;
+        const max = pd.max ?? 1;
+        return (
+          <div className="decision-bar decision-card-picker">
+            <span className="decision-hint">{pd.prompt}（選 {min === max ? min : `${min}～${max}`} 張）</span>
+            <div className="effect-cards-row">
+              {pd.candidates?.map((uid) => (
+                <CardView
+                  key={uid}
+                  card={cardOf(uid)}
+                  uid={uid}
+                  width={52}
+                  selected={multiSel.includes(uid)}
+                  onHover={(card) => setHoverUid(card ? uid : null)}
+                  onLongPress={() => inspectUid(uid)}
+                  onClick={() => setMultiSel((selected) => selected.includes(uid)
+                    ? selected.filter((item) => item !== uid)
+                    : selected.length < max ? [...selected, uid] : selected)}
+                />
+              ))}
+            </div>
+            <div className="decision-actions">
+              <button data-primary="true" disabled={multiSel.length < min || multiSel.length > max} onClick={() => decide({ type: "effect-cards", uids: multiSel })}>確定</button>
+            </div>
+          </div>
+        );
+      }
       case "deploy-block":
-        return bar(`攔網登場：點選手牌 1~3 張（已選 ${multiSel.length}；第 1 張為中央攔網者）`, <>
-          <button disabled={multiSel.length === 0} onClick={() => decide({ type: "deploy-block", uids: multiSel, center: multiSel[0]! })}>確定登場</button>
+        return bar(`攔網登場：選 1～3 張；第 1 張為中央攔網者（已選 ${multiSel.length}）`, <>
+          <button data-primary="true" disabled={multiSel.length === 0} onClick={confirmBlockDeploy}>確定登場</button>
+          <button className="btn-secondary" onClick={() => setMultiSel([])}>清除選擇</button>
           <button className="btn-danger" onClick={() => decide({ type: "deploy-block", uids: null })}>不登場（Lost）</button>
         </>);
-      case "deploy-serve": case "deploy-receive": case "deploy-toss": case "deploy-attack": {
-        const labels: Record<string, string> = { "deploy-serve": "發球", "deploy-receive": "接球", "deploy-toss": "托球", "deploy-attack": "攻擊" };
-        return bar(`${labels[pd.type]}登場：點選一張亮起的手牌`, <>
+      case "deploy-serve":
+      case "deploy-receive":
+      case "deploy-toss":
+      case "deploy-attack": {
+        const area = DEPLOY_AREA[pd.type] as Exclude<CourtArea, "block">;
+        if (nameAsk) {
+          return bar(`${cardOf(nameAsk.uid).nameJa}：選擇登場時的卡名`, <>
+            {nameAsk.names.map((name, index) => (
+              <button
+                key={name}
+                data-primary={index === 0 ? "true" : undefined}
+                disabled={!canDeployTo(db, state, HUMAN, nameAsk.uid, area, name)}
+                onClick={() => decide({ type: pd.type, uid: nameAsk.uid, nameChoice: name } as Decision)}
+              >
+                {name}
+              </button>
+            ))}
+            <button className="btn-secondary" onClick={() => setNameAsk(null)}>取消</button>
+          </>);
+        }
+        return bar(`${DEPLOY_LABEL[area]}登場：點選手牌，桌面也可拖到場區`, (
           <button className="btn-danger" onClick={() => decide({ type: pd.type, uid: null } as Decision)}>不登場（Lost）</button>
-        </>);
+        ));
       }
       case "pick-set-card":
-        return bar("你輸掉這個 Set：點選自己的一張 Set 卡加入手牌", null);
+        return bar("你輸掉這個 Set：點選球場左下的一張 Set 卡加入手牌", null);
     }
   }
 
-  const bar = (hint: string, buttons: React.ReactNode) => (
-    <div className="decision-bar"><span>{hint}</span>{buttons}</div>
-  );
-
-  // ---------- 版面 ----------
+  const handOverlap = Math.max(24, Math.min(84, state.players[HUMAN].hand.length > 10 ? 42 : 62));
+  const handStyle = { "--hand-step": `${handOverlap}px` } as CSSProperties;
 
   return (
-    <div className="game">
-      <div className="board">
-        <div className="status-bar">
-          <span>Set {state.setNo}・Turn {state.turnNo}・{PHASE_NAME[state.phase]}</span>
-          <span>{state.op ? `OP ${state.op.value}（${state.op.owner === HUMAN ? "你" : "電腦"}・${state.op.source}）` : "OP —"}</span>
-          <span>{state.dp ? `DP ${state.dp.value}` : "DP —"}</span>
-          <button className="btn-exit" onClick={props.onExit}>離開</button>
-        </div>
+    <div className="game" data-instant={speed === "instant" ? "true" : undefined}>
+      <CompactHud
+        state={state}
+        onOpenLog={() => setMobilePanel("log")}
+        onOpenDetail={() => setMobilePanel("detail")}
+        onExit={props.onExit}
+      />
 
-        <SideInfo p={AI} />
-        <Court p={AI} />
-        <div className="net" />
-        <Court p={HUMAN} />
-        <SideInfo p={HUMAN} />
+      <LeftPanel state={state} deckMeta={props.deckMeta} speed={speed} onSpeedChange={changeSpeed} onExit={props.onExit} />
 
-        <DecisionBar />
+      <main className="center-panel">
+        <GameBoard
+          db={db}
+          state={state}
+          deckMeta={props.deckMeta}
+          canPickSet={isMyDecision && pd?.type === "pick-set-card"}
+          deployArea={deployArea}
+          activeGutsKey={activeGutsKey}
+          recentUids={recentUids}
+          onPickSet={(index) => decide({ type: "pick-set-card", index })}
+          onOpenDrop={(player) => {
+            setToolMode({ type: "drop", player });
+            setMobilePanel("detail");
+          }}
+          onToggleGuts={setActiveGutsKey}
+          onDropCard={onDropCard}
+          onHover={setHoverUid}
+          onInspect={inspectUid}
+        />
 
-        <div className="hand">
-          {state.players[HUMAN].hand.map((uid) => (
-            <CardView
-              key={uid}
-              card={cardOf(uid)}
-              width={84}
-              onHover={setHovered}
-              onClick={() => onHandClick(uid)}
-              selected={multiSel.includes(uid)}
-              dimmed={!!deployArea && !deployable.includes(uid)}
-              badge={pd?.type === "deploy-block" && multiSel[0] === uid ? "中央" : undefined}
-            />
-          ))}
-        </div>
-      </div>
+        <div ref={decisionRef}><DecisionBar /></div>
 
-      <div className="sidebar">
-        <div className="detail">
-          {hovered ? (
-            <>
-              <b>{displayName(hovered)}</b>
-              {hovered.nameZh && <div className="dim">{hovered.nameJa}</div>}
-              <div className="dim">{hovered.affiliations.join("/")} {hovered.grades.join("/")} {hovered.positions.join("/")}</div>
-              {hovered.params && (
-                <table className="params"><tbody>
-                  <tr><td>發球</td><td>攔網</td><td>接球</td><td>托球</td><td>攻擊</td></tr>
-                  <tr>{(["serve", "block", "receive", "toss", "attack"] as const).map((k) => <td key={k}><b>{hovered.params![k] ?? "－"}</b></td>)}</tr>
-                </tbody></table>
-              )}
-              {(hovered.skillZh || hovered.skillJa) && (
-                <p className="skill-text">
-                  {hovered.skillZh ?? hovered.skillJa}
-                  {hovered.skillZhStatus === "machine" && <span className="badge-machine">機翻待校</span>}
-                </p>
-              )}
-              <p className="dim small">※ M2 階段技能尚未生效（香草規則對局）</p>
-            </>
-          ) : (
-            <span className="dim">滑過卡片查看詳情</span>
-          )}
+        <section className="hand-section" aria-label={`你的手牌 ${state.players[HUMAN].hand.length} 張`}>
+          <div className="hand-heading"><span>你的手牌</span><strong>{state.players[HUMAN].hand.length}</strong></div>
+          <div className="hand" style={handStyle} data-zone-anchor="p0-hand">
+            {state.players[HUMAN].hand.length === 0 && <span className="hand-empty">沒有手牌</span>}
+            {state.players[HUMAN].hand.map((uid) => {
+              const selectedIndex = multiSel.indexOf(uid);
+              const canDrag = !!deployArea && deployable.includes(uid);
+              return (
+                <CardView
+                  key={uid}
+                  card={cardOf(uid)}
+                  uid={uid}
+                  width={84}
+                  selected={selectedIndex >= 0}
+                  dimmed={!!deployArea && !deployable.includes(uid)}
+                  badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : undefined}
+                  secondaryBadge={cardOf(uid).effectStatus === "todo" ? "未實作" : undefined}
+                  draggable={canDrag}
+                  onDragStart={canDrag ? (event) => onDragStart(event, uid) : undefined}
+                  onHover={(card) => setHoverUid(card ? uid : null)}
+                  onLongPress={() => inspectUid(uid)}
+                  onClick={() => onHandClick(uid)}
+                />
+              );
+            })}
+          </div>
+        </section>
+      </main>
+
+      <aside className={`right-panel${mobilePanel === "detail" ? " is-mobile-open" : ""}`}>
+        <div className="mobile-panel-heading">
+          <b>{toolMode.type === "drop" ? "棄牌瀏覽" : "卡片詳情"}</b>
+          <button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button>
         </div>
-        <div className="log" ref={logRef}>
-          {state.log.map((e, i) => (
-            <div key={i} className={e.player === HUMAN ? "log-me" : e.player === AI ? "log-ai" : ""}>
-              {e.player !== null ? (e.player === HUMAN ? "你" : "電腦") + "：" : ""}{e.text}
-            </div>
-          ))}
-        </div>
-      </div>
+        {toolMode.type === "drop" ? (
+          <DropBrowser
+            db={db}
+            state={state}
+            player={toolMode.player}
+            onClose={() => setToolMode({ type: "detail" })}
+            onSelect={(uid) => {
+              inspectUid(uid);
+              setToolMode({ type: "detail" });
+            }}
+            onHover={setHoverUid}
+          />
+        ) : (
+          <CardDetails db={db} state={state} inspected={visibleInspection} />
+        )}
+      </aside>
+
+      <aside className={`mobile-log-panel${mobilePanel === "log" ? " is-open" : ""}`}>
+        <div className="mobile-panel-heading"><b>對戰紀錄</b><button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button></div>
+        <GameLog state={state} />
+      </aside>
+
+      {mobilePanel && <button className="panel-backdrop" aria-label="關閉面板" onClick={() => setMobilePanel(null)} />}
+      {activeGutsKey && <button className="guts-backdrop" aria-label="關閉 Guts" onClick={() => setActiveGutsKey(null)} />}
+      {scoreBanner && <div className="score-banner" role="status">{scoreBanner}</div>}
+      <MotionLayer motions={motions} deckMeta={props.deckMeta} />
     </div>
   );
 }

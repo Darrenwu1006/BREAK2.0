@@ -11,9 +11,11 @@
     "test:watch": "vitest",
     "import:csv": "node tools/import-csv.mjs",
     "merge:official": "node tools/merge-official.mjs",
-    "data:rebuild": "node tools/import-csv.mjs && node tools/merge-official.mjs"
+    "apply:effects": "node tools/apply-effects.mjs",
+    "data:rebuild": "node tools/import-csv.mjs && node tools/merge-official.mjs && node tools/apply-effects.mjs"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

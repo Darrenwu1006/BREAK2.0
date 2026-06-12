@@ -1,68 +1,50 @@
-// 規則引擎核心（M2：香草卡整場流程；技能/效果系統於 M3 接入）
+// 規則引擎核心（M2 香草流程＋M3 效果系統）
 // 模式：runUntilDecision() 自動推進，需要玩家輸入時設 pendingDecision 停下；
 //       applyDecision() 驗證並套用決策後繼續推進。所有函式不可變更傳入的 state 以外的東西。
+// M3：效果解決（effectCtx）與チェックプロセス待機佇列（pendingQueue）在主迴圈頭部優先處理，
+//     等價於「所有 phase/step 邊界跑 CP」（†5-4：佇列只在邊界/事象發生時被填入）。
 
 import type { Card } from "../data/types";
-import type { CardDb, Decision, GameState, PlayerId, PlayerState, Stack } from "./types";
+import type { CourtArea } from "./dsl";
+import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "./types";
 import { nextRandom, shuffle } from "./rng";
+import {
+  applyEffectDecision,
+  blockDeployMax,
+  canDeployTo,
+  cardOf,
+  charasOf,
+  cleanupTurn,
+  clearSetScoped,
+  deployCard,
+  deployNames,
+  drawCards,
+  effParam,
+  enqueueTurnEnd,
+  freeOptions,
+  log,
+  nameOf,
+  normName,
+  onBlockSuccess,
+  other,
+  pendingDecisionForAwaiting,
+  playEvent,
+  processQueue,
+  removeFromHand,
+  startPendingItem,
+  stepEffect,
+  topChara,
+  useSkill,
+} from "./effects";
+
+export { freeOptions, blockDeployMax, deployNames, charasOf, effParam, nameOf } from "./effects";
 
 // ---------- 工具 ----------
 
-const other = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
-
-function card(db: CardDb, state: GameState, uid: number): Card {
-  const c = db.get(state.cards[uid]!);
-  if (!c) throw new Error(`unknown card uid=${uid}`);
-  return c;
-}
-
-/** キャラ＝疊放區最上面那張 †1-2-14 */
-const topChara = (stack: Stack): number | null => (stack.length ? stack[stack.length - 1]! : null);
-
-function log(state: GameState, player: PlayerId | null, text: string): void {
-  state.log.push({ setNo: state.setNo, turnNo: state.turnNo, player, text });
-}
-
-function removeFromHand(ps: PlayerState, uid: number): void {
-  const i = ps.hand.indexOf(uid);
-  if (i < 0) throw new Error(`uid ${uid} not in hand`);
-  ps.hand.splice(i, 1);
-}
-
-/** 抽 N 張（牌組不足時抽到沒有為止 †0-2-5-5） */
-function draw(state: GameState, p: PlayerId, n: number): number {
-  const ps = state.players[p];
-  let drawn = 0;
-  while (drawn < n && ps.deck.length > 0) {
-    ps.hand.push(ps.deck.shift()!);
-    drawn++;
-  }
-  return drawn;
-}
-
-/** 對應區域的參數為「－」(null) 的卡不能登場 †1-3-2-2 */
-function paramFor(c: Card, area: "serve" | "block" | "receive" | "toss" | "attack"): number | null {
-  if (c.type !== "CHARACTER" || !c.params) return null;
-  return c.params[area];
-}
-
-/** 可登場到指定區域的手牌 uid 清單 */
-export function deployableUids(db: CardDb, state: GameState, p: PlayerId, area: "serve" | "block" | "receive" | "toss" | "attack"): number[] {
-  const ps = state.players[p];
-  let banned: string | null = null; // 同名禁止 †1-4-5-4-1
-  if (area === "toss") {
-    const r = topChara(ps.receive);
-    banned = r !== null ? card(db, state, r).nameJa : null;
-  } else if (area === "attack") {
-    const t = topChara(ps.toss);
-    banned = t !== null ? card(db, state, t).nameJa : null;
-  }
-  return ps.hand.filter((uid) => {
-    const c = card(db, state, uid);
-    if (paramFor(c, area) === null) return false;
-    if (banned !== null && c.nameJa === banned) return false;
-    return true;
-  });
+/** 可登場到指定區域的手牌 uid 清單（參數「－」†1-3-2-2、同名禁止 †1-4-5-4-1、登場限制） */
+export function deployableUids(db: CardDb, state: GameState, p: PlayerId, area: CourtArea): number[] {
+  if (area === "block" && blockDeployMax(state, p) === 0) return [];
+  return state.players[p].hand.filter((uid) => canDeployTo(db, state, p, uid, area));
 }
 
 /**
@@ -72,6 +54,17 @@ export function deployableUids(db: CardDb, state: GameState, p: PlayerId, area: 
  */
 export function canChooseBlock(state: GameState): boolean {
   return state.op !== null && state.op.owner !== state.turnPlayer && state.op.source === "attack";
+}
+
+/** 驗證 072/073 型卡的登場選名（一般卡不可帶 nameChoice） */
+function validateNameChoice(db: CardDb, state: GameState, uid: number, nameChoice: string | undefined): void {
+  const names = deployNames(db, state, uid);
+  if (names) {
+    if (nameChoice === undefined) throw new Error(`${cardOf(db, state, uid).nameJa} 登場時必須選擇卡名`);
+    if (!names.map(normName).includes(normName(nameChoice))) throw new Error(`無效的卡名選擇 ${nameChoice}`);
+  } else if (nameChoice !== undefined) {
+    throw new Error("該卡登場不可選擇卡名");
+  }
 }
 
 // ---------- 建局 ----------
@@ -109,9 +102,19 @@ export function createGame(db: CardDb, opts: CreateGameOptions): GameState {
     turnPlayer: 0, servingPlayer: 0,
     phase: "setup", sub: 0,
     op: null, dp: null,
+    judgeSuccess: null,
     defenseChoice: null, lostBy: null,
     pendingDecision: null, winner: null,
     setupStage: "serve-rights",
+    modifiers: [],
+    nameOverrides: {},
+    watchers: [],
+    restrictions: [],
+    pendingQueue: [],
+    turn1: [],
+    effectCtx: null,
+    lostRequest: null,
+    nextId: 1,
     log: [],
   };
 
@@ -140,7 +143,7 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
       // 洗牌、各抽 6 †4-2-1-3/4
       for (const pid of [0, 1] as const) {
         shuffle(state, state.players[pid].deck);
-        draw(state, pid, 6);
+        drawCards(state, pid, 6);
       }
       state.setupStage = "mulligan-first";
       state.pendingDecision = { player: state.servingPlayer, type: "mulligan" };
@@ -148,11 +151,11 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
     }
     case "mulligan": {
       const ps = state.players[p];
-      for (const uid of decision.returnUids) removeFromHand(ps, uid);
+      for (const uid of decision.returnUids) removeFromHand(state, p, uid);
       if (decision.returnUids.length > 0) {
         ps.deck.push(...decision.returnUids);
         shuffle(state, ps.deck);
-        draw(state, p, 6 - ps.hand.length);
+        drawCards(state, p, 6 - ps.hand.length);
         log(state, p, `換牌 ${decision.returnUids.length} 張`);
       }
       if (state.setupStage === "mulligan-first") {
@@ -170,7 +173,7 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
       break;
     }
     case "deploy-serve": case "deploy-receive": case "deploy-toss": case "deploy-attack": {
-      const area = decision.type.slice("deploy-".length) as "serve" | "receive" | "toss" | "attack";
+      const area = decision.type.slice("deploy-".length) as Exclude<CourtArea, "block">;
       if (decision.uid === null) {
         log(state, p, `未登場角色（${area}）`);
         declareLost(state, p);
@@ -178,9 +181,13 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
       }
       const legal = deployableUids(db, state, p, area);
       if (!legal.includes(decision.uid)) throw new Error(`uid ${decision.uid} 不能登場到 ${area}`);
-      removeFromHand(state.players[p], decision.uid);
-      state.players[p][area].push(decision.uid); // 疊放，原キャラ成為ガッツ †8-3
-      log(state, p, `登場 ${card(db, state, decision.uid).nameJa} → ${area}`);
+      validateNameChoice(db, state, decision.uid, decision.nameChoice);
+      if (decision.nameChoice !== undefined && !canDeployTo(db, state, p, decision.uid, area, decision.nameChoice)) {
+        throw new Error(`以「${decision.nameChoice}」之名不能登場到 ${area}`); // Q279
+      }
+      removeFromHand(state, p, decision.uid);
+      deployCard(db, state, p, decision.uid, area, { origin: "hand", nameChoice: decision.nameChoice }); // 疊放 †8-3＋觸發
+      log(state, p, `登場 ${nameOf(db, state, decision.uid)} → ${area}`);
       state.sub++;
       break;
     }
@@ -191,17 +198,23 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
         break;
       }
       const { uids, center } = decision;
+      const maxN = blockDeployMax(state, p);
       if (uids.length < 1 || uids.length > 3) throw new Error("攔網登場須 1~3 張");
+      if (uids.length > maxN) throw new Error(`登場限制：本回合攔網最多登場 ${maxN} 張`);
       if (!uids.includes(center)) throw new Error("center 必須是登場卡之一");
-      const names = uids.map((u) => card(db, state, u).nameJa);
-      if (new Set(names).size !== names.length) throw new Error("攔網不可登場同名卡 ×2"); // †1-4-5-4-1
+      const choices = decision.nameChoices ?? {};
+      for (const u of uids) validateNameChoice(db, state, u, choices[u]);
+      // 同名禁止（以選定名比對）†1-4-5-4-1
+      const names = uids.map((u) => normName(choices[u] ?? cardOf(db, state, u).nameJa));
+      if (new Set(names).size !== names.length) throw new Error("攔網不可登場同名卡 ×2");
       const legal = deployableUids(db, state, p, "block");
       for (const u of uids) if (!legal.includes(u)) throw new Error(`uid ${u} 不能登場到 block`);
       const ps = state.players[p];
-      for (const u of uids) removeFromHand(ps, u);
-      ps.blockCenter.push(center);
-      ps.blockSides.push(...uids.filter((u) => u !== center));
-      log(state, p, `攔網登場 ${names.join("、")}（中央=${card(db, state, center).nameJa}）`);
+      for (const u of uids) removeFromHand(state, p, u);
+      deployCard(db, state, p, center, "block", { origin: "hand", nameChoice: choices[center] });
+      for (const u of uids) if (u !== center) deployCard(db, state, p, u, "block", { origin: "hand", nameChoice: choices[u], blockSide: true });
+      log(state, p, `攔網登場 ${names.join("、")}（中央=${nameOf(db, state, center)}）`);
+      void ps;
       state.sub++;
       break;
     }
@@ -217,10 +230,23 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
     case "free": {
       if (decision.action === "lost") {
         log(state, p, "主動宣告 Lost");
-        declareLost(state, p);
+        declareLost(state, p); // 佇列為空才會出現 free 決策 → †1-4-9-2 自動滿足
+      } else if (decision.action === "pass") {
+        state.sub++; // 結束自由步驟
+      } else if (decision.action === "skill") {
+        useSkill(db, state, decision.uid, decision.skillIndex); // 解決後回到自由步驟（sub 不變）†5-14
       } else {
-        state.sub++; // pass → 結束自由步驟
+        playEvent(db, state, decision.uid);
       }
+      break;
+    }
+    case "resolve-pending": {
+      if (!pending.candidates?.includes(decision.id)) throw new Error("無效的待機項目選擇");
+      startPendingItem(db, state, decision.id);
+      break;
+    }
+    case "effect-confirm": case "effect-cards": case "effect-option": {
+      applyEffectDecision(db, state, decision as unknown as { type: string });
       break;
     }
     case "pick-set-card": {
@@ -260,7 +286,7 @@ function enterPhase(state: GameState, phase: GameState["phase"]): void {
   state.sub = 0;
 }
 
-/** OP 算出 †5-17（M2 無修正效果） */
+/** OP 算出 †5-17（修正後參數 †6-10-1） */
 function calcOp(db: CardDb, state: GameState): void {
   const p = state.turnPlayer;
   const ps = state.players[p];
@@ -269,7 +295,7 @@ function calcOp(db: CardDb, state: GameState): void {
   if (state.phase === "serve") {
     source = "serve";
     const u = topChara(ps.serve);
-    value = u !== null ? (paramFor(card(db, state, u), "serve") ?? 0) : 0;
+    value = u !== null ? (effParam(db, state, u, "serve") ?? 0) : 0;
   } else if (state.phase === "block") {
     source = "block";
     value = 0; // †5-17-4
@@ -277,7 +303,7 @@ function calcOp(db: CardDb, state: GameState): void {
     source = "attack";
     const t = topChara(ps.toss);
     const a = topChara(ps.attack);
-    value = (t !== null ? (paramFor(card(db, state, t), "toss") ?? 0) : 0) + (a !== null ? (paramFor(card(db, state, a), "attack") ?? 0) : 0);
+    value = (t !== null ? (effParam(db, state, t, "toss") ?? 0) : 0) + (a !== null ? (effParam(db, state, a, "attack") ?? 0) : 0);
   }
   state.op = { value, owner: p, source };
   log(state, p, `OP 算出 = ${value}`);
@@ -290,39 +316,58 @@ function calcDp(db: CardDb, state: GameState): void {
   let value = 0;
   if (state.phase === "block") {
     const blockers = [...ps.blockSides, ...(topChara(ps.blockCenter) !== null ? [topChara(ps.blockCenter)!] : [])];
-    for (const u of blockers) value += paramFor(card(db, state, u), "block") ?? 0;
+    for (const u of blockers) value += effParam(db, state, u, "block") ?? 0;
     state.dp = { value, owner: p, source: "block" };
   } else {
     const u = topChara(ps.receive);
-    value = u !== null ? (paramFor(card(db, state, u), "receive") ?? 0) : 0;
+    value = u !== null ? (effParam(db, state, u, "receive") ?? 0) : 0;
     state.dp = { value, owner: p, source: "receive" };
   }
   log(state, p, `DP 算出 = ${value}`);
 }
 
-/** ジャッジ †5-15：DP < 對手 OP → 失敗 → Lost */
-function judge(state: GameState): boolean {
+/** ジャッジ①：比較（†5-15；消滅與 Lost 在後續子步驟，期間跑 CP） */
+function judgeCompare(state: GameState): void {
   const op = state.op;
   const dp = state.dp;
   const opValue = op && op.owner !== state.turnPlayer ? op.value : 0;
-  const success = (dp?.value ?? 0) >= opValue;
-  log(state, state.turnPlayer, `判定：DP ${dp?.value ?? 0} vs OP ${opValue} → ${success ? "成功" : "失敗"}`);
-  // ③ OP/DP 消滅
-  state.op = null;
-  state.dp = null;
-  return success;
+  state.judgeSuccess = (dp?.value ?? 0) >= opValue;
+  log(state, state.turnPlayer, `判定：DP ${dp?.value ?? 0} vs OP ${opValue} → ${state.judgeSuccess ? "成功" : "失敗"}`);
 }
 
 /**
  * 推進遊戲直到需要玩家決策或遊戲結束。
  * 每個 phase 是一串子步驟（state.sub 為游標）；需要輸入的子步驟設定 pendingDecision 後 return。
- * チェックプロセス †5-4 在 M2 為 no-op（無被動技能），M3 在各邊界接入。
+ * 迴圈頭部優先處理：lostRequest → 效果解決（effectCtx）→ 待機佇列（CP †5-4）→ phase 推進。
  */
 function runUntilDecision(db: CardDb, state: GameState): void {
-  for (let guard = 0; guard < 10000; guard++) {
+  for (let guard = 0; guard < 100000; guard++) {
     if (state.pendingDecision || state.phase === "gameOver" || state.phase === "setup") return;
-    const tp = state.turnPlayer;
 
+    // 效果要求的 Lost（ブロックアウト †9-5）
+    if (state.lostRequest !== null) {
+      const lp = state.lostRequest;
+      state.lostRequest = null;
+      declareLost(state, lp);
+      continue;
+    }
+    // 效果解決中
+    if (state.effectCtx) {
+      stepEffect(db, state);
+      if (state.effectCtx?.awaiting) {
+        pendingDecisionForAwaiting(state);
+        return;
+      }
+      continue;
+    }
+    // チェックプロセス †5-4
+    if (state.pendingQueue.length > 0) {
+      const r = processQueue(db, state);
+      if (r === "decision") return;
+      continue;
+    }
+
+    const tp = state.turnPlayer;
     switch (state.phase) {
       case "serve": // †5-5
         if (state.sub === 0) { state.turnNo++; log(state, tp, `── Set ${state.setNo}・發球回合 ──`); state.sub++; }
@@ -342,8 +387,12 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         if (state.sub === 0) { state.pendingDecision = { player: tp, type: "deploy-block" }; return; }
         else if (state.sub === 1) { state.pendingDecision = { player: tp, type: "free" }; return; }
         else if (state.sub === 2) { calcDp(db, state); state.sub++; }
-        else if (state.sub === 3) { if (!judge(state)) { declareLost(state, tp); } else state.sub++; }
-        else if (state.sub === 4) { calcOp(db, state); state.sub++; }
+        else if (state.sub === 3) { judgeCompare(state); if (state.judgeSuccess) onBlockSuccess(db, state); state.sub++; } // ②CP 由迴圈頭處理
+        else if (state.sub === 4) {
+          state.op = null; state.dp = null; // ③消滅
+          if (!state.judgeSuccess) { state.judgeSuccess = null; declareLost(state, tp); } else { state.judgeSuccess = null; state.sub++; }
+        }
+        else if (state.sub === 5) { calcOp(db, state); state.sub++; }
         else {
           // フェイズ終了：サイドブロッカー → 棄牌區 †5-7-2⑦
           const ps = state.players[tp];
@@ -354,7 +403,7 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         break;
 
       case "draw": // †5-8
-        if (state.sub === 0) { const n = draw(state, tp, 1); log(state, tp, n ? "接球抽牌 +1" : "牌組已空，無法抽牌"); state.sub++; }
+        if (state.sub === 0) { const n = drawCards(state, tp, 1); log(state, tp, n ? "接球抽牌 +1" : "牌組已空，無法抽牌"); state.sub++; }
         else if (state.sub === 1) { state.pendingDecision = { player: tp, type: "free" }; return; }
         else enterPhase(state, "receive");
         break;
@@ -363,7 +412,11 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         if (state.sub === 0) { state.pendingDecision = { player: tp, type: "deploy-receive" }; return; }
         else if (state.sub === 1) { state.pendingDecision = { player: tp, type: "free" }; return; }
         else if (state.sub === 2) { calcDp(db, state); state.sub++; }
-        else if (state.sub === 3) { if (!judge(state)) { declareLost(state, tp); } else state.sub++; }
+        else if (state.sub === 3) { judgeCompare(state); state.sub++; }
+        else if (state.sub === 4) {
+          state.op = null; state.dp = null;
+          if (!state.judgeSuccess) { state.judgeSuccess = null; declareLost(state, tp); } else { state.judgeSuccess = null; state.sub++; }
+        }
         else enterPhase(state, "toss");
         break;
 
@@ -380,16 +433,25 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         else enterPhase(state, "end");
         break;
 
-      case "end": // †5-12（M2 無「ターン終了時」技能；清理步驟無持續效果可清）
-        state.defenseChoice = null;
-        state.turnPlayer = other(tp);
-        enterPhase(state, "start");
+      case "end": // †5-12
+        if (state.sub === 0) {
+          // ①「ターン終了時」待機（每 turn 至多一次；新增者由迴圈頭 CP 解決後回到本 sub 再確認 †5-12-2①）
+          if (enqueueTurnEnd(state) > 0) break;
+          state.sub++;
+        } else {
+          // ②クリンナップ †5-19 → ③turn 交替
+          cleanupTurn(state);
+          state.defenseChoice = null;
+          state.turnPlayer = other(tp);
+          enterPhase(state, "start");
+        }
         break;
 
       case "lostSet": // †5-20
-        // ① OP/DP 消滅 → （②③④ 技能/效果相關，M2 no-op）→ ⑤ 進インターバル
+        // ①OP/DP 消滅 →（②「ロスト時」技能：烏野卡池無，暫略）→ ③④Set 中效果/待機消滅 → ⑤インターバル
         state.op = null;
         state.dp = null;
+        clearSetScoped(state);
         enterPhase(state, "interval");
         break;
 
@@ -399,7 +461,7 @@ function runUntilDecision(db: CardDb, state: GameState): void {
           // ② 雙方補滿手牌到 6（turn player 先 †0-2-7）
           for (const pid of [state.turnPlayer, other(state.turnPlayer)]) {
             const need = 6 - state.players[pid].hand.length;
-            if (need > 0) draw(state, pid, need);
+            if (need > 0) drawCards(state, pid, need);
           }
           state.sub++;
         } else if (state.sub === 1) {
@@ -421,4 +483,9 @@ function runUntilDecision(db: CardDb, state: GameState): void {
     }
   }
   throw new Error("引擎推進超過上限（疑似無限迴圈）");
+}
+
+/** 測試輔助：取得卡片（保留 M2 介面） */
+export function card(db: CardDb, state: GameState, uid: number): Card {
+  return cardOf(db, state, uid);
 }

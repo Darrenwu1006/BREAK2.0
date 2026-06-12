@@ -228,3 +228,51 @@
 
 ### 中斷點
 - 無半成品
+
+---
+
+## 2026-06-12 — Session 9：M3 效果系統（進行中）
+
+### 工作方式（使用者指示）
+- M3 拆小塊（B1~B7，見下），每塊結束 tsc+vitest 全綠＝可收工點；token 吃緊就停在塊邊界，WORKLOG 只記進度，接手不重查規則
+
+### 已完成
+- **資料事故修復**：發現 data/cards.json 曾被單獨重跑 import-csv 蓋掉（294→194 張、skillJa 全失）。`npm run data:rebuild` 還原（296 張）。教訓：effect 等衍生資料不能只存 cards.json
+- **M3-a 效果 DSL**：
+  - src/engine/dsl.ts：DSL 型別（trigger/cost/condition/target/action/duration）
+  - data/effects.json：33 張卡 DSL（烏野 18 技能卡＋072/073 改名置換＋關鍵字卡 HV-D02-002/P01-041/P01-060/P01-068/PR-022/P02-067）
+  - tools/apply-effects.mjs 接入 data:rebuild 末端（effect 唯一真實來源＝effects.json，重跑不丟）
+- **規則語義定案**（判例佐證，已固化在 dsl.ts/effects.ts 註解，不用重查）：
+  - [=登場] 等 icon＝パッシブ型誘發（強制待機→CP 解決；Q210 強制、Q332 同時觸發任選序、Q353 在事件卡前）
+  - 「Nガッツ払えば使える／～の場合に使える」＝解決時 gate 分歧（†7-7-1+7-7-3），「〔…〕：」才是宣言 cost（†1-3-5，只有 P01-013 型）
+  - 烏野相關判例 49 件已篩出（official_faq.json 過濾 card_no）；卡名要正規化（官網「山口　忠」全形空白）
+  - イベントエリア卡片永久堆積（無清理規則）；事件卡被ターン1無效仍可 play（Q300）
+- **types.ts 擴充**：modifiers/nameOverrides/watchers/restrictions/pendingQueue/turn1/effectCtx/lostRequest；新決策型別 free(skill|event)/resolve-pending/effect-confirm/effect-cards/effect-option、deploy 帶 nameChoice
+- **src/engine/effects.ts**：DSL 解釋器全量（觸發/CP佇列/gate/修正層/關鍵字展開/跳過進行/效果子決策）
+
+### 中斷點（若本 session 在此中止）
+- effects.ts 已寫完但**尚未編譯**；engine.ts **尚未接入**（還是 M2 版）
+- 下一塊 B1：改 engine.ts——deploy 走 effects.deployCard、主迴圈頭部接 effectCtx/pendingQueue/lostRequest、block/receive 的 judge 拆成 比較→CP→消滅、end phase 接 enqueueTurnEnd+cleanupTurn、lostSet 接 clearSetScoped、applyDecision 加新決策分支（委派 effects.applyEffectDecision/useSkill/playEvent/startPendingItem）、deployableUids 加 restrictions+nameOf、calcOp/calcDp 改 effParam
+- B2：AI（src/ai/random.ts、heuristic.ts）處理新決策型別；B3~B5 測試；B6 UI；B7 驗收
+- **B1 引擎接入完成**：engine.ts 全面接 effects.ts（deployCard 觸發/CP 迴圈頭/judge 拆步+blockSuccess/end phase turnEnd 迴圈+cleanup/lostSet clearSetScoped/新決策分支）；deployableUids 接限制與改名
+- **B2 AI 合法化完成**：random/heuristic 處理 resolve-pending/effect-confirm/effect-cards/effect-option＋登場選名（src/ai/util.ts 共用 selectBlockers/pickDeployName；effects.autoPickCards 保底選卡）
+- B1+B2 驗證：tsc 綠、20 測試全綠（含烏野真實牌組隨機整場——效果決策已在模擬中跑動）
+- **B3 關鍵字完成**：7 個關鍵字整合測試全綠（src/engine/effects.test.ts，真實卡＋情境構造 helpers grab/seedStack/placeOnStack/setHandSize）；連帶驗證 gate/Guts 支付/CP/修正層進 OP/跳過進行/登場限制
+- **B4+B5 測試完成**：src/engine/karasuno.test.ts 21 件＋effects.test.ts 7 件。烏野 18 張技能卡逐張行為測試全綠；判例轉測試 27 件（Q190/199/200/201/202/203/204/205/207/208/210/211/212/214/215/279/280/285/294/295/297/298/300/302/303/305/306，測試名含 Q 編號）。共用情境構造 helpers 在 src/engine/testkit.ts。全套 48 測試綠
+- **B6 UI＋AI 最低限度使用完成**：
+  - Game.tsx：自由步驟技能/事件按鈕（綠色）、effect-confirm/cards/option/resolve-pending 決策列、072/073 單獨登場手選卡名（攔網多選自動配名）；CSS btn-skill/effect-cards-row
+  - heuristic AI：mulligan 不再退事件卡；自由步驟有事件/技能就用（價值判斷留 M5）；發現並修復「未實裝 DSL 的事件卡被 freeOptions 提供」bug（音駒卡 effect=null → playEvent 炸）
+- **B7 驗收完成**：
+  - 引擎側：烏野日影 vs 烏野山月、雙方啟發式 AI、3 種子完整對局（效果決策>0、40 張不變量、勝負分出）
+  - Preview 實測（烏野日影 vs 山月）：ターン1事件、オープン攻撃抽2棄1選卡、AI 山口遲發效果 debuff 我方西谷托球（−2→負值進 OP）、AI 的月島・黒尾自動選名登場，console 零錯誤
+  - 全套 49 測試綠、tsc 綠
+- **M3 完成定義達成**。BLUEPRINT M3 改 🟨核心完成（剩：他校逐校實裝＋其餘判例）；M4 第二版打勾
+
+### 下一步（建議順序）
+1. M3 續：逐校實裝（音駒 D02/P01-017~ 起，模式與烏野高度重複，DSL 詞彙不足再擴充）＋該校判例轉測試
+2. M5：技能使用的價值判斷（何時開 gate、Guts 管理、事件卡時機）→ 之後 MCTS
+3. M7：介面美化討論（修正值顯示在卡面、攔網選名 UI 等已記在 BLUEPRINT M4/M7）
+
+### 中斷點
+- 無半成品。全綠可收工；`npm run dev` 即可玩烏野技能對局
+- 注意：cards.json 由 pipeline 產生，改效果一律改 data/effects.json 再 `npm run apply:effects`（或 data:rebuild）
