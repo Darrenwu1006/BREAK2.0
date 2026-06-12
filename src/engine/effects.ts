@@ -135,11 +135,31 @@ function restrictionsFor(state: GameState, p: PlayerId, area: CourtArea) {
   return state.restrictions.filter((r) => r.player === p && r.area === area && r.setNo === state.setNo && r.activeTurn === state.turnNo);
 }
 
-/** 攔網登場人數上限（無限制＝3）；0＝禁止登場 */
+/** 「スキルでカードを手札に加えられない」生效中（P01-035；Q239~241 含技能/事件抽牌） */
+export function banHandAddActive(state: GameState, p: PlayerId): boolean {
+  return state.restrictions.some((r) => r.player === p && r.banHandAdd && r.setNo === state.setNo && r.activeTurn === state.turnNo);
+}
+
+/** 自分のコート全ガッツ（gutsAny cost 用；Q315） */
+function allGutsOf(state: GameState, p: PlayerId): number[] {
+  const ps = state.players[p];
+  return [...ps.serve.slice(0, -1), ...ps.receive.slice(0, -1), ...ps.toss.slice(0, -1), ...ps.attack.slice(0, -1), ...ps.blockCenter.slice(0, -1)];
+}
+
+/** 非抽牌入手 → handAddByEffect 監看觸發（每張一次 Q317；引く以外 Q321） */
+function fireHandAdds(state: GameState, actor: PlayerId, count: number): void {
+  for (const w of state.watchers) {
+    if (w.trigger.on !== "handAddByEffect" || !watcherActive(state, w)) continue;
+    if (actor !== other(w.player)) continue; // trigger.player 固定 "opponent"
+    for (let k = 0; k < count; k++) enqueue(state, { player: w.player, source: w.source, kind: "delayed", actions: w.actions, desc: w.desc });
+  }
+}
+
+/** 攔網「還可登場」人數（無限制＝3）；maxCount 是 turn 累計上限（Q191/Q196/Q204），已登場數要扣掉 */
 export function blockDeployMax(state: GameState, p: PlayerId): number {
   let max = 3;
   for (const r of restrictionsFor(state, p, "block")) if (r.maxCount !== undefined) max = Math.min(max, r.maxCount);
-  return max;
+  return Math.max(0, max - state.blockDeployedThisTurn[p]);
 }
 
 /**
@@ -226,8 +246,14 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       if (cond.min !== undefined && op.value < cond.min) return false;
       return true;
     }
+    case "selfArea": {
+      const a = charaAreaOf(state, p, ctx.source);
+      return a !== null && cond.area.includes(a);
+    }
     case "handMax":
       return state.players[cond.player === "opponent" ? other(p) : p].hand.length <= cond.count;
+    case "handMin":
+      return state.players[cond.player === "opponent" ? other(p) : p].hand.length >= cond.count;
     case "deployedFromHand":
       return ctx.origin === "hand";
     case "chara": {
@@ -269,7 +295,13 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
 function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid: number, costs: Cost[]): boolean {
   for (const c of costs) {
     if (c.type === "guts" && gutsFor(state, p, sourceUid).length < c.count) return false;
-    if (c.type === "dropFromHand" && state.players[p].hand.length < c.count) return false;
+    if (c.type === "gutsAny" && allGutsOf(state, p).length < c.count) return false;
+    if (c.type === "dropFromHand") {
+      const cands = c.filter?.affiliation
+        ? state.players[p].hand.filter((u) => cardOf(db, state, u).affiliations.includes(c.filter!.affiliation!))
+        : state.players[p].hand;
+      if (cands.length < c.count) return false;
+    }
     if (c.type === "dropSelf" && !state.players[p].hand.includes(sourceUid)) return false;
   }
   return true;
@@ -279,7 +311,8 @@ function costOps(costs: Cost[]): RtAction[] {
   const out: RtAction[] = [];
   for (const c of costs) {
     if (c.type === "guts") out.push({ op: "_payGuts", count: c.count });
-    else if (c.type === "dropFromHand") out.push({ op: "_dropHandCost", count: c.count });
+    else if (c.type === "gutsAny") out.push({ op: "_payGutsAny", count: c.count });
+    else if (c.type === "dropFromHand") out.push({ op: "_dropHandCost", count: c.count, filter: c.filter });
     // dropSelf 於宣言當下執行（useSkill）
   }
   return out;
@@ -312,6 +345,7 @@ export function deployCard(
     log(state, p, `${cardOf(db, state, uid).nameJa} 以「${opts.nameChoice}」之名登場`);
   }
   const ps = state.players[p];
+  if (area === "block") state.blockDeployedThisTurn[p]++;
   let coveredUid: number | null = null;
   if (area === "block" && opts.blockSide) {
     ps.blockSides.push(uid);
@@ -326,12 +360,23 @@ export function deployCard(
   if (def) {
     def.skills.forEach((s, i) => {
       if (s.kind !== "passive" || s.trigger.on !== "deploy") return;
-      if (s.areaIcon && s.areaIcon !== area && s.areaIcon !== "court") return;
+      if (s.areaIcons && !s.areaIcons.includes(area) && !s.areaIcons.includes("court")) return;
       if (s.trigger.overNames) {
         if (coveredUid === null) return;
         if (!s.trigger.overNames.map(normName).includes(nameOf(db, state, coveredUid))) return;
       }
       enqueue(state, { player: p, source: uid, kind: "passive", skillIndex: i, origin: opts.origin, desc: `${nameOf(db, state, uid)} 的登場技能` });
+    });
+  }
+  // 場上其他卡的「自分のキャラが登場した時」被動（D02-004 灰羽型）
+  for (const c of charasOf(state, p)) {
+    if (c.uid === uid) continue;
+    const d2 = effectDefOf(db, state, c.uid);
+    if (!d2) continue;
+    d2.skills.forEach((s, i) => {
+      if (s.kind !== "passive" || s.trigger.on !== "allyDeploy") return;
+      if (s.trigger.area && !s.trigger.area.includes(area)) return;
+      enqueue(state, { player: p, source: c.uid, kind: "passive", skillIndex: i, triggerUid: uid, desc: `${nameOf(db, state, c.uid)} 的技能` });
     });
   }
   // 監看中的遲發（P01-006/010/079、Aパス、ブロックアウト…）
@@ -369,6 +414,7 @@ export function enqueueTurnEnd(state: GameState): number {
 
 /** クリンナップ †5-19＋turn 期限到期的狀態清理 */
 export function cleanupTurn(state: GameState): void {
+  state.blockDeployedThisTurn = [0, 0];
   state.modifiers = [];
   state.nameOverrides = {};
   state.turn1 = [];
@@ -378,6 +424,7 @@ export function cleanupTurn(state: GameState): void {
 
 /** ロストセット③④：Set 中的繼續效果/待機全部消滅 †5-20 */
 export function clearSetScoped(state: GameState): void {
+  state.blockDeployedThisTurn = [0, 0];
   state.modifiers = [];
   state.nameOverrides = {};
   state.turn1 = [];
@@ -397,7 +444,7 @@ function pendingValid(db: CardDb, state: GameState, item: PendingItem): boolean 
   if (isSkillInvalid(db, state, item.player, item.source)) return false;
   const area = charaAreaOf(state, item.player, item.source);
   if (area === null) return false; // 已離場/被蓋
-  if (skill.areaIcon && skill.areaIcon !== "court" && skill.areaIcon !== area) return false;
+  if (skill.areaIcons && !skill.areaIcons.includes("court") && !skill.areaIcons.includes(area)) return false;
   return true;
 }
 
@@ -498,7 +545,8 @@ export function freeOptions(db: CardDb, state: GameState): { skills: FreeOption[
     def.skills.forEach((s, i) => {
       if (s.kind !== "active") return;
       if (!s.phaseIcons.includes(phase)) return;
-      if (s.areaIcon === "hand" ? !inHand : s.areaIcon === "court" ? area === null : s.areaIcon !== area) return;
+      const okArea = s.areaIcons.some((ic) => (ic === "hand" ? inHand : ic === "court" ? area !== null : ic === area));
+      if (!okArea) return;
       if (isSkillInvalid(db, state, p, uid)) return;
       if (s.costs && !costPayable(db, state, p, uid, s.costs)) return;
       const pseudo = { player: p, source: uid, lastTarget: null };
@@ -689,9 +737,61 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
   const ps = state.players[p];
   switch (a.op) {
     case "draw": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中，無法抽牌"); // Q241
+        break;
+      }
+      if (a.upTo) {
+        ctx.awaiting = { kind: "confirm", what: "draw", then: [], count: a.count, prompt: `要抽 ${a.count} 張卡嗎？（「まで」可不抽）` };
+        break;
+      }
       const n = drawCards(state, p, a.count);
       if (n > 0) ctx.anyExecuted = true;
       log(state, p, n ? `抽 ${n} 張卡` : "牌組已空，無法抽牌");
+      break;
+    }
+    case "drawToHandSize": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中，無法抽牌");
+        break;
+      }
+      const need = a.size - ps.hand.length;
+      if (need <= 0) break; // 已是該狀態 → 不執行（†0-2-5-3）
+      const n = drawCards(state, p, need);
+      if (n > 0) ctx.anyExecuted = true;
+      log(state, p, `抽 ${n} 張卡（補到 ${a.size} 張）`);
+      break;
+    }
+    case "dropToHand": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中，無法回收");
+        break;
+      }
+      const cands = ps.drop.filter((u) => {
+        const c = cardOf(db, state, u);
+        if (a.cardType && c.type !== a.cardType) return false;
+        return matchFilter(db, state, u, a.filter);
+      });
+      if (cands.length === 0) break;
+      const min = a.upTo ? 0 : Math.min(a.count, cands.length);
+      ctx.awaiting = { kind: "cards", purpose: "dropToHand", candidates: cands, min, max: a.count, prompt: `從棄牌區選擇要加入手牌的卡${a.upTo ? "（可選 0 張）" : ""}` };
+      break;
+    }
+    case "forceDrop": {
+      const opp = other(p);
+      const oh = state.players[opp].hand;
+      if (oh.length === 0) break;
+      const n = Math.min(a.count, oh.length);
+      if (oh.length === n) {
+        for (const uid of [...oh]) {
+          removeFromHand(state, opp, uid);
+          state.players[opp].drop.push(uid);
+        }
+        ctx.anyExecuted = true;
+        log(state, opp, `棄 ${n} 張手牌（對手效果）`);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "forceDrop", candidates: [...oh], min: n, max: n, chooser: opp, prompt: `選擇要棄掉的 ${n} 張手牌（對手的效果）` };
+      }
       break;
     }
     case "addParam": {
@@ -729,12 +829,57 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const uid = ps.deck[0]!;
       ctx.anyExecuted = true;
       log(state, p, `公開牌組頂：${nameOf(db, state, uid)}`);
-      if (a.names.map(normName).includes(nameOf(db, state, uid))) {
-        ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: [uid], min: 0, max: a.upTo, prompt: `要把 ${nameOf(db, state, uid)} 加入手牌嗎？（不加則置於牌組底）` };
+      if (!banHandAddActive(state, p) && a.names.map(normName).includes(nameOf(db, state, uid))) {
+        ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: [uid], min: 0, max: a.upTo, looked: [uid], prompt: `要把 ${nameOf(db, state, uid)} 加入手牌嗎？（不加則置於牌組底）` };
       } else {
         ps.deck.push(ps.deck.shift()!); // 不符 → 牌組底（Q280：以目前卡名比對）
         log(state, p, "公開的卡置於牌組底");
       }
+      break;
+    }
+    case "lookTopTutor": {
+      const n = Math.min(a.count, ps.deck.length); // 不足時看到沒有為止（Q197）
+      if (n === 0) break;
+      const looked = ps.deck.slice(0, n);
+      ctx.anyExecuted = true;
+      log(state, p, `查看牌組頂 ${n} 張`);
+      const cands = banHandAddActive(state, p) ? [] : looked.filter((uid) => a.names.map(normName).includes(nameOf(db, state, uid)));
+      if (cands.length === 0) {
+        for (const uid of looked) {
+          ps.deck.splice(ps.deck.indexOf(uid), 1);
+          ps.deck.push(uid);
+        }
+        log(state, p, "查看的卡置於牌組底");
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: cands, min: 0, max: a.upTo, looked, prompt: "選擇要公開加入手牌的卡（其餘置於牌組底）" };
+      }
+      break;
+    }
+    case "chooseOne": {
+      const labels = a.options.map((o) => o.label);
+      const branches = a.options.map((o) => o.actions);
+      if (a.optional) {
+        labels.push("不使用");
+        branches.push([]);
+      }
+      ctx.awaiting = { kind: "option", purpose: "chooseOne", labels, branches, prompt: "選擇一項使用" };
+      break;
+    }
+    case "moveSelfToBlockSide": {
+      const area = charaAreaOf(state, p, ctx.source);
+      if (area === null || area === "block") break; // 不是キャラ或已在攔網區 → 不執行
+      const blockers = charasOf(state, p).filter((c) => c.area === "block");
+      if (blockers.length >= 3) break; // 補足文：已 3 人
+      if (blockers.some((c) => nameOf(db, state, c.uid) === nameOf(db, state, ctx.source))) break; // 補足文：同名 blocker 已在
+      if (blockDeployMax(state, p) < 1) {
+        log(state, p, `${nameOf(db, state, ctx.source)} 因登場限制無法移動到攔網區`); // Q196：cost 已付仍不移動
+        break;
+      }
+      const stack = ps[area];
+      stack.splice(stack.indexOf(ctx.source), 1); // ガッツ留在原區、效果保留（†1-2-15-3／†3-1-5-1）
+      deployCard(db, state, p, ctx.source, "block", { origin: "other", blockSide: true });
+      ctx.anyExecuted = true;
+      log(state, p, `${nameOf(db, state, ctx.source)} 移動到攔網區（サイドブロッカー）`);
       break;
     }
     case "revealTopCheck": {
@@ -783,6 +928,10 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "moveCharaToHand": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中");
+        break;
+      }
       const top = topChara(ps[a.from === "block" ? "blockCenter" : a.from]);
       const cands = top !== null && matchFilter(db, state, top, a.filter, a.from) ? [top] : [];
       if (cands.length === 0) break;
@@ -790,6 +939,10 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "gutsToHand": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中");
+        break;
+      }
       const cands: number[] = [];
       for (const area of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
         const guts = ps[area].slice(0, -1);
@@ -826,9 +979,10 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         area: a.restriction.area,
         maxCount: a.restriction.maxCount,
         banBaseParamMin: a.restriction.banBaseParamMin,
+        banHandAdd: a.restriction.banHandAdd,
         setNo: state.setNo,
         activeTurn: state.turnNo + 1,
-        desc: `${nameOf(db, state, ctx.source)} 的登場限制`,
+        desc: `${nameOf(db, state, ctx.source)} 的限制`,
       });
       ctx.anyExecuted = true;
       log(state, p, "對手下回合的登場受到限制");
@@ -882,17 +1036,28 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       }
       break;
     }
+    case "_payGutsAny": {
+      const guts = allGutsOf(state, p);
+      if (guts.length < a.count) throw new Error("Guts 不足（宣言驗證應已擋下）");
+      if (guts.length === a.count) {
+        payGuts(db, state, ctx, guts);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max: a.count, prompt: `從自己的場上選擇要支付的 ${a.count} 張 Guts` };
+      }
+      break;
+    }
     case "_dropHandCost": {
-      if (ps.hand.length < a.count) throw new Error("手牌不足（宣言驗證應已擋下）");
-      if (ps.hand.length === a.count) {
-        for (const uid of [...ps.hand]) {
+      const cands = a.filter?.affiliation ? ps.hand.filter((u) => cardOf(db, state, u).affiliations.includes(a.filter!.affiliation!)) : [...ps.hand];
+      if (cands.length < a.count) throw new Error("手牌不足（宣言驗證應已擋下）");
+      if (cands.length === a.count) {
+        for (const uid of cands) {
           removeFromHand(state, p, uid);
           ps.drop.push(uid);
         }
         ctx.anyExecuted = true;
         log(state, p, `棄 ${a.count} 張手牌（cost）`);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "dropHand", candidates: [...ps.hand], min: a.count, max: a.count, prompt: `選擇要棄掉的 ${a.count} 張手牌（cost）` };
+        ctx.awaiting = { kind: "cards", purpose: "dropHand", candidates: cands, min: a.count, max: a.count, prompt: `選擇要棄掉的 ${a.count} 張手牌（cost）` };
       }
       break;
     }
@@ -954,9 +1119,11 @@ export function pendingDecisionForAwaiting(state: GameState): void {
   if (aw.kind === "confirm") {
     state.pendingDecision = { player: ctx.player, type: "effect-confirm", prompt: aw.prompt };
   } else if (aw.kind === "cards") {
-    state.pendingDecision = { player: ctx.player, type: "effect-cards", prompt: aw.prompt, candidates: aw.candidates, min: aw.min, max: aw.max };
-  } else {
+    state.pendingDecision = { player: aw.chooser ?? ctx.player, type: "effect-cards", prompt: aw.prompt, candidates: aw.candidates, min: aw.min, max: aw.max };
+  } else if (aw.purpose === "param") {
     state.pendingDecision = { player: ctx.player, type: "effect-option", prompt: aw.prompt, options: aw.options.map(paramLabel) };
+  } else {
+    state.pendingDecision = { player: ctx.player, type: "effect-option", prompt: aw.prompt, options: aw.labels };
   }
 }
 
@@ -972,6 +1139,14 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
     if (aw.what === "gate") {
       if (accept) pushFrame(ctx, [...costOps(aw.costs ?? []), ...aw.then]);
       else log(state, ctx.player, "選擇不使用技能");
+    } else if (aw.what === "draw") {
+      if (accept) {
+        const n = drawCards(state, ctx.player, aw.count ?? 1);
+        if (n > 0) ctx.anyExecuted = true;
+        log(state, ctx.player, n ? `抽 ${n} 張卡` : "牌組已空，無法抽牌");
+      } else {
+        log(state, ctx.player, "選擇不抽牌");
+      }
     } else {
       // mill：pc 已回退停在 millTop action，這裡直接完成它
       const frame = ctx.frames[ctx.frames.length - 1]!;
@@ -1019,7 +1194,7 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         }
         break;
       case "tutor": {
-        for (const uid of aw.candidates) {
+        for (const uid of aw.looked ?? aw.candidates) {
           const i = ps.deck.indexOf(uid);
           if (i < 0) continue;
           ps.deck.splice(i, 1);
@@ -1029,9 +1204,10 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
             log(state, ctx.player, `${nameOf(db, state, uid)} 加入手牌`);
           } else {
             ps.deck.push(uid);
-            log(state, ctx.player, "公開的卡置於牌組底");
+            log(state, ctx.player, "看過的卡置於牌組底");
           }
         }
+        fireHandAdds(state, ctx.player, uids.length); // 非抽牌入手（Q321）
         break;
       }
       case "moveToHand": {
@@ -1048,6 +1224,7 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           ctx.anyExecuted = true;
           log(state, ctx.player, `${nameOf(db, state, uid)} 回到手牌`);
         }
+        fireHandAdds(state, ctx.player, uids.length);
         break;
       }
       case "gutsToHand": {
@@ -1073,6 +1250,31 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           }
           ctx.anyExecuted = true;
           log(state, ctx.player, `${uids.length} 張 Guts 加入手牌`);
+          fireHandAdds(state, ctx.player, uids.length);
+        }
+        break;
+      }
+      case "dropToHand": {
+        for (const uid of uids) {
+          const i = ps.drop.indexOf(uid);
+          if (i < 0) throw new Error("卡片不在棄牌區");
+          ps.drop.splice(i, 1);
+          ps.hand.push(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區加入手牌`);
+        }
+        fireHandAdds(state, ctx.player, uids.length);
+        break;
+      }
+      case "forceDrop": {
+        const opp = other(ctx.player);
+        for (const uid of uids) {
+          removeFromHand(state, opp, uid);
+          state.players[opp].drop.push(uid);
+        }
+        if (uids.length) {
+          ctx.anyExecuted = true;
+          log(state, opp, `棄 ${uids.length} 張手牌（對手效果）`);
         }
         break;
       }
@@ -1086,9 +1288,16 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
   if (decision.type === "effect-option") {
     if (aw.kind !== "option") throw new Error("決策型別不符");
     const idx = decision["index"] as number;
-    if (idx < 0 || idx >= aw.options.length) throw new Error("無效的選項");
-    ctx.awaiting = null;
-    applyMod(db, state, ctx, aw.targetUid, aw.options[idx]!, aw.amount);
+    if (aw.purpose === "param") {
+      if (idx < 0 || idx >= aw.options.length) throw new Error("無效的選項");
+      ctx.awaiting = null;
+      applyMod(db, state, ctx, aw.targetUid, aw.options[idx]!, aw.amount);
+    } else {
+      if (idx < 0 || idx >= aw.labels.length) throw new Error("無效的選項");
+      ctx.awaiting = null;
+      log(state, ctx.player, `選擇：${aw.labels[idx]}`);
+      pushFrame(ctx, [...aw.branches[idx]!]);
+    }
     return;
   }
 
@@ -1113,6 +1322,6 @@ export function autoPickCards(db: CardDb, state: GameState): number[] {
     }
     return [];
   }
-  if (aw.purpose === "tutor" || aw.purpose === "moveToHand") return aw.candidates.slice(0, aw.max);
+  if (aw.purpose === "tutor" || aw.purpose === "moveToHand" || aw.purpose === "dropToHand") return aw.candidates.slice(0, aw.max);
   return aw.candidates.slice(0, aw.min);
 }

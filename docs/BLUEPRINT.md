@@ -57,14 +57,16 @@
 - [x] 測試 19 件：腳本化情境＋真實牌組隨機整場模擬×5 種子（每決策點驗 40 張不變量）
 - ⚠ チェックプロセス目前為 no-op 占位（M2 無被動技能），M3 在各 phase/step 邊界正式接入 †5-4
 
-### M3 — 效果系統 🟨 核心完成（2026-06-12，烏野全實裝）
+### M3 — 效果系統 🟨 核心完成（2026-06-12，烏野＋音駒＋青葉城西全實裝）
 - [x] 效果 DSL（src/engine/dsl.ts）：trigger/cost/condition/target/action/duration；**effect 唯一真實來源＝data/effects.json**，tools/apply-effects.mjs 併入 cards.json（data:rebuild 末端，重跑不丟）
 - [x] 引擎接入（src/engine/effects.ts＋engine.ts）：チェックプロセス待機佇列（turn player 優先 †5-4）、修正層 modifier pipeline（calcOp/calcDp 走 effParam）、遲發監看（watch）、登場限制（restrict）、置換效果（072/073 登場改名）、自由步驟技能/事件、スキルコスト與 gate 分歧（†7-7-3）
 - [x] 7 個關鍵字全實裝＋測試（ドシャット/ワンタッチ/フェイント/ブロックアウト/ターン1/Aパス/ツーアタック）
 - [x] 烏野 18 張技能卡＋072/073＋他校關鍵字卡 6 張（共 33 張 effectStatus=dsl）；逐張行為測試
 - [x] 判例→測試 27 件（Q 編號命名，karasuno.test.ts）；測試合計 49 件全綠
 - [x] 完成定義達成：烏野牌組 vs AI 技能全生效完整對局（引擎測試×3 種子＋Preview 實測）
-- [ ] 其他學校逐校實裝（音駒/青葉城西/梟谷…，DSL 詞彙不足時擴充）
+- [x] 音駒預組 D02 全實裝（2026-06-12：allyDeploy/chooseOne/lookTopTutor/灰羽移動＋登場限制 turn 累計化）
+- [x] 青葉城西全實裝（2026-06-12：forceDrop 對手自選/banHandAdd 禁入手/handAddByEffect 監看/gutsAny/dropToHand/複數 areaIcons）
+- [ ] 其他學校逐校實裝（白鳥沢/梟谷/稲荷崎/伊達…，DSL 詞彙不足時擴充）
 - [ ] 非烏野判例轉測試（剩餘 ~300 件，隨實裝逐批）
 - [ ] 特例卡腳本機制（目前 DSL 已涵蓋全部烏野卡，待遇到表達不了的卡再開）
 

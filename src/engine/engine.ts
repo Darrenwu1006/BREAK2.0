@@ -114,6 +114,7 @@ export function createGame(db: CardDb, opts: CreateGameOptions): GameState {
     turn1: [],
     effectCtx: null,
     lostRequest: null,
+    blockDeployedThisTurn: [0, 0],
     nextId: 1,
     log: [],
   };

@@ -48,7 +48,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -67,6 +66,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -126,7 +128,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "toss",
      "actions": [
       {
        "op": "gate",
@@ -145,6 +146,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "toss"
      ]
     }
    ]
@@ -198,7 +202,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "block",
      "actions": [
       {
        "op": "gate",
@@ -221,6 +224,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "block"
      ]
     }
    ]
@@ -315,7 +321,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "receive",
      "actions": [
       {
        "op": "gate",
@@ -338,6 +343,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "receive"
      ]
     }
    ]
@@ -431,7 +439,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "receive",
      "actions": [
       {
        "op": "gate",
@@ -450,6 +457,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "receive"
      ]
     }
    ]
@@ -786,8 +796,58 @@
     "illustrator": "JSK"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "toss",
+         "amount": 1
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "opponent",
+          "area": [
+           "attack"
+          ]
+         },
+         "duration": "nextOpponentTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "attack",
+           "amount": -2
+          }
+         ]
+        }
+       ]
+      }
+     ],
+     "areaIcons": [
+      "toss"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "こづめ けんま",
   "annotationJa": "ガッツを払う…このキャラの下のカードを指定された枚数ドロップエリアに置く。",
   "productType": "HV-D02",
@@ -842,7 +902,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "block",
      "actions": [
       {
        "op": "gate",
@@ -869,6 +928,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "block"
      ]
     }
    ]
@@ -916,8 +978,39 @@
     "illustrator": "JSK"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 2
+        }
+       ]
+      }
+     ],
+     "areaIcons": [
+      "receive"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "やく もりすけ",
   "annotationJa": "ドロップする…指定されたカードを指定された枚数ドロップエリアに置く。",
   "productType": "HV-D02",
@@ -956,8 +1049,44 @@
     "illustrator": "さいれんあやめ"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "block"
+      ]
+     },
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "selfArea",
+         "area": [
+          "attack"
+         ]
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "moveSelfToBlockSide"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameZh": "灰羽 列夫",
   "nameRuby": "はいば リエーフ",
   "annotationJa": "ガッツを払う…このキャラの下のカードを指定された枚数ドロップエリアに置く。",
@@ -1160,8 +1289,37 @@
     "illustrator": "R"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        }
+       ]
+      }
+     ],
+     "areaIcons": [
+      "receive"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "しばやま ゆうき",
   "annotationJa": "ガッツを払う…このキャラの下のカードを指定された枚数ドロップエリアに置く。",
   "productType": "HV-D02",
@@ -1234,8 +1392,60 @@
     "illustrator": "古舘 春一"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "chooseOne",
+       "optional": true,
+       "options": [
+        {
+         "label": "ブロックキャラの「黒尾 鉄朗」1人のブロックポイント+1",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": {
+            "choose": true,
+            "player": "self",
+            "names": [
+             "黒尾 鉄朗"
+            ],
+            "area": [
+             "block"
+            ]
+           },
+           "param": "block",
+           "amount": 1
+          }
+         ]
+        },
+        {
+         "label": "自分のキャラ1人のレシーブポイント+1",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": {
+            "choose": true,
+            "player": "self"
+           },
+           "param": "receive",
+           "amount": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameZh": "手は前っつったでしょう ノブカツくん (我不是說了手要往前嗎，信勝同學)",
   "nameRuby": "手（て）は前（まえ）っつったでしょ ノブカツくん",
   "annotationJa": null,
@@ -1267,8 +1477,29 @@
     "illustrator": "古舘 春一"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "lookTopTutor",
+       "count": 3,
+       "names": [
+        "灰羽 リエーフ",
+        "犬岡 走"
+       ],
+       "upTo": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameZh": "物理攻撃でブッ倒ればいいんだよね (用物理攻擊打倒就好了吧)",
   "nameRuby": "物理攻撃（ぶつりこうげき）でブン殴（なぐ）ればいい だよね",
   "annotationJa": null,
@@ -1874,7 +2105,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -1904,6 +2134,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -1957,7 +2190,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -1998,6 +2230,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -2149,7 +2384,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "toss",
      "actions": [
       {
        "op": "gate",
@@ -2191,6 +2425,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "toss"
      ]
     }
    ]
@@ -2290,7 +2527,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "block",
      "actions": [
       {
        "op": "gate",
@@ -2338,6 +2574,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "block"
      ]
     }
    ]
@@ -2433,7 +2672,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "serve",
      "actions": [
       {
        "op": "revealTopCheck",
@@ -2462,6 +2700,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "serve"
      ]
     }
    ]
@@ -2607,7 +2848,6 @@
      "phaseIcons": [
       "receive"
      ],
-     "areaIcon": "hand",
      "costs": [
       {
        "type": "dropSelf"
@@ -2624,6 +2864,9 @@
        "param": "receive",
        "amount": 2
       }
+     ],
+     "areaIcons": [
+      "hand"
      ]
     }
    ]
@@ -2730,7 +2973,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "toss",
      "actions": [
       {
        "op": "gate",
@@ -2753,6 +2995,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "toss"
      ]
     }
    ]
@@ -2806,7 +3051,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -2837,6 +3081,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -3581,8 +3828,59 @@
     "illustrator": "古舘 春一"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "serve",
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "affiliation": "青葉城西"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "choose",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "handMin",
+           "count": 4,
+           "player": "opponent"
+          }
+         ],
+         "then": [
+          {
+           "op": "forceDrop",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "おいかわ とおる",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -3674,8 +3972,61 @@
     "illustrator": "古舘 春一"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "affiliation": "青葉城西"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 2
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "handMax",
+           "count": 4,
+           "player": "opponent"
+          }
+         ],
+         "then": [
+          {
+           "op": "restrict",
+           "restriction": {
+            "banHandAdd": true
+           },
+           "duration": "nextOpponentTurn"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "いわいずみ はじめ",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -3840,8 +4191,63 @@
     "illustrator": "眠居ぱん太"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "opponentOp",
+         "min": 6
+        }
+       ],
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "affiliation": "青葉城西"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "allCharas",
+           "affiliation": "青葉城西"
+          }
+         ],
+         "then": [
+          {
+           "op": "draw",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "わたり しんじ",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -3930,7 +4336,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -3959,6 +4364,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -4785,7 +5193,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "block",
      "actions": [
       {
        "op": "gate",
@@ -4803,6 +5210,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "block"
      ]
     }
    ]
@@ -5159,7 +5569,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -5187,6 +5596,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -6113,8 +6525,50 @@
     "illustrator": "菊野郎"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "gutsAny",
+         "count": 8
+        }
+       ],
+       "then": [
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "self",
+          "filter": {
+           "affiliation": "青葉城西"
+          }
+         },
+         "duration": "thisTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "choose",
+           "amount": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "いりはた のぶてる",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -6146,8 +6600,24 @@
     "illustrator": "ako"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "dropToHand",
+       "filter": {
+        "affiliation": "青葉城西"
+       },
+       "cardType": "CHARACTER",
+       "count": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameZh": "指揮者\"が代われば\"音\"が変わる",
   "nameRuby": "指揮者（しきしゃ）が代（か）われば 音（おと）が変（か）わる",
   "annotationJa": null,
@@ -6180,8 +6650,65 @@
     "illustrator": "JSK"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "chara",
+         "filter": {
+          "names": [
+           "及川 徹"
+          ],
+          "area": [
+           "serve",
+           "toss"
+          ]
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self",
+          "names": [
+           "及川 徹"
+          ]
+         },
+         "param": "toss",
+         "amount": 1
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "handAddByEffect",
+          "player": "opponent"
+         },
+         "duration": "nextOpponentTurn",
+         "actions": [
+          {
+           "op": "forceDrop",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "俺（おれ）も思（おも）った☆",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -6212,8 +6739,48 @@
     "illustrator": "山宮 宏"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1,
+       "upTo": true
+      },
+      {
+       "op": "addParam",
+       "target": {
+        "choose": true,
+        "player": "self",
+        "affiliation": "青葉城西"
+       },
+       "param": "receive",
+       "amount": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "handMax",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "target",
+         "param": "receive",
+         "amount": 1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "お前（まえ）達（たち）は強（つよ）いよ",
   "annotationJa": null,
   "productType": "HV-P01",
@@ -8819,8 +9386,49 @@
     "illustrator": "古舘 春一"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "toss",
+         "amount": 2
+        },
+        {
+         "op": "dropToHand",
+         "filter": {
+          "names": [
+           "岩泉 一"
+          ]
+         },
+         "count": 1,
+         "upTo": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "おいかわ とおる",
   "annotationJa": null,
   "productType": "HV-P02",
@@ -8862,8 +9470,46 @@
     "illustrator": "米田"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "handMax",
+         "count": 3,
+         "player": "opponent"
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 7
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "いわいずみ はじめ",
   "annotationJa": null,
   "productType": "HV-P02",
@@ -8905,8 +9551,37 @@
     "illustrator": "御巫 史"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "drawToHandSize",
+         "size": 3
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "くにみ あきら",
   "annotationJa": null,
   "productType": "HV-P02",
@@ -9286,7 +9961,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "toss",
      "actions": [
       {
        "op": "millTop",
@@ -9314,6 +9988,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "toss"
      ]
     }
    ]
@@ -10735,7 +11412,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "attack",
      "actions": [
       {
        "op": "gate",
@@ -10754,6 +11430,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "attack"
      ]
     }
    ]
@@ -10807,7 +11486,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "toss",
      "actions": [
       {
        "op": "gate",
@@ -10824,6 +11502,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "toss"
      ]
     }
    ]
@@ -11580,7 +12261,6 @@
      "trigger": {
       "on": "deploy"
      },
-     "areaIcon": "receive",
      "actions": [
       {
        "op": "gate",
@@ -11617,6 +12297,9 @@
         }
        ]
       }
+     ],
+     "areaIcons": [
+      "receive"
      ]
     }
    ]
@@ -11747,8 +12430,68 @@
     "illustrator": "星 和貴"
    }
   ],
-  "effect": null,
-  "effectStatus": "todo",
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "chara",
+         "filter": {
+          "names": [
+           "及川 徹"
+          ],
+          "area": [
+           "toss"
+          ]
+         }
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 2
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "handMin",
+           "count": 3,
+           "player": "opponent"
+          }
+         ],
+         "then": [
+          {
+           "op": "forceDrop",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
   "nameRuby": "きょうたに けんたろう",
   "annotationJa": null,
   "productType": "HV-PR",

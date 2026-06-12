@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createGame, applyDecision, canChooseBlock, deployableUids } from "./engine";
+import { randomAiDecision } from "../ai/random";
 import type { CardDb, Decision, GameState, PlayerId } from "./types";
 import type { Card } from "../data/types";
 import cardsJson from "../../data/cards.json";
@@ -273,38 +274,11 @@ describe("隨機整場模擬（真實牌組煙霧測試）", () => {
     const pick = <T,>(arr: T[]): T => arr[Math.floor(rnd() * arr.length)]!;
 
     let s = createGame(realDb, { seed, decks: [expandDeck(deckKarasuno), expandDeck(deckNekoma)] });
+    void pick;
     for (let i = 0; i < 5000; i++) {
       if (s.phase === "gameOver") return s;
-      const pd = s.pendingDecision!;
-      const p = pd.player as PlayerId;
-      let d: Decision;
-      switch (pd.type) {
-        case "serve-rights": d = { type: "serve-rights", take: rnd() < 0.5 }; break;
-        case "mulligan": d = { type: "mulligan", returnUids: [] }; break;
-        case "defense-choice": d = { type: "defense-choice", choice: canChooseBlock(s) && rnd() < 0.5 ? "block" : "receive" }; break;
-        case "free": d = { type: "free", action: rnd() < 0.03 ? "lost" : "pass" }; break;
-        case "pick-set-card": d = { type: "pick-set-card", index: 0 }; break;
-        case "deploy-block": {
-          const opts = deployableUids(realDb, s, p, "block");
-          if (opts.length === 0) { d = { type: "deploy-block", uids: null }; break; }
-          const names = new Set<string>();
-          const chosen: number[] = [];
-          for (const u of opts) {
-            const n = realDb.get(s.cards[u]!)!.nameJa;
-            if (!names.has(n)) { names.add(n); chosen.push(u); }
-            if (chosen.length === 3) break;
-          }
-          const k = 1 + Math.floor(rnd() * chosen.length);
-          d = { type: "deploy-block", uids: chosen.slice(0, k), center: chosen[0]! };
-          break;
-        }
-        default: {
-          const area = pd.type.slice("deploy-".length) as "serve" | "receive" | "toss" | "attack";
-          const opts = deployableUids(realDb, s, p, area);
-          d = { type: pd.type, uid: opts.length ? pick(opts) : null } as Decision;
-        }
-      }
-      s = applyDecision(realDb, s, d);
+      // M3 起改用正式的隨機 AI（src/ai/random.ts）＝引擎決策契約的維護實作，涵蓋效果決策
+      s = applyDecision(realDb, s, randomAiDecision(realDb, s, rnd));
       checkInvariants(s);
     }
     throw new Error("5000 步內未分出勝負");

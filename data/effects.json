@@ -1,35 +1,1986 @@
 {
-  "HV-D01-001": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 2 } ] } ] } ] },
-  "HV-D01-002": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "toss", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "addParam", "target": "self", "param": "toss", "amount": 2 } ] } ] } ] },
-  "HV-D01-003": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "block", "actions": [ { "op": "gate", "cond": [ { "type": "opponentOp", "max": 4 } ], "costs": [ { "type": "guts", "count": 1 } ], "then": [ { "op": "draw", "count": 1 } ] } ] } ] },
-  "HV-D01-005": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "receive", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 3 } ], "then": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": "self", "param": "receive", "amount": 2 } ] } ] } ] },
-  "HV-D01-007": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "receive", "actions": [ { "op": "gate", "costs": [ { "type": "dropFromHand", "count": 1 } ], "then": [ { "op": "addParam", "target": "self", "param": "receive", "amount": 3 } ] } ] } ] },
-  "HV-D01-011": { "skills": [ { "kind": "event", "actions": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": { "choose": true, "player": "self" }, "param": "receive", "amount": 1 }, { "op": "if", "cond": [ { "type": "targetParam", "param": "receive", "max": 4 } ], "then": [ { "op": "addParam", "target": "target", "param": "receive", "amount": 1 } ] } ] } ] },
-  "HV-D01-012": { "skills": [ { "kind": "event", "actions": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": { "choose": true, "player": "self", "affiliation": "烏野" }, "param": "attack", "amount": 1 }, { "op": "if", "cond": [ { "type": "chara", "filter": { "area": [ "toss" ], "names": [ "影山 飛雄" ] } }, { "type": "chara", "filter": { "area": [ "attack" ], "names": [ "日向 翔陽" ] } } ], "then": [ { "op": "restrict", "restriction": { "area": "block", "maxCount": 1 }, "duration": "nextOpponentTurn" } ] } ] } ] },
-  "HV-P01-002": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 3 } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 4 }, { "op": "restrict", "restriction": { "area": "receive", "banBaseParamMin": { "param": "receive", "value": 6 } }, "duration": "nextOpponentTurn" } ] } ] } ] },
-  "HV-P01-003": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "cond": [ { "type": "deployedFromHand" }, { "type": "handMax", "count": 3 }, { "type": "chara", "filter": { "area": [ "toss" ], "names": [ "影山 飛雄" ] } } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 2 }, { "op": "restrict", "restriction": { "area": "block", "maxCount": 2 }, "duration": "nextOpponentTurn" } ] } ] } ] },
-  "HV-P01-006": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "toss", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "revealTopTutor", "names": [ "日向 翔陽", "オープン攻撃" ], "upTo": 1 }, { "op": "watch", "trigger": { "on": "deploy", "player": "self", "filter": { "names": [ "日向 翔陽" ] } }, "duration": "thisTurn", "actions": [ { "op": "addParam", "target": "trigger", "param": "attack", "amount": 2 } ] } ] } ] } ] },
-  "HV-P01-008": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "block", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "if", "cond": [ { "type": "chara", "filter": { "names": [ "山口 忠" ] } } ], "then": [ { "op": "addParam", "target": "self", "param": "block", "amount": 2 } ] }, { "op": "watch", "trigger": { "on": "blockSuccess" }, "duration": "thisTurn", "actions": [ { "op": "keyword", "name": "ドシャット", "n": 6 } ] } ] } ] } ] },
-  "HV-P01-010": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "serve", "actions": [ { "op": "revealTopCheck", "match": { "affiliation": "烏野" }, "then": [ { "op": "watch", "trigger": { "on": "deploy", "player": "opponent", "area": [ "toss" ] }, "duration": "nextOpponentTurn", "actions": [ { "op": "addParam", "target": "trigger", "param": "toss", "amount": -2 } ] } ] } ] } ] },
-  "HV-P01-013": { "skills": [ { "kind": "active", "phaseIcons": [ "receive" ], "areaIcon": "hand", "costs": [ { "type": "dropSelf" } ], "actions": [ { "op": "addParam", "target": { "choose": true, "player": "self", "affiliation": "烏野" }, "param": "receive", "amount": 2 } ] } ] },
-  "HV-P01-015": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "toss", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": "self", "param": "toss", "amount": 1 } ] } ] } ] },
-  "HV-P01-016": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "cond": [ { "type": "chara", "filter": { "area": [ "toss" ], "affiliation": "烏野", "position": "S" } } ], "costs": [ { "type": "guts", "count": 4 } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 2 } ] } ] } ] },
-  "HV-P01-072": { "skills": [ { "kind": "deployNameChoice", "names": [ "日向 翔陽", "孤爪 研磨" ] } ] },
-  "HV-P01-073": { "skills": [ { "kind": "deployNameChoice", "names": [ "月島 蛍", "黒尾 鉄朗" ] } ] },
-  "HV-P01-074": { "skills": [ { "kind": "event", "actions": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": { "choose": true, "player": "self" }, "param": "attack", "amount": 1 }, { "op": "if", "cond": [ { "type": "eventAreaCount", "player": "opponent", "playTimingAny": [ "draw", "receive" ], "min": 5 } ], "then": [ { "op": "addParam", "target": "target", "param": "attack", "amount": 2 } ] } ] } ] },
-  "HV-P01-075": { "skills": [ { "kind": "event", "actions": [ { "op": "addParam", "target": { "choose": true, "player": "self", "affiliation": "烏野" }, "param": "choose", "amount": 1 }, { "op": "if", "cond": [ { "type": "phaseIs", "phase": "receive" } ], "then": [ { "op": "draw", "count": 1 } ] } ] } ] },
-  "HV-P01-076": { "skills": [ { "kind": "event", "actions": [ { "op": "if", "cond": [ { "type": "handMax", "count": 4 } ], "then": [ { "op": "gutsToHand", "count": 2, "sameAffiliation": true } ] } ] } ] },
-  "HV-P01-077": { "skills": [ { "kind": "event", "turn1": true, "actions": [ { "op": "addParam", "target": { "choose": true, "player": "self", "affiliation": "烏野", "area": [ "receive" ] }, "param": "receive", "amount": 2 }, { "op": "if", "cond": [ { "type": "targetIs", "filter": { "names": [ "西谷 夕" ] } } ], "then": [ { "op": "draw", "count": 1 } ] } ] } ] },
-  "HV-P01-078": { "skills": [ { "kind": "event", "actions": [ { "op": "draw", "count": 2 }, { "op": "dropFromHand", "count": 1 }, { "op": "if", "cond": [ { "type": "eventAreaCount", "player": "self", "name": "オープン攻撃", "max": 2 } ], "then": [ { "op": "deployFromDrop", "filter": { "names": [ "日向 翔陽" ] }, "area": "attack", "then": [ { "op": "addParam", "target": "target", "param": "attack", "amount": 1 } ] } ] } ] } ] },
-  "HV-P01-079": { "skills": [ { "kind": "event", "actions": [ { "op": "draw", "count": 1 }, { "op": "addParam", "target": { "choose": true, "player": "self", "affiliation": "烏野", "area": [ "block" ] }, "param": "block", "amount": 1 }, { "op": "if", "cond": [ { "type": "targetIs", "filter": { "names": [ "月島 蛍" ] } } ], "then": [ { "op": "moveCharaToHand", "from": "serve", "filter": { "names": [ "山口 忠" ] }, "upTo": 1 }, { "op": "watch", "trigger": { "on": "deploy", "player": "opponent", "area": [ "receive" ] }, "duration": "nextOpponentTurn", "actions": [ { "op": "addParam", "target": "trigger", "param": "receive", "amount": -2 } ] } ] } ] } ] },
-  "HV-PR-001": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy", "overNames": [ "日向 翔陽" ] }, "actions": [ { "op": "addParam", "target": "self", "param": "choose", "amount": 1 } ] } ] },
-  "HV-PR-002": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy", "overNames": [ "影山 飛雄" ] }, "actions": [ { "op": "addParam", "target": "self", "param": "choose", "amount": 1 } ] } ] },
-  "HV-PR-003": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "costs": [ { "type": "dropFromHand", "count": 1 } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 2 } ] } ] } ] },
-  "HV-PR-004": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "toss", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 2 } ], "then": [ { "op": "draw", "count": 1 } ] } ] } ] },
-  "HV-D02-002": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "block", "actions": [ { "op": "gate", "costs": [ { "type": "guts", "count": 1 } ], "then": [ { "op": "watch", "trigger": { "on": "blockSuccess" }, "duration": "thisTurn", "actions": [ { "op": "keyword", "name": "ドシャット", "n": 5 } ] } ] } ] } ] },
-  "HV-P01-060": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "block", "actions": [ { "op": "gate", "cond": [ { "type": "opponentOp", "min": 4 } ], "then": [ { "op": "keyword", "name": "ワンタッチ", "n": 2 } ] } ] } ] },
-  "HV-P01-041": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "cond": [ { "type": "allCharas", "affiliation": "青葉城西" }, { "type": "handMax", "count": 3, "player": "opponent" } ], "costs": [ { "type": "guts", "count": 1 } ], "then": [ { "op": "keyword", "name": "フェイント", "n": 4 } ] } ] } ] },
-  "HV-P01-068": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "attack", "actions": [ { "op": "gate", "cond": [ { "type": "handMax", "count": 3 }, { "type": "distinctAffiliationCharas", "min": 4 } ], "then": [ { "op": "addParam", "target": "self", "param": "attack", "amount": 2 }, { "op": "keyword", "name": "ブロックアウト", "n": 2 } ] } ] } ] },
-  "HV-PR-022": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "receive", "actions": [ { "op": "gate", "cond": [ { "type": "opponentOp", "max": 2, "source": [ "serve", "attack" ] } ], "then": [ { "op": "keyword", "name": "Aパス", "n": 1 }, { "op": "gate", "costs": [ { "type": "guts", "count": 1 } ], "then": [ { "op": "draw", "count": 1 } ] } ] } ] } ] },
-  "HV-P02-067": { "skills": [ { "kind": "passive", "trigger": { "on": "deploy" }, "areaIcon": "toss", "actions": [ { "op": "millTop", "upTo": 1, "milledMatch": { "affiliation": "梟谷", "cardType": "CHARACTER" }, "then": [ { "op": "gate", "costs": [ { "type": "dropFromHand", "count": 1 } ], "then": [ { "op": "keyword", "name": "ツーアタック", "n": 3 } ] } ] } ] } ] }
+ "HV-D01-001": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-D01-002": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "toss",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-D01-003": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "opponentOp",
+        "max": 4
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "block"
+    ]
+   }
+  ]
+ },
+ "HV-D01-005": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       },
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "receive",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "receive"
+    ]
+   }
+  ]
+ },
+ "HV-D01-007": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "receive",
+        "amount": 3
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "receive"
+    ]
+   }
+  ]
+ },
+ "HV-D01-011": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self"
+      },
+      "param": "receive",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "targetParam",
+        "param": "receive",
+        "max": 4
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "target",
+        "param": "receive",
+        "amount": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-D01-012": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "烏野"
+      },
+      "param": "attack",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "chara",
+        "filter": {
+         "area": [
+          "toss"
+         ],
+         "names": [
+          "影山 飛雄"
+         ]
+        }
+       },
+       {
+        "type": "chara",
+        "filter": {
+         "area": [
+          "attack"
+         ],
+         "names": [
+          "日向 翔陽"
+         ]
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "restrict",
+        "restriction": {
+         "area": "block",
+         "maxCount": 1
+        },
+        "duration": "nextOpponentTurn"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-002": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 4
+       },
+       {
+        "op": "restrict",
+        "restriction": {
+         "area": "receive",
+         "banBaseParamMin": {
+          "param": "receive",
+          "value": 6
+         }
+        },
+        "duration": "nextOpponentTurn"
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-P01-003": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "deployedFromHand"
+       },
+       {
+        "type": "handMax",
+        "count": 3
+       },
+       {
+        "type": "chara",
+        "filter": {
+         "area": [
+          "toss"
+         ],
+         "names": [
+          "影山 飛雄"
+         ]
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       },
+       {
+        "op": "restrict",
+        "restriction": {
+         "area": "block",
+         "maxCount": 2
+        },
+        "duration": "nextOpponentTurn"
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-P01-006": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "revealTopTutor",
+        "names": [
+         "日向 翔陽",
+         "オープン攻撃"
+        ],
+        "upTo": 1
+       },
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "deploy",
+         "player": "self",
+         "filter": {
+          "names": [
+           "日向 翔陽"
+          ]
+         }
+        },
+        "duration": "thisTurn",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": "trigger",
+          "param": "attack",
+          "amount": 2
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-P01-008": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "if",
+        "cond": [
+         {
+          "type": "chara",
+          "filter": {
+           "names": [
+            "山口 忠"
+           ]
+          }
+         }
+        ],
+        "then": [
+         {
+          "op": "addParam",
+          "target": "self",
+          "param": "block",
+          "amount": 2
+         }
+        ]
+       },
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "blockSuccess"
+        },
+        "duration": "thisTurn",
+        "actions": [
+         {
+          "op": "keyword",
+          "name": "ドシャット",
+          "n": 6
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "block"
+    ]
+   }
+  ]
+ },
+ "HV-P01-010": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "revealTopCheck",
+      "match": {
+       "affiliation": "烏野"
+      },
+      "then": [
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "deploy",
+         "player": "opponent",
+         "area": [
+          "toss"
+         ]
+        },
+        "duration": "nextOpponentTurn",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": "trigger",
+          "param": "toss",
+          "amount": -2
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "serve"
+    ]
+   }
+  ]
+ },
+ "HV-P01-013": {
+  "skills": [
+   {
+    "kind": "active",
+    "phaseIcons": [
+     "receive"
+    ],
+    "costs": [
+     {
+      "type": "dropSelf"
+     }
+    ],
+    "actions": [
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "烏野"
+      },
+      "param": "receive",
+      "amount": 2
+     }
+    ],
+    "areaIcons": [
+     "hand"
+    ]
+   }
+  ]
+ },
+ "HV-P01-015": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       },
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "toss",
+        "amount": 1
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-P01-016": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "chara",
+        "filter": {
+         "area": [
+          "toss"
+         ],
+         "affiliation": "烏野",
+         "position": "S"
+        }
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 4
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-P01-072": {
+  "skills": [
+   {
+    "kind": "deployNameChoice",
+    "names": [
+     "日向 翔陽",
+     "孤爪 研磨"
+    ]
+   }
+  ]
+ },
+ "HV-P01-073": {
+  "skills": [
+   {
+    "kind": "deployNameChoice",
+    "names": [
+     "月島 蛍",
+     "黒尾 鉄朗"
+    ]
+   }
+  ]
+ },
+ "HV-P01-074": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self"
+      },
+      "param": "attack",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "eventAreaCount",
+        "player": "opponent",
+        "playTimingAny": [
+         "draw",
+         "receive"
+        ],
+        "min": 5
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "target",
+        "param": "attack",
+        "amount": 2
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-075": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "烏野"
+      },
+      "param": "choose",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "phaseIs",
+        "phase": "receive"
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-076": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "handMax",
+        "count": 4
+       }
+      ],
+      "then": [
+       {
+        "op": "gutsToHand",
+        "count": 2,
+        "sameAffiliation": true
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-077": {
+  "skills": [
+   {
+    "kind": "event",
+    "turn1": true,
+    "actions": [
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "烏野",
+       "area": [
+        "receive"
+       ]
+      },
+      "param": "receive",
+      "amount": 2
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "targetIs",
+        "filter": {
+         "names": [
+          "西谷 夕"
+         ]
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-078": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 2
+     },
+     {
+      "op": "dropFromHand",
+      "count": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "eventAreaCount",
+        "player": "self",
+        "name": "オープン攻撃",
+        "max": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "deployFromDrop",
+        "filter": {
+         "names": [
+          "日向 翔陽"
+         ]
+        },
+        "area": "attack",
+        "then": [
+         {
+          "op": "addParam",
+          "target": "target",
+          "param": "attack",
+          "amount": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-079": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "烏野",
+       "area": [
+        "block"
+       ]
+      },
+      "param": "block",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "targetIs",
+        "filter": {
+         "names": [
+          "月島 蛍"
+         ]
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "moveCharaToHand",
+        "from": "serve",
+        "filter": {
+         "names": [
+          "山口 忠"
+         ]
+        },
+        "upTo": 1
+       },
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "deploy",
+         "player": "opponent",
+         "area": [
+          "receive"
+         ]
+        },
+        "duration": "nextOpponentTurn",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": "trigger",
+          "param": "receive",
+          "amount": -2
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-PR-001": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy",
+     "overNames": [
+      "日向 翔陽"
+     ]
+    },
+    "actions": [
+     {
+      "op": "addParam",
+      "target": "self",
+      "param": "choose",
+      "amount": 1
+     }
+    ]
+   }
+  ]
+ },
+ "HV-PR-002": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy",
+     "overNames": [
+      "影山 飛雄"
+     ]
+    },
+    "actions": [
+     {
+      "op": "addParam",
+      "target": "self",
+      "param": "choose",
+      "amount": 1
+     }
+    ]
+   }
+  ]
+ },
+ "HV-PR-003": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-PR-004": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-D02-002": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "blockSuccess"
+        },
+        "duration": "thisTurn",
+        "actions": [
+         {
+          "op": "keyword",
+          "name": "ドシャット",
+          "n": 5
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "block"
+    ]
+   }
+  ]
+ },
+ "HV-P01-060": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "opponentOp",
+        "min": 4
+       }
+      ],
+      "then": [
+       {
+        "op": "keyword",
+        "name": "ワンタッチ",
+        "n": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "block"
+    ]
+   }
+  ]
+ },
+ "HV-P01-041": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "allCharas",
+        "affiliation": "青葉城西"
+       },
+       {
+        "type": "handMax",
+        "count": 3,
+        "player": "opponent"
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "keyword",
+        "name": "フェイント",
+        "n": 4
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-P01-068": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "handMax",
+        "count": 3
+       },
+       {
+        "type": "distinctAffiliationCharas",
+        "min": 4
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       },
+       {
+        "op": "keyword",
+        "name": "ブロックアウト",
+        "n": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "attack"
+    ]
+   }
+  ]
+ },
+ "HV-PR-022": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "opponentOp",
+        "max": 2,
+        "source": [
+         "serve",
+         "attack"
+        ]
+       }
+      ],
+      "then": [
+       {
+        "op": "keyword",
+        "name": "Aパス",
+        "n": 1
+       },
+       {
+        "op": "gate",
+        "costs": [
+         {
+          "type": "guts",
+          "count": 1
+         }
+        ],
+        "then": [
+         {
+          "op": "draw",
+          "count": 1
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "receive"
+    ]
+   }
+  ]
+ },
+ "HV-P02-067": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "millTop",
+      "upTo": 1,
+      "milledMatch": {
+       "affiliation": "梟谷",
+       "cardType": "CHARACTER"
+      },
+      "then": [
+       {
+        "op": "gate",
+        "costs": [
+         {
+          "type": "dropFromHand",
+          "count": 1
+         }
+        ],
+        "then": [
+         {
+          "op": "keyword",
+          "name": "ツーアタック",
+          "n": 3
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-D02-001": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "toss",
+        "amount": 1
+       },
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "deploy",
+         "player": "opponent",
+         "area": [
+          "attack"
+         ]
+        },
+        "duration": "nextOpponentTurn",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": "trigger",
+          "param": "attack",
+          "amount": -2
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "toss"
+    ]
+   }
+  ]
+ },
+ "HV-D02-003": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "receive",
+        "amount": 2
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "receive"
+    ]
+   }
+  ]
+ },
+ "HV-D02-004": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "allyDeploy",
+     "area": [
+      "block"
+     ]
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "selfArea",
+        "area": [
+         "attack"
+        ]
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "moveSelfToBlockSide"
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-D02-009": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       }
+      ]
+     }
+    ],
+    "areaIcons": [
+     "receive"
+    ]
+   }
+  ]
+ },
+ "HV-D02-011": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "chooseOne",
+      "optional": true,
+      "options": [
+       {
+        "label": "ブロックキャラの「黒尾 鉄朗」1人のブロックポイント+1",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": {
+           "choose": true,
+           "player": "self",
+           "names": [
+            "黒尾 鉄朗"
+           ],
+           "area": [
+            "block"
+           ]
+          },
+          "param": "block",
+          "amount": 1
+         }
+        ]
+       },
+       {
+        "label": "自分のキャラ1人のレシーブポイント+1",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": {
+           "choose": true,
+           "player": "self"
+          },
+          "param": "receive",
+          "amount": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-D02-012": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "lookTopTutor",
+      "count": 3,
+      "names": [
+       "灰羽 リエーフ",
+       "犬岡 走"
+      ],
+      "upTo": 1
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-033": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "serve",
+     "toss"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1,
+        "filter": {
+         "affiliation": "青葉城西"
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "choose",
+        "amount": 1
+       },
+       {
+        "op": "if",
+        "cond": [
+         {
+          "type": "handMin",
+          "count": 4,
+          "player": "opponent"
+         }
+        ],
+        "then": [
+         {
+          "op": "forceDrop",
+          "count": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-035": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "attack"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1,
+        "filter": {
+         "affiliation": "青葉城西"
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       },
+       {
+        "op": "if",
+        "cond": [
+         {
+          "type": "handMax",
+          "count": 4,
+          "player": "opponent"
+         }
+        ],
+        "then": [
+         {
+          "op": "restrict",
+          "restriction": {
+           "banHandAdd": true
+          },
+          "duration": "nextOpponentTurn"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-039": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "receive"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "opponentOp",
+        "min": 6
+       }
+      ],
+      "costs": [
+       {
+        "type": "dropFromHand",
+        "count": 1,
+        "filter": {
+         "affiliation": "青葉城西"
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "receive",
+        "amount": 1
+       },
+       {
+        "op": "if",
+        "cond": [
+         {
+          "type": "allCharas",
+          "affiliation": "青葉城西"
+         }
+        ],
+        "then": [
+         {
+          "op": "draw",
+          "count": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-085": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1
+     },
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "gutsAny",
+        "count": 8
+       }
+      ],
+      "then": [
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "deploy",
+         "player": "self",
+         "filter": {
+          "affiliation": "青葉城西"
+         }
+        },
+        "duration": "thisTurn",
+        "actions": [
+         {
+          "op": "addParam",
+          "target": "trigger",
+          "param": "choose",
+          "amount": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-086": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "dropToHand",
+      "filter": {
+       "affiliation": "青葉城西"
+      },
+      "cardType": "CHARACTER",
+      "count": 1
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-087": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "chara",
+        "filter": {
+         "names": [
+          "及川 徹"
+         ],
+         "area": [
+          "serve",
+          "toss"
+         ]
+        }
+       }
+      ],
+      "then": [
+       {
+        "op": "draw",
+        "count": 1
+       },
+       {
+        "op": "addParam",
+        "target": {
+         "choose": true,
+         "player": "self",
+         "names": [
+          "及川 徹"
+         ]
+        },
+        "param": "toss",
+        "amount": 1
+       },
+       {
+        "op": "watch",
+        "trigger": {
+         "on": "handAddByEffect",
+         "player": "opponent"
+        },
+        "duration": "nextOpponentTurn",
+        "actions": [
+         {
+          "op": "forceDrop",
+          "count": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P01-088": {
+  "skills": [
+   {
+    "kind": "event",
+    "actions": [
+     {
+      "op": "draw",
+      "count": 1,
+      "upTo": true
+     },
+     {
+      "op": "addParam",
+      "target": {
+       "choose": true,
+       "player": "self",
+       "affiliation": "青葉城西"
+      },
+      "param": "receive",
+      "amount": 1
+     },
+     {
+      "op": "if",
+      "cond": [
+       {
+        "type": "handMax",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "target",
+        "param": "receive",
+        "amount": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P02-056": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "toss"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "toss",
+        "amount": 2
+       },
+       {
+        "op": "dropToHand",
+        "filter": {
+         "names": [
+          "岩泉 一"
+         ]
+        },
+        "count": 1,
+        "upTo": true
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P02-057": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "receive"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "handMax",
+        "count": 3,
+        "player": "opponent"
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "receive",
+        "amount": 7
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-P02-058": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "receive"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "costs": [
+       {
+        "type": "guts",
+        "count": 2
+       }
+      ],
+      "then": [
+       {
+        "op": "drawToHandSize",
+        "size": 3
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "HV-PR-025": {
+  "skills": [
+   {
+    "kind": "passive",
+    "trigger": {
+     "on": "deploy"
+    },
+    "areaIcons": [
+     "attack"
+    ],
+    "actions": [
+     {
+      "op": "gate",
+      "cond": [
+       {
+        "type": "chara",
+        "filter": {
+         "names": [
+          "及川 徹"
+         ],
+         "area": [
+          "toss"
+         ]
+        }
+       }
+      ],
+      "costs": [
+       {
+        "type": "guts",
+        "count": 3
+       }
+      ],
+      "then": [
+       {
+        "op": "addParam",
+        "target": "self",
+        "param": "attack",
+        "amount": 2
+       },
+       {
+        "op": "if",
+        "cond": [
+         {
+          "type": "handMin",
+          "count": 3,
+          "player": "opponent"
+         }
+        ],
+        "then": [
+         {
+          "op": "forceDrop",
+          "count": 1
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
 }

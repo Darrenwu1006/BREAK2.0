@@ -276,3 +276,53 @@
 ### 中斷點
 - 無半成品。全綠可收工；`npm run dev` 即可玩烏野技能對局
 - 注意：cards.json 由 pipeline 產生，改效果一律改 data/effects.json 再 `npm run apply:effects`（或 data:rebuild）
+
+---
+
+## 2026-06-12 — Session 9 續：M3 逐校實裝——音駒預組完成
+
+### 完成（N1~N3 全部）
+- **DSL 詞彙擴充**（src/engine/dsl.ts）：
+  - PassiveTrigger 增 `allyDeploy`（「自分のキャラが登場した時」，D02-004 灰羽型）
+  - Condition 增 `selfArea`（「このキャラがアタックキャラの場合」）
+  - Action 增 `lookTopTutor`（看頂N張檢索，D02-012）、`chooseOne`（▶選一使用，D02-011）、`moveSelfToBlockSide`（灰羽移動）
+  - **登場限制改為 turn 累計上限**：state.blockDeployedThisTurn 計數（Q191/Q196/Q204——效果登場也計入額度）
+- **音駒 D02 預組 7 張實裝**（effects.json 共 39 張）：D02-001 孤爪/003 夜久/004 灰羽/009 芝山/011 手は前/012 物理攻撃（002 黒尾前批已做）
+- **測試**（src/engine/nekoma.test.ts 7 件）：判例 Q192/Q195/Q196/Q197/Q198 全轉測試；音駒預組 vs 烏野預組雙啟發式完整對局×2 種子
+- **修復**：engine.test.ts 煙霧測試的 M2 時代內建決策器不認得效果決策（灰羽 allyDeploy 造成 resolve-pending）→ 改用正式 randomAiDecision
+- 全綠：tsc／vitest 56 件（data7＋engine12＋effects7＋烏野22＋音駒7＋ai1）
+
+### 語義筆記（已固化在程式碼）
+- Q195：ガッツ未指定時從技能卡所在區支付（gutsFor 既有行為）
+- Q196：登場限制下 gate 的 cost 照付、移動 action 單獨失敗
+- 灰羽 allyDeploy 與中央卡自身被動同時待機 → resolve-pending（turn player 選順序）
+
+### 下一步
+1. 逐校實裝下一批：青葉城西（P01-036~043）或 D03 白鳥沢/梟谷預組（建議照使用者常用牌組優先）
+2. M5 技能價值判斷／M7 介面討論（同前）
+
+### 中斷點
+- 無半成品。音駒預組可全技能對局
+
+---
+
+## 2026-06-12 — Session 9 續２：M3 逐校實裝——青葉城西完成
+
+### 完成
+- **DSL 詞彙擴充**（dsl.ts/types.ts/effects.ts）：
+  - Cost：`gutsAny`（自分のコートから合計N、任意組合 Q315）、`dropFromHand` 帶所属 filter
+  - Condition：`handMin`；Action：`draw` 加 `upTo`（「N枚まで引く」）、`drawToHandSize`、`dropToHand`（棄牌區回收；Q409 含剛付的 cost）、`forceDrop`（**對手自選棄牌——Awaiting 新增 chooser 欄位，決策者可以不是效果 master**）
+  - DelayedTrigger：`handAddByEffect`（「引く以外の方法で手札に加えるたび」Q321；每張觸發一次 Q317）
+  - Restriction：`banHandAdd`（「スキルでカードを手札に加えられない」P01-035；Q240 檢索強制置底、Q241 連事件抽牌都禁；area 改 optional）
+  - SkillDef：areaIcon → **areaIcons 複數**（P01-033 [=サーブエリア][=トスエリア]；effects.json 既有 24 處已遷移）
+- **青葉城西 11 張實裝**（effects.json 共 50 張）：P01-033/035/039/085/086/087/088、P02-056/057/058、PR-025（041 國見前批已做；042/PR-007/PR-008 香草）
+- **測試**（src/engine/aoba.test.ts 10 件）：判例 Q238/239/240/241/246/315/317/319/409/410 轉測試；青葉城西二彈改 vs 快攻軸完整對局×2 種子
+- 修復：restrict handler 漏複製 banHandAdd 欄位
+- 全綠：tsc／vitest 66 件
+
+### 下一步
+- 逐校實裝剩餘：白鳥沢／稲荷崎（D03＋P02-0xx，含「どん ぴしゃり」效果登場連鎖 Q332 系）／梟谷／伊達工業
+- M5 技能價值判斷／M7 介面討論（同前）
+
+### 中斷點
+- 無半成品。青葉城西兩副牌組可全技能對局

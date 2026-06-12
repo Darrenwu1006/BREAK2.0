@@ -84,14 +84,16 @@ export interface Watcher {
   desc: string;
 }
 
-/** 登場限制（「次の相手のターン中、…登場させられない」；效果登場也受限 Q191/Q204） */
+/** 限制（「次の相手のターン中、…できない」；效果登場也受限 Q191/Q204） */
 export interface Restriction {
   player: PlayerId; // 受限玩家
-  area: CourtArea;
+  area?: CourtArea;
   /** 登場人數上限（0=禁止） */
   maxCount?: number;
   /** 禁止元々の param ≥ value 的キャラ登場 */
   banBaseParamMin?: { param: ParamName; value: number };
+  /** 「スキルでカードを手札に加えられない」（P01-035；Q239~241） */
+  banHandAdd?: true;
   setNo: number;
   activeTurn: number;
   desc: string;
@@ -123,7 +125,7 @@ export interface Turn1Entry {
 }
 
 /** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
-export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_dropHandCost"; count: number };
+export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_dropHandCost"; count: number; filter?: { affiliation?: string } };
 
 export interface EffectFrame {
   actions: RtAction[];
@@ -132,10 +134,12 @@ export interface EffectFrame {
 
 /** 效果解決中的待輸入點 */
 export type Awaiting =
-  | { kind: "confirm"; what: "gate" | "mill"; costs?: Cost[]; then: Action[]; prompt: string }
+  | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop";
+      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop" | "dropToHand" | "forceDrop";
+      /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
+      chooser?: PlayerId;
       candidates: number[];
       min: number;
       max: number;
@@ -145,9 +149,13 @@ export type Awaiting =
       /** deployFromDrop 用 */
       area?: CourtArea;
       then?: Action[];
+      /** tutor 用：實際看過的卡（選中→手牌、其餘→牌組底） */
+      looked?: number[];
       prompt: string;
     }
-  | { kind: "option"; purpose: "param"; targetUid: number; amount: number; options: ParamName[]; prompt: string };
+  | { kind: "option"; purpose: "param"; targetUid: number; amount: number; options: ParamName[]; prompt: string }
+  /** 「以下から1つを選んで使える」：labels 與 branches 對應；optional 時尾端附「不使用」 */
+  | { kind: "option"; purpose: "chooseOne"; labels: string[]; branches: Action[][]; prompt: string };
 
 /** 效果解決 context（一次一個技能 †6-2-1；frame 堆疊處理巢狀 if/gate） */
 export interface EffectCtx {
@@ -243,6 +251,8 @@ export interface GameState {
   effectCtx: EffectCtx | null;
   /** 效果要求 Lost（ブロックアウト）；引擎主迴圈處理 */
   lostRequest: PlayerId | null;
+  /** 本 turn 各玩家已登場的攔網角色數（登場限制 maxCount 是 turn 累計上限：Q191/Q196/Q204） */
+  blockDeployedThisTurn: [number, number];
   /** watcher/pending 流水號 */
   nextId: number;
   log: LogEntry[];
