@@ -326,3 +326,104 @@
 
 ### 中斷點
 - 無半成品。青葉城西兩副牌組可全技能對局
+
+---
+
+## 2026-06-13 — Session 10：M3 逐校實裝——稲荷崎完成
+
+### 完成（I1~I3 全部）
+- **DSL 詞彙擴充**：
+  - Cost：`handToDeckBottom`（手牌置底 D03-002）、`placeEventFromHand`（置事件卡不發動技能 Q337/Q344）、`gutsFrom`（指定區付ガッツ D03-012）、`tilt`（「斜めにする」＝純物理動作無狀態 **Q375**）
+  - Condition：`deployedByCard`（「どんぴしゃり」のスキルで登場 P02-016/020）、`dropDistinctNames`（棄牌區卡名異種數 Q359/Q360 限キャラ）、`addedThisSkill`（「3枚加えた場合」P02-089）
+  - Action：`eventAreaToHand`（事件區回收不限頂牌 Q331/Q368、then=「加えた場合」）、`handToDeckBottom`、`deployFromGuts`（ガッツから登場、byCard 標記）
+  - Restriction 新旗標×4：`fromHandOnly`（「手札から」限定計數，新增 blockHandDeploysThisTurn）、`negateCenterBlock`（中央攔網者ブロックP無視 Q372~374：DP 不加算＋修正不可、ワンタッチ仍可用）、`banOneTouch`（任意N Q356）、`banHandReceiveActive`（[=レシーブフェイズ][=手札]技無效 Q357）
+  - CharaFilter：`positionsAny`（「WSかMBの」）
+- **稲荷崎 18 張實裝**（effects.json 共 69 張）：D03-001/002/003/008/011/012/013、P01-065、P02-003/016/017/020/024/027/035/077/085/087/089
+- **測試**（src/engine/inarizaki.test.ts 10 件）：判例 Q271/331/333/334/337/338/356/359/361/363/372 轉測試；**どんぴしゃり完整連鎖**（ガッツ雙子登場→016/020 追加效果→fromHandOnly 限制＋ワンタッチ無效）一次通過；六名軸 vs 預組完整對局×2 種子
+- 全綠：tsc／vitest 76 件
+
+### 語義筆記（已固化在程式碼）
+- Q375：斜め（タップ）無遊戲狀態——cost 恆可付，不需 tapped 追蹤
+- Q361/Q363：「ドロップに6種類」在付ガッツ之後判定（剛付的算數）→ DSL 寫成 gate{costs}→if{cond}
+- deployedByCard 經 deployCard opts.byCard → PendingItem → ctx 一路傳遞
+
+### 下一步
+- 逐校實裝剩餘：白鳥沢／梟谷／伊達工業（牌組清單上還有混合學校「垃圾場」）
+- M5 技能價值判斷／M7 介面討論（同前）
+
+### 中斷點
+- 無半成品。稲荷崎兩副牌組可全技能對局（0612測試 deck 只有 CSV 沒有 json——data:rebuild 會生成，不影響對戰選單）
+
+---
+
+## 2026-06-13 — Session 10 續：M3 逐校實裝——梟谷完成
+
+### 完成
+- **DSL 詞彙擴充**：
+  - PassiveTrigger：`covered`（**被蓋成ガッツ時觸發**——「下にある場合」有效的技能 †1-2-15-2-1；木葉 P01-047；pendingValid 對此型放寬「須為キャラ」檢查）
+  - DelayedTrigger：`opponentLost`（P01-090；**Q324：Lost 宣告時點不屬於任何回合**→ lostSet 拆兩步：①OP/DP消滅＋turn 期限限制即時失效＋ロスト時待機 →CP→ ③④清理；新 helper onLostDeclared）
+  - Cost：`gutsFrom` 改複數區（「トスとアタックから合計4」Q251）、`millDeck`（デッキ頂棄N＝cost，ctx.milled 供 milledIs 判定）、`dropChara`（棄自家指定キャラ P01-091）
+  - Condition：`gutsParity`（攻擊區ガッツ奇數 P01-043）、`milledIs`
+  - lookTopTutor 加 affiliation 篩選（P01-089）；addOpponentOp 加 source==="attack" 檢查（卡面「アタックの」）
+- **梟谷 7 張實裝**（effects.json 共 76 張）：P01-043/045/047/051/089/090/091
+- **測試**（src/engine/fukurodani.test.ts 8 件）：判例 Q249/250/251/252/253/255/257/323/324/325；ワンタッチ実卡流程（鷲尾：mill cost→梟谷判定→OP−3→跳過攔網→Q257 同梯次待機消滅）；高爆發 vs 爆發二完整對局×2
+- 全綠：tsc／vitest 84 件
+
+### 下一步
+- 剩白鳥沢（白板軸）＋伊達工業（攔網軸×2）＋混合學校垃圾場 → 全卡池 dsl 化收尾
+- M5 技能價值判斷／M7 介面討論（同前）
+
+### 中斷點
+- 無半成品
+
+---
+
+## 2026-06-13 — Session 10 續２：M3 收尾——白鳥沢／伊達工業／混合完成（全牌組卡實裝）
+
+### 完成（全 7 校＋混合）
+- **DSL 詞彙擴充**（最後一批）：
+  - Action：`setParam`（**修正層 set/add 依解決順序疊加** †0-2-12；P01-082「7にする」）、`coinFlip`（內嵌 RNG；天童 P02-048，Q402 任意隨機方式）、`millTopAll`（デッキ頂N全棄→全符合才 then；P02-041，Q395/396 可能な限り）、`dropOpponentGuts`（牛島 P02-046，Q400 master 選）、`moveGutsToArea`（白布 P02-050，Q405 任意區）、`deployFromGuts` 加 fromArea/then（P02-096）、`deployFromDrop` 加 side（サイドブロッカー登場）
+  - Cost：`dropSelfFromCourt`（夜久 P01-023 被蓋時棄自身ガッツ）、`selfToDeckBottom`（青根 P02-037）
+  - Condition：`chara` 加 minCount（P02-093「2人以上」）、`selfIsSideBlocker`（P02-037/038）、`paidGutsAll`（白布「払ったガッツすべてがS」）
+  - CharaFilter：baseParamEq／notNames／effParamMin／effParamEq（Q457 用修正後值，且 centerBlock 無視時參照不可）／skillless（P02-041）
+  - Restriction：`banPositions`（MB 登場禁止 P01-084/P02-097）、`blockFailIfDpMax`（**追加判定失敗條件** †5-15-3；二口 P02-039，Q393 判定時點、Q394 ワンタッチ優先）
+  - gutsToHand 重寫支援 distinctNames＋affiliation（黒尾 P01-021，Q224）
+  - **Q226 修正**：purgeModifiers 同時清 nameOverrides（072/073 離場/成ガッツ → 卡名還原）
+  - **Q404 修正**：allCharas 空集合（0 人）不成立
+- **最後 22 張實裝**（effects.json 共 **98 張，全牌組卡 100% 實裝**）：音駒 P01-021/023/031、伊達 P01-054/P02-037/038/039/041/042/090/091/093、白鳥沢 P01-056/P02-046/048/049/050/052/096/097
+- **測試**（src/engine/shiratorizawa-date.test.ts 10 件）：判例 Q224/228/311/314/393/396/397/404/405；P02-041 牌組檢索→side 登場、P02-037 青根置換登場、P02-050 白布移ガッツ、天童硬幣；4 組跨校牌組（白鳥沢/伊達/混合）×2 種子完整對局
+- **全綠：tsc／vitest 94 件；卡池 dsl 98＋vanilla 104＋todo 94（todo 全為無牌組使用的卡面變體）；7 校＋混合全部牌組可全技能對局**
+
+### 下一步（M3 主體完成）
+- 收尾選項：① 剩餘 94 張無牌組卡逐步補（低優先，等使用者組新牌再做）② M5 技能價值判斷（AI 強化）③ M7 介面討論
+- 建議：M3 可標記為「主體完成」，剩餘是長尾補完
+
+### 中斷點
+- 無半成品。全 14 副牌組皆可全技能對局
+
+---
+
+## 📌 下次起點（使用者指定）：補完剩餘 94 張 todo 卡
+
+**目標**：把目前 effectStatus=todo 的 94 張卡（無牌組使用的卡面變體）全部實裝成 dsl，達成「整個卡池 100% 效果化」。
+
+**清單（94 張，跑 `node -e` 過濾 effectStatus==="todo" 可重新產生）**：
+HV-P01-018/019/025/028/032/034/037/057/066/080/081/083/092/093、
+HV-P02-001/002/004/005/006/007/010/011/012/014/021/025/029/031/036/051/060/061/062/064/066/070/071/073/074/076/078/079/080/081/082/083/084/086/088/092/094/095/098/099/100、
+HV-PR-009/012/013/014/015/016/017/018/023/024/026/027/028/029/030/031/036/037/038/039/040/041/042/044/045/046/047/048/049/050/051/052、
+HVBP-001/002/003/004/009/013/014
+
+**做法**（沿用逐校節奏，但這次按「彈別/字母」分塊）：
+1. 先 `node -e` 印出這 94 張的 skillJa，分群：哪些用現有 DSL 詞彙就能寫、哪些需要新 primitive
+2. 多數應該是既有卡的不同卡面（同名異番）或同模式變體 → 可大量套用現成 DSL
+3. 真正需要新詞彙的（估計 < 15 張）才擴充 dsl.ts/effects.ts
+4. 每張至少一個行為測試或判例測試；相關判例在 official_faq.json（用 card_no 過濾）
+5. 分塊收工：每塊 tsc+vitest 全綠
+
+**注意**：
+- effect 一律寫 data/effects.json，再 `npm run apply:effects`（絕不直接改 cards.json）
+- 這些卡沒有牌組使用 → 「完整對局」驗收無法直接做，改用「合成牌組」測試（deckWith 塞滿）或純效果情境測試
+- 完成後 BLUEPRINT M3 的「長尾補完」項打勾、effectStatus todo 應歸 0（只剩真正無技能的 vanilla）
+
+### 中斷點
+- 無半成品。從上面「下次起點」的步驟 1 開始即可

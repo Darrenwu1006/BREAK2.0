@@ -60,11 +60,13 @@ export interface PointValue {
 
 // ---- 效果系統（M3）----
 
-/** 數值修正層（†6-10-1 第 3 層；期限＝クリンナップ或對象非キャラ化 †6-10-3） */
+/** 數值修正層（†6-10-1 第 3 層；期限＝クリンナップ或對象非キャラ化 †6-10-3）。
+ *  kind "set"＝固定值（後續 add 依解決順序再疊加 †0-2-12） */
 export interface Modifier {
   target: number; // uid
   param: ParamName;
   amount: number;
+  kind?: "set";
   source: number; // 發生源 uid
 }
 
@@ -94,6 +96,18 @@ export interface Restriction {
   banBaseParamMin?: { param: ParamName; value: number };
   /** 「スキルでカードを手札に加えられない」（P01-035；Q239~241） */
   banHandAdd?: true;
+  /** maxCount 只計手札からの登場（P02-020） */
+  fromHandOnly?: true;
+  /** センターブロッカーのブロックP無視（Q372；P02-027） */
+  negateCenterBlock?: true;
+  /** ワンタッチ(N) 無效（Q356；P02-016） */
+  banOneTouch?: true;
+  /** [=レシーブフェイズ][=手札] 主動技無效（Q357；P02-016） */
+  banHandReceiveActive?: true;
+  /** 禁止指定ポジション登場（P01-084/P02-097；搭配 fromHandOnly） */
+  banPositions?: string[];
+  /** 「DPがN以下→ブロック失敗」追加判定失敗條件（†5-15-3；P02-039） */
+  blockFailIfDpMax?: number;
   setNo: number;
   activeTurn: number;
   desc: string;
@@ -113,6 +127,8 @@ export interface PendingItem {
   triggerUid?: number;
   /** 登場觸發的來源領域（deployedFromHand 條件用；Q202） */
   origin?: "hand" | "other";
+  /** 效果登場的來源卡名（「どん ぴしゃり」のスキルで登場 P02-016/020） */
+  byCard?: string;
   desc: string;
 }
 
@@ -125,7 +141,7 @@ export interface Turn1Entry {
 }
 
 /** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
-export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_dropHandCost"; count: number; filter?: { affiliation?: string } };
+export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number } | { op: "_placeEventCost" } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: { affiliation?: string } };
 
 export interface EffectFrame {
   actions: RtAction[];
@@ -137,7 +153,7 @@ export type Awaiting =
   | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop" | "dropToHand" | "forceDrop";
+      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop" | "dropToHand" | "forceDrop" | "eventToHand" | "handToBottom" | "deployFromGuts" | "placeEvent" | "dropChara" | "dropOppGuts" | "moveGuts";
       /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
       chooser?: PlayerId;
       candidates: number[];
@@ -167,6 +183,14 @@ export interface EffectCtx {
   /** 遲發觸發卡 */
   triggerUid: number | null;
   origin?: "hand" | "other";
+  /** 效果登場的來源卡名（deployedByCard 條件） */
+  byCard?: string;
+  /** 本技能解決中已加入手牌張數（addedThisSkill 條件；P02-089） */
+  addedToHand?: number;
+  /** cost millDeck 棄掉的 uid（milledIs 條件；P01-051） */
+  milled?: number[];
+  /** 本技能付出的ガッツ（paidGutsAll 條件；P02-050） */
+  paidGuts?: number[];
   /** 解決完且有任一部分執行 → 套用ターン1（†9-6-3） */
   turn1: boolean;
   anyExecuted: boolean;
@@ -253,6 +277,8 @@ export interface GameState {
   lostRequest: PlayerId | null;
   /** 本 turn 各玩家已登場的攔網角色數（登場限制 maxCount 是 turn 累計上限：Q191/Q196/Q204） */
   blockDeployedThisTurn: [number, number];
+  /** 本 turn 各玩家「從手牌」登場的攔網角色數（fromHandOnly 限制用；P02-020） */
+  blockHandDeploysThisTurn: [number, number];
   /** watcher/pending 流水號 */
   nextId: number;
   log: LogEntry[];

@@ -10,6 +10,7 @@ import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "./types
 import { nextRandom, shuffle } from "./rng";
 import {
   applyEffectDecision,
+  centerBlockNegated,
   blockDeployMax,
   canDeployTo,
   cardOf,
@@ -26,6 +27,7 @@ import {
   nameOf,
   normName,
   onBlockSuccess,
+  onLostDeclared,
   other,
   pendingDecisionForAwaiting,
   playEvent,
@@ -115,6 +117,7 @@ export function createGame(db: CardDb, opts: CreateGameOptions): GameState {
     effectCtx: null,
     lostRequest: null,
     blockDeployedThisTurn: [0, 0],
+    blockHandDeploysThisTurn: [0, 0],
     nextId: 1,
     log: [],
   };
@@ -317,7 +320,10 @@ function calcDp(db: CardDb, state: GameState): void {
   let value = 0;
   if (state.phase === "block") {
     const blockers = [...ps.blockSides, ...(topChara(ps.blockCenter) !== null ? [topChara(ps.blockCenter)!] : [])];
-    for (const u of blockers) value += effParam(db, state, u, "block") ?? 0;
+    for (const u of blockers) {
+      if (centerBlockNegated(state, p, u)) continue; // ブロックP無いものとして扱う（Q372）
+      value += effParam(db, state, u, "block") ?? 0;
+    }
     state.dp = { value, owner: p, source: "block" };
   } else {
     const u = topChara(ps.receive);
@@ -333,6 +339,17 @@ function judgeCompare(state: GameState): void {
   const dp = state.dp;
   const opValue = op && op.owner !== state.turnPlayer ? op.value : 0;
   state.judgeSuccess = (dp?.value ?? 0) >= opValue;
+  // 效果追加的失敗條件（任一成立即失敗 †5-15-3；P02-039「DP6以下→ブロック失敗」Q393）
+  if (state.judgeSuccess && state.phase === "block") {
+    for (const r of state.restrictions) {
+      if (r.player !== state.turnPlayer || r.blockFailIfDpMax === undefined) continue;
+      if (r.setNo !== state.setNo || r.activeTurn !== state.turnNo) continue;
+      if ((dp?.value ?? 0) <= r.blockFailIfDpMax) {
+        state.judgeSuccess = false;
+        log(state, state.turnPlayer, `效果：DP ≤ ${r.blockFailIfDpMax} → 攔網失敗（†5-15-3）`);
+      }
+    }
+  }
   log(state, state.turnPlayer, `判定：DP ${dp?.value ?? 0} vs OP ${opValue} → ${state.judgeSuccess ? "成功" : "失敗"}`);
 }
 
@@ -449,11 +466,17 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         break;
 
       case "lostSet": // †5-20
-        // ①OP/DP 消滅 →（②「ロスト時」技能：烏野卡池無，暫略）→ ③④Set 中效果/待機消滅 → ⑤インターバル
-        state.op = null;
-        state.dp = null;
-        clearSetScoped(state);
-        enterPhase(state, "interval");
+        if (state.sub === 0) {
+          // ①OP/DP 消滅 → turn 即時終了（「ターン中」限制失效 Q324）→ ②「ロスト時」監看待機（CP 由迴圈頭解決）
+          state.op = null;
+          state.dp = null;
+          onLostDeclared(db, state, state.lostBy!);
+          state.sub++;
+        } else {
+          // ③④ Set 中效果/待機消滅 → ⑤インターバル
+          clearSetScoped(state);
+          enterPhase(state, "interval");
+        }
         break;
 
       case "interval": { // †5-3

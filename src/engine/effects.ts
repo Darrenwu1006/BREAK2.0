@@ -5,6 +5,7 @@
 import type { Card } from "../data/types";
 import type { Action, Condition, Cost, CourtArea, CharaFilter, EffectDef, ParamName, PhaseIcon, SkillDef, Target } from "./dsl";
 import type { Awaiting, CardDb, EffectCtx, GameState, PendingItem, PlayerId, RtAction, Watcher } from "./types";
+import { nextRandom } from "./rng";
 
 // ---------- 共用工具 ----------
 
@@ -62,7 +63,11 @@ export function effParam(db: CardDb, state: GameState, uid: number, p: ParamName
   const base = baseParam(db, state, uid, p);
   if (base === null) return null;
   let v = base;
-  for (const m of state.modifiers) if (m.target === uid && m.param === p) v += m.amount;
+  for (const m of state.modifiers) {
+    if (m.target !== uid || m.param !== p) continue;
+    if (m.kind === "set") v = m.amount; // 固定（後續修正依解決順序再疊加 †0-2-12）
+    else v += m.amount;
+  }
   return v;
 }
 
@@ -86,9 +91,10 @@ export function charaAreaOf(state: GameState, p: PlayerId, uid: number): CourtAr
   return null;
 }
 
-/** 對象不再是キャラ時，套用中的修正失效（†6-10-3） */
+/** 對象不再是キャラ時，套用中的修正失效（†6-10-3）；072/073 型改名同時還原（Q226） */
 export function purgeModifiers(state: GameState, uid: number): void {
   state.modifiers = state.modifiers.filter((m) => m.target !== uid);
+  delete state.nameOverrides[uid];
 }
 
 /** 技能來源可付的ガッツ（ブロックエリア＝センターブロッカー下；其餘＝來源卡下）†1-4-8 */
@@ -140,6 +146,12 @@ export function banHandAddActive(state: GameState, p: PlayerId): boolean {
   return state.restrictions.some((r) => r.player === p && r.banHandAdd && r.setNo === state.setNo && r.activeTurn === state.turnNo);
 }
 
+/** センターブロッカーのブロックP無視中？（Q372~374；P02-027） */
+export function centerBlockNegated(state: GameState, p: PlayerId, uid: number): boolean {
+  if (topChara(state.players[p].blockCenter) !== uid) return false;
+  return state.restrictions.some((r) => r.player === p && r.negateCenterBlock && r.setNo === state.setNo && r.activeTurn === state.turnNo);
+}
+
 /** 自分のコート全ガッツ（gutsAny cost 用；Q315） */
 function allGutsOf(state: GameState, p: PlayerId): number[] {
   const ps = state.players[p];
@@ -155,26 +167,36 @@ function fireHandAdds(state: GameState, actor: PlayerId, count: number): void {
   }
 }
 
-/** 攔網「還可登場」人數（無限制＝3）；maxCount 是 turn 累計上限（Q191/Q196/Q204），已登場數要扣掉 */
-export function blockDeployMax(state: GameState, p: PlayerId): number {
-  let max = 3;
-  for (const r of restrictionsFor(state, p, "block")) if (r.maxCount !== undefined) max = Math.min(max, r.maxCount);
-  return Math.max(0, max - state.blockDeployedThisTurn[p]);
+/** 攔網「還可登場」人數（無限制＝3）；maxCount 是 turn 累計上限（Q191/Q196/Q204）。
+ *  origin "hand"＝登場步驟視角（fromHandOnly 限制計入 Q：P02-020）；"effect"＝效果登場視角（fromHandOnly 不適用） */
+export function blockDeployMax(state: GameState, p: PlayerId, origin: "hand" | "effect" = "hand"): number {
+  let remain = 3 - state.blockDeployedThisTurn[p];
+  for (const r of restrictionsFor(state, p, "block")) {
+    if (r.maxCount === undefined) continue;
+    if (r.fromHandOnly) {
+      if (origin === "hand") remain = Math.min(remain, r.maxCount - state.blockHandDeploysThisTurn[p]);
+    } else {
+      remain = Math.min(remain, r.maxCount - state.blockDeployedThisTurn[p]);
+    }
+  }
+  return Math.max(0, remain);
 }
 
 /**
  * 單卡可否登場到指定區（參數「－」†1-3-2-2、登場限制、同名禁止 †1-4-5-4-1）。
  * chosenName＝072/073 的選名（未選時以任一可行名判斷）；效果登場（deployFromDrop）也走這裡。
  */
-export function canDeployTo(db: CardDb, state: GameState, p: PlayerId, uid: number, area: CourtArea, chosenName?: string): boolean {
+export function canDeployTo(db: CardDb, state: GameState, p: PlayerId, uid: number, area: CourtArea, chosenName?: string, origin: "hand" | "effect" = "hand"): boolean {
   const c = cardOf(db, state, uid);
   if (c.type !== "CHARACTER" || !c.params || c.params[area] === null) return false;
   for (const r of restrictionsFor(state, p, area)) {
+    if (r.fromHandOnly && origin !== "hand") continue; // 「手札から」限定（P01-084/P02-097）
     if (r.maxCount === 0) return false;
     if (r.banBaseParamMin) {
       const b = baseParam(db, state, uid, r.banBaseParamMin.param);
       if (b !== null && b >= r.banBaseParamMin.value) return false;
     }
+    if (r.banPositions && r.banPositions.some((x) => c.positions.includes(x))) return false;
   }
   // 同名禁止：トス≠レシーブ、アタック≠トス（攔網同名於 deploy-block 整批驗證）
   let banned: string | null = null;
@@ -204,12 +226,35 @@ export function matchFilter(db: CardDb, state: GameState, uid: number, f: CharaF
   if (f.names && !f.names.map(normName).includes(nameOf(db, state, uid))) return false;
   if (f.affiliation && !c.affiliations.includes(f.affiliation)) return false;
   if (f.position && !c.positions.includes(f.position)) return false;
+  if (f.positionsAny && !f.positionsAny.some((x) => c.positions.includes(x))) return false;
   if (f.area && (area == null || !f.area.includes(area))) return false;
   if (f.baseParamMax) {
     const b = baseParam(db, state, uid, f.baseParamMax.param);
     if (b === null || b > f.baseParamMax.value) return false;
   }
+  if (f.baseParamEq) {
+    const b = baseParam(db, state, uid, f.baseParamEq.param);
+    if (b !== f.baseParamEq.value) return false;
+  }
+  if (f.notNames && f.notNames.map(normName).includes(nameOf(db, state, uid))) return false;
+  if (f.effParamMin) {
+    const v = paramForFilter(db, state, uid, f.effParamMin.param);
+    if (v === null || v < f.effParamMin.value) return false;
+  }
+  if (f.effParamEq) {
+    const v = paramForFilter(db, state, uid, f.effParamEq.param);
+    if (v !== f.effParamEq.value) return false;
+  }
+  if (f.skillless && effectDefOf(db, state, uid)) return false;
   return true;
+}
+
+/** filter 用的目前參數值（センターブロッカー無視中＝參照不可 Q373/Q457 → null） */
+function paramForFilter(db: CardDb, state: GameState, uid: number, p: ParamName): number | null {
+  if (p === "block") {
+    for (const pid of [0, 1] as const) if (centerBlockNegated(state, pid, uid)) return null;
+  }
+  return effParam(db, state, uid, p);
 }
 
 /** 別々の所属のキャラ N 人（†7-1-5：每人抽一個所属，求最大相異數；人數少，直接回溯） */
@@ -256,12 +301,45 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       return state.players[cond.player === "opponent" ? other(p) : p].hand.length >= cond.count;
     case "deployedFromHand":
       return ctx.origin === "hand";
+    case "deployedByCard":
+      return (ctx as { byCard?: string }).byCard === normName(cond.name);
+    case "dropDistinctNames": {
+      const names = new Set<string>();
+      for (const uid of state.players[p].drop) {
+        const c = cardOf(db, state, uid);
+        if (c.type !== "CHARACTER" || !c.affiliations.includes(cond.affiliation)) continue; // Q360 限キャラカード
+        names.add(normName(c.nameJa));
+      }
+      return names.size >= cond.min;
+    }
+    case "addedThisSkill":
+      return ((ctx as { addedToHand?: number }).addedToHand ?? 0) >= cond.min;
+    case "gutsParity": {
+      const stack = cond.area === "block" ? state.players[p].blockCenter : state.players[p][cond.area];
+      const n = Math.max(0, stack.length - 1);
+      return cond.parity === "odd" ? n % 2 === 1 : n % 2 === 0;
+    }
+    case "milledIs": {
+      const milled = (ctx as { milled?: number[] }).milled;
+      if (!milled?.length) return false;
+      return cardOf(db, state, milled[milled.length - 1]!).affiliations.includes(cond.affiliation);
+    }
+    case "selfIsSideBlocker":
+      return state.players[p].blockSides.includes(ctx.source);
+    case "paidGutsAll": {
+      const paid = (ctx as { paidGuts?: number[] }).paidGuts;
+      if (!paid?.length) return false;
+      return paid.every((u) => cardOf(db, state, u).positions.includes(cond.position));
+    }
     case "chara": {
       const who = cond.player === "opponent" ? other(p) : p;
-      return charasOf(state, who).some((c) => matchFilter(db, state, c.uid, cond.filter, c.area));
+      const n = charasOf(state, who).filter((c) => matchFilter(db, state, c.uid, cond.filter, c.area)).length;
+      return n >= (cond.minCount ?? 1);
     }
-    case "allCharas":
-      return charasOf(state, p).every((c) => cardOf(db, state, c.uid).affiliations.includes(cond.affiliation));
+    case "allCharas": {
+      const cs = charasOf(state, p);
+      return cs.length > 0 && cs.every((c) => cardOf(db, state, c.uid).affiliations.includes(cond.affiliation)); // Q404：0 人不成立
+    }
     case "distinctAffiliationCharas":
       return maxDistinctAffiliations(charasOf(state, p).map((c) => cardOf(db, state, c.uid).affiliations)) >= cond.min;
     case "eventAreaCount": {
@@ -303,6 +381,24 @@ function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid: numbe
       if (cands.length < c.count) return false;
     }
     if (c.type === "dropSelf" && !state.players[p].hand.includes(sourceUid)) return false;
+    if (c.type === "handToDeckBottom" && state.players[p].hand.length < c.count) return false;
+    if (c.type === "placeEventFromHand" && !state.players[p].hand.some((u) => cardOf(db, state, u).type === "EVENT")) return false;
+    if (c.type === "gutsFrom") {
+      let n = 0;
+      for (const area of c.areas) {
+        const stack = area === "block" ? state.players[p].blockCenter : state.players[p][area];
+        n += Math.max(0, stack.length - 1);
+      }
+      if (n < c.count) return false;
+    }
+    if (c.type === "millDeck" && state.players[p].deck.length < c.count) return false;
+    if (c.type === "dropChara" && !charasOf(state, p).some((x) => x.area === c.area && (!c.filter || matchFilter(db, state, x.uid, c.filter, x.area)))) return false;
+    if (c.type === "dropSelfFromCourt") {
+      const ps = state.players[p];
+      if (![ps.serve, ps.receive, ps.toss, ps.attack, ps.blockCenter].some((st) => st.includes(sourceUid)) && !ps.blockSides.includes(sourceUid)) return false;
+    }
+    if (c.type === "selfToDeckBottom" && charaAreaOf(state, p, sourceUid) === null) return false;
+    // tilt：純物理動作，恆可付（Q375）
   }
   return true;
 }
@@ -313,7 +409,14 @@ function costOps(costs: Cost[]): RtAction[] {
     if (c.type === "guts") out.push({ op: "_payGuts", count: c.count });
     else if (c.type === "gutsAny") out.push({ op: "_payGutsAny", count: c.count });
     else if (c.type === "dropFromHand") out.push({ op: "_dropHandCost", count: c.count, filter: c.filter });
-    // dropSelf 於宣言當下執行（useSkill）
+    else if (c.type === "handToDeckBottom") out.push({ op: "handToDeckBottom", count: c.count });
+    else if (c.type === "placeEventFromHand") out.push({ op: "_placeEventCost" });
+    else if (c.type === "gutsFrom") out.push({ op: "_payGutsFrom", areas: c.areas, count: c.count });
+    else if (c.type === "millDeck") out.push({ op: "_millCost", count: c.count });
+    else if (c.type === "dropChara") out.push({ op: "_dropCharaCost", area: c.area, filter: c.filter });
+    else if (c.type === "dropSelfFromCourt") out.push({ op: "_dropSelfCourt" });
+    else if (c.type === "selfToDeckBottom") out.push({ op: "_selfToDeckBottom" });
+    // dropSelf 於宣言當下執行（useSkill）；tilt 無遊戲狀態（Q375）
   }
   return out;
 }
@@ -338,14 +441,17 @@ export function deployCard(
   p: PlayerId,
   uid: number,
   area: CourtArea,
-  opts: { origin: "hand" | "other"; nameChoice?: string; blockSide?: boolean },
+  opts: { origin: "hand" | "other"; nameChoice?: string; blockSide?: boolean; byCard?: string },
 ): void {
   if (opts.nameChoice !== undefined) {
     state.nameOverrides[uid] = normName(opts.nameChoice);
     log(state, p, `${cardOf(db, state, uid).nameJa} 以「${opts.nameChoice}」之名登場`);
   }
   const ps = state.players[p];
-  if (area === "block") state.blockDeployedThisTurn[p]++;
+  if (area === "block") {
+    state.blockDeployedThisTurn[p]++;
+    if (opts.origin === "hand") state.blockHandDeploysThisTurn[p]++;
+  }
   let coveredUid: number | null = null;
   if (area === "block" && opts.blockSide) {
     ps.blockSides.push(uid);
@@ -354,6 +460,16 @@ export function deployCard(
     coveredUid = topChara(stack);
     if (coveredUid !== null) purgeModifiers(state, coveredUid); // 被蓋者非キャラ化 †6-10-3
     stack.push(uid);
+    if (coveredUid !== null) {
+      // 被蓋者的「上に登場した時」技能（ガッツ狀態下有效 †1-2-15-2-1；P01-047）
+      const dc = effectDefOf(db, state, coveredUid);
+      dc?.skills.forEach((sk, i) => {
+        if (sk.kind !== "passive" || sk.trigger.on !== "covered") return;
+        if (sk.trigger.area && !sk.trigger.area.includes(area)) return;
+        if (sk.trigger.by && !matchFilter(db, state, uid, sk.trigger.by, area)) return;
+        enqueue(state, { player: p, source: coveredUid!, kind: "passive", skillIndex: i, triggerUid: uid, desc: `${nameOf(db, state, coveredUid!)} 的技能（被蓋觸發）` });
+      });
+    }
   }
   // 自身的 [=登場] 被動（含效果登場 †6-6-2-3；エリアアイコン須符合 †1-3-7）
   const def = effectDefOf(db, state, uid);
@@ -365,7 +481,7 @@ export function deployCard(
         if (coveredUid === null) return;
         if (!s.trigger.overNames.map(normName).includes(nameOf(db, state, coveredUid))) return;
       }
-      enqueue(state, { player: p, source: uid, kind: "passive", skillIndex: i, origin: opts.origin, desc: `${nameOf(db, state, uid)} 的登場技能` });
+      enqueue(state, { player: p, source: uid, kind: "passive", skillIndex: i, origin: opts.origin, byCard: opts.byCard, desc: `${nameOf(db, state, uid)} 的登場技能` });
     });
   }
   // 場上其他卡的「自分のキャラが登場した時」被動（D02-004 灰羽型）
@@ -412,9 +528,27 @@ export function enqueueTurnEnd(state: GameState): number {
   return n;
 }
 
+/** Lost 宣告：turn 即時終了（†1-4-9-5）→「ターン中」期限的限制/ターン1/改名失效（Q324），
+ *  再讓「相手がロストした時」監看進入待機（†5-20-3②）。回傳新增待機數。 */
+export function onLostDeclared(db: CardDb, state: GameState, loser: PlayerId): number {
+  state.restrictions = state.restrictions.filter((r) => !(r.setNo === state.setNo && r.activeTurn === state.turnNo));
+  state.turn1 = [];
+  state.nameOverrides = {};
+  state.modifiers = [];
+  let n = 0;
+  for (const w of state.watchers) {
+    if (w.trigger.on !== "opponentLost" || !watcherActive(state, w)) continue;
+    if (loser !== other(w.player)) continue;
+    enqueue(state, { player: w.player, source: w.source, kind: "delayed", actions: w.actions, desc: w.desc });
+    n++;
+  }
+  return n;
+}
+
 /** クリンナップ †5-19＋turn 期限到期的狀態清理 */
 export function cleanupTurn(state: GameState): void {
   state.blockDeployedThisTurn = [0, 0];
+  state.blockHandDeploysThisTurn = [0, 0];
   state.modifiers = [];
   state.nameOverrides = {};
   state.turn1 = [];
@@ -425,6 +559,7 @@ export function cleanupTurn(state: GameState): void {
 /** ロストセット③④：Set 中的繼續效果/待機全部消滅 †5-20 */
 export function clearSetScoped(state: GameState): void {
   state.blockDeployedThisTurn = [0, 0];
+  state.blockHandDeploysThisTurn = [0, 0];
   state.modifiers = [];
   state.nameOverrides = {};
   state.turn1 = [];
@@ -442,6 +577,16 @@ function pendingValid(db: CardDb, state: GameState, item: PendingItem): boolean 
   const skill = def?.skills[item.skillIndex!];
   if (!skill || skill.kind !== "passive") return false;
   if (isSkillInvalid(db, state, item.player, item.source)) return false;
+  if (
+    state.restrictions.some((r) => r.player === item.player && r.banOneTouch && r.setNo === state.setNo && r.activeTurn === state.turnNo) &&
+    JSON.stringify(skill).includes('"ワンタッチ"')
+  )
+    return false; // Q356：任意 N 的ワンタッチ皆無效
+  if (skill.trigger.on === "covered") {
+    // ガッツ狀態下有效（†1-2-15-2-1）：仍在コート疊放區即可
+    const ps = state.players[item.player];
+    return [ps.serve, ps.receive, ps.toss, ps.attack, ps.blockCenter].some((st) => st.includes(item.source));
+  }
   const area = charaAreaOf(state, item.player, item.source);
   if (area === null) return false; // 已離場/被蓋
   if (skill.areaIcons && !skill.areaIcons.includes("court") && !skill.areaIcons.includes(area)) return false;
@@ -483,8 +628,9 @@ export function startPendingItem(db: CardDb, state: GameState, id: number): void
       source: item.source,
       frames: [{ actions: [...skill.actions], pc: 0 }],
       lastTarget: null,
-      triggerUid: null,
+      triggerUid: item.triggerUid ?? null,
       origin: item.origin,
+      byCard: item.byCard,
       turn1: !!skill.turn1,
       anyExecuted: false,
       awaiting: null,
@@ -548,6 +694,12 @@ export function freeOptions(db: CardDb, state: GameState): { skills: FreeOption[
       const okArea = s.areaIcons.some((ic) => (ic === "hand" ? inHand : ic === "court" ? area !== null : ic === area));
       if (!okArea) return;
       if (isSkillInvalid(db, state, p, uid)) return;
+      if (
+        s.phaseIcons.includes("receive") &&
+        s.areaIcons.includes("hand") &&
+        state.restrictions.some((r) => r.player === p && r.banHandReceiveActive && r.setNo === state.setNo && r.activeTurn === state.turnNo)
+      )
+        return; // Q357：[=レシーブフェイズ][=手札] 技能無效
       if (s.costs && !costPayable(db, state, p, uid, s.costs)) return;
       const pseudo = { player: p, source: uid, lastTarget: null };
       if (s.cond && !s.cond.every((c) => evalCond(db, state, pseudo, c))) return;
@@ -624,10 +776,21 @@ export function playEvent(db: CardDb, state: GameState, uid: number): void {
 
 function applyMod(db: CardDb, state: GameState, ctx: EffectCtx, targetUid: number, param: ParamName, amount: number): void {
   if (baseParam(db, state, targetUid, param) === null) return; // 「－」不受加減 †1-3-2-1
+  for (const pid of [0, 1] as const) {
+    if (param === "block" && centerBlockNegated(state, pid, targetUid)) return; // ブロックP無いものとして扱う（Q373）
+  }
   state.modifiers.push({ target: targetUid, param, amount, source: ctx.source });
   ctx.anyExecuted = true;
   const v = effParam(db, state, targetUid, param);
   log(state, ctx.player, `${nameOf(db, state, targetUid)} 的${paramLabel(param)}${amount >= 0 ? "+" : ""}${amount}（→${v}）`);
+}
+
+function applySetMod(db: CardDb, state: GameState, ctx: EffectCtx, targetUid: number, param: ParamName, value: number): void {
+  if (baseParam(db, state, targetUid, param) === null) return; // 「－」不受變更 †1-3-2-1
+  for (const pid of [0, 1] as const) if (param === "block" && centerBlockNegated(state, pid, targetUid)) return;
+  state.modifiers.push({ target: targetUid, param, amount: value, kind: "set", source: ctx.source });
+  ctx.anyExecuted = true;
+  log(state, ctx.player, `${nameOf(db, state, targetUid)} 的${paramLabel(param)}變為 ${effParam(db, state, targetUid, param)}`);
 }
 
 const PARAM_LABELS: Record<ParamName, string> = { serve: "發球點數", block: "攔網點數", receive: "接球點數", toss: "托球點數", attack: "攻擊點數" };
@@ -843,7 +1006,13 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const looked = ps.deck.slice(0, n);
       ctx.anyExecuted = true;
       log(state, p, `查看牌組頂 ${n} 張`);
-      const cands = banHandAddActive(state, p) ? [] : looked.filter((uid) => a.names.map(normName).includes(nameOf(db, state, uid)));
+      const cands = banHandAddActive(state, p)
+        ? []
+        : looked.filter((uid) => {
+            if (a.names && !a.names.map(normName).includes(nameOf(db, state, uid))) return false;
+            if (a.affiliation && !cardOf(db, state, uid).affiliations.includes(a.affiliation)) return false;
+            return true;
+          });
       if (cands.length === 0) {
         for (const uid of looked) {
           ps.deck.splice(ps.deck.indexOf(uid), 1);
@@ -871,7 +1040,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const blockers = charasOf(state, p).filter((c) => c.area === "block");
       if (blockers.length >= 3) break; // 補足文：已 3 人
       if (blockers.some((c) => nameOf(db, state, c.uid) === nameOf(db, state, ctx.source))) break; // 補足文：同名 blocker 已在
-      if (blockDeployMax(state, p) < 1) {
+      if (blockDeployMax(state, p, "effect") < 1) {
         log(state, p, `${nameOf(db, state, ctx.source)} 因登場限制無法移動到攔網區`); // Q196：cost 已付仍不移動
         break;
       }
@@ -915,15 +1084,16 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "deployFromDrop": {
+      if (a.side && (ps.blockSides.length >= 2 || blockDeployMax(state, p, "effect") < 1)) break; // Q398：側邊已滿不解決
       const cands = ps.drop.filter((uid) => {
         const c = cardOf(db, state, uid);
-        return c.type === "CHARACTER" && matchFilter(db, state, uid, a.filter) && canDeployTo(db, state, p, uid, a.area);
+        return c.type === "CHARACTER" && matchFilter(db, state, uid, a.filter) && canDeployTo(db, state, p, uid, a.area, undefined, "effect");
       });
       if (cands.length === 0) break;
       if (cands.length === 1) {
-        completeDeployFromDrop(db, state, ctx, cands[0]!, a.area, a.then ?? []);
+        completeDeployFromDrop(db, state, ctx, cands[0]!, a.area, a.then ?? [], a.side);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "deployFromDrop", candidates: cands, min: 1, max: 1, area: a.area, then: a.then ?? [], prompt: "選擇從棄牌區登場的卡" }; // Q303：強制
+        ctx.awaiting = { kind: "cards", purpose: "deployFromDrop", candidates: cands, min: 1, max: 1, area: a.area, then: [...(a.then ?? []), ...(a.side ? [{ op: "__side" } as unknown as Action] : [])], prompt: "選擇從棄牌區登場的卡" }; // Q303：強制
       }
       break;
     }
@@ -943,18 +1113,123 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         log(state, p, "「手札に加えられない」生效中");
         break;
       }
+      const pairOk = (x: number, y: number): boolean => {
+        const cx = cardOf(db, state, x);
+        const cy = cardOf(db, state, y);
+        if (a.affiliation && (!cx.affiliations.includes(a.affiliation) || !cy.affiliations.includes(a.affiliation))) return false;
+        if (a.sameAffiliation && !cx.affiliations.some((z) => cy.affiliations.includes(z))) return false;
+        if (a.distinctNames && nameOf(db, state, x) === nameOf(db, state, y)) return false; // Q224/Q226：以目前卡名比對
+        return true;
+      };
       const cands: number[] = [];
       for (const area of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
         const guts = ps[area].slice(0, -1);
-        // 區內存在共通所属的兩張 → 該區的 guts 全部列為候選（Q297：湊不齊不執行；Q282 複數所属取交集）
         let ok = false;
         for (let i = 0; i < guts.length && !ok; i++)
-          for (let j = i + 1; j < guts.length && !ok; j++)
-            if (cardOf(db, state, guts[i]!).affiliations.some((x) => cardOf(db, state, guts[j]!).affiliations.includes(x))) ok = true;
-        if (ok) cands.push(...guts);
+          for (let j = i + 1; j < guts.length && !ok; j++) if (pairOk(guts[i]!, guts[j]!)) ok = true;
+        if (ok) cands.push(...guts.filter((u) => !a.affiliation || cardOf(db, state, u).affiliations.includes(a.affiliation)));
       }
+      if (cands.length === 0) break; // Q297：湊不齊整段不執行
+      ctx.awaiting = { kind: "cards", purpose: "gutsToHand", candidates: cands, min: a.count, max: a.count, prompt: `從同一區選 ${a.count} 張 Guts 加入手牌${a.distinctNames ? "（卡名須相異）" : ""}` };
+      break;
+    }
+    case "eventAreaToHand": {
+      if (banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中");
+        break;
+      }
+      const cands = ps.eventArea.filter((u) => {
+        if (!a.filter) return true;
+        const c = cardOf(db, state, u);
+        if (a.filter.names && !a.filter.names.map(normName).includes(nameOf(db, state, u))) return false;
+        if (a.filter.affiliation && !c.affiliations.includes(a.filter.affiliation)) return false;
+        return true;
+      }); // 不限頂牌（Q331/Q368）
       if (cands.length === 0) break;
-      ctx.awaiting = { kind: "cards", purpose: "gutsToHand", candidates: cands, min: a.count, max: a.count, prompt: `從同一區選 ${a.count} 張同所属的 Guts 加入手牌` };
+      const min = a.upTo ? 0 : Math.min(a.count, cands.length);
+      ctx.awaiting = { kind: "cards", purpose: "eventToHand", candidates: cands, min, max: a.count, then: a.then, prompt: `從事件區選擇要加入手牌的卡${a.upTo ? "（可選 0 張）" : ""}` };
+      break;
+    }
+    case "handToDeckBottom": {
+      const n = Math.min(a.count, ps.hand.length);
+      if (n === 0) break;
+      if (ps.hand.length === n) {
+        for (const uid of [...ps.hand]) {
+          removeFromHand(state, p, uid);
+          ps.deck.push(uid);
+        }
+        ctx.anyExecuted = true;
+        log(state, p, `${n} 張手牌置於牌組底`);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "handToBottom", candidates: [...ps.hand], min: n, max: n, prompt: `選擇 ${n} 張手牌置於牌組底` };
+      }
+      break;
+    }
+    case "deployFromGuts": {
+      const pool = a.fromArea
+        ? (a.fromArea === "block" ? ps.blockCenter : ps[a.fromArea]).slice(0, -1)
+        : allGutsOf(state, p);
+      const cands = pool.filter((u) => {
+        const c = cardOf(db, state, u);
+        return c.type === "CHARACTER" && matchFilter(db, state, u, a.filter) && canDeployTo(db, state, p, u, a.area, undefined, "effect");
+      });
+      if (cands.length === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "deployFromGuts", candidates: cands, min: 0, max: a.upTo, area: a.area, then: a.then, prompt: `選擇要從ガッツ登場到${a.area}的卡（可選 0 張）` };
+      break;
+    }
+    case "setParam": {
+      const uid = typeof a.target === "object" && a.target.choose
+        ? null
+        : resolveTargetUid(ctx, a.target as "self" | "target" | "trigger");
+      if (typeof a.target === "object" && a.target.choose) {
+        const who = a.target.player === "opponent" ? other(p) : p;
+        const cands = charasOf(state, who).filter((c) => matchFilter(db, state, c.uid, a.target as CharaFilter, c.area)).map((c) => c.uid);
+        if (cands.length === 0) break;
+        if (cands.length === 1) {
+          applySetMod(db, state, ctx, cands[0]!, a.param, a.value);
+        } else {
+          ctx.awaiting = { kind: "cards", purpose: "target", candidates: cands, min: 1, max: 1, param: a.param, amount: a.value, then: [{ op: "__setMarker" } as unknown as Action], prompt: `選擇對象（${paramLabel(a.param)}→${a.value}）` };
+        }
+      } else if (uid !== null) {
+        applySetMod(db, state, ctx, uid, a.param, a.value);
+      }
+      break;
+    }
+    case "millTopAll": {
+      const n = Math.min(a.count, ps.deck.length);
+      const milled: number[] = [];
+      for (let k = 0; k < n; k++) {
+        const uid = ps.deck.shift()!;
+        ps.drop.push(uid);
+        milled.push(uid);
+      }
+      if (n > 0) {
+        ctx.anyExecuted = true;
+        log(state, p, `牌組頂 ${n} 張置入棄牌區`);
+      }
+      // Q395：0 枚→不成立；Q396：可能な限り棄到沒有為止、全部符合即成立
+      if (a.match && a.then && milled.length > 0 && milled.every((u) => cardOf(db, state, u).affiliations.includes(a.match!.affiliation))) pushFrame(ctx, [...a.then]);
+      break;
+    }
+    case "dropOpponentGuts": {
+      const opp = other(p);
+      const stack = a.area === "block" ? state.players[opp].blockCenter : state.players[opp][a.area];
+      const guts = stack.slice(0, -1);
+      if (guts.length === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "dropOppGuts", candidates: guts, min: 0, max: a.upTo, prompt: `選擇要棄掉的對手 ${a.area} 區 Guts（最多 ${a.upTo} 張；Q400 由你選）` };
+      break;
+    }
+    case "coinFlip": {
+      const heads = nextRandom(state) < 0.5;
+      ctx.anyExecuted = true;
+      log(state, p, `擲硬幣：${heads ? "正面" : "反面"}`);
+      pushFrame(ctx, heads ? [...a.heads] : [...a.tails]);
+      break;
+    }
+    case "moveGutsToArea": {
+      const cands = allGutsOf(state, p).filter((u) => matchFilter(db, state, u, a.filter)); // Q405：任意區
+      if (cands.length === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "moveGuts", candidates: cands, min: 0, max: a.upTo, area: a.area, prompt: `選擇要移到${a.area}區當 Guts 的卡（可選 0 張）` };
       break;
     }
     case "watch": {
@@ -980,6 +1255,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         maxCount: a.restriction.maxCount,
         banBaseParamMin: a.restriction.banBaseParamMin,
         banHandAdd: a.restriction.banHandAdd,
+        fromHandOnly: a.restriction.fromHandOnly,
+        negateCenterBlock: a.restriction.negateCenterBlock,
+        banOneTouch: a.restriction.banOneTouch,
+        banHandReceiveActive: a.restriction.banHandReceiveActive,
+        banPositions: a.restriction.banPositions,
+        blockFailIfDpMax: a.restriction.blockFailIfDpMax,
         setNo: state.setNo,
         activeTurn: state.turnNo + 1,
         desc: `${nameOf(db, state, ctx.source)} 的限制`,
@@ -1002,7 +1283,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "addOpponentOp": {
-      if (state.op && state.op.owner !== p) {
+      if (state.op && state.op.owner !== p && state.op.source === "attack") {
         state.op.value += a.amount;
         ctx.anyExecuted = true;
         log(state, p, `對手的 OP ${a.amount >= 0 ? "+" : ""}${a.amount}（→${state.op.value}）`);
@@ -1044,6 +1325,89 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       } else {
         ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max: a.count, prompt: `從自己的場上選擇要支付的 ${a.count} 張 Guts` };
       }
+      break;
+    }
+    case "_payGutsFrom": {
+      const guts: number[] = [];
+      for (const area of a.areas) {
+        const stack = area === "block" ? ps.blockCenter : ps[area];
+        guts.push(...stack.slice(0, -1));
+      }
+      if (guts.length < a.count) throw new Error("Guts 不足（宣言驗證應已擋下）");
+      if (guts.length === a.count) {
+        payGuts(db, state, ctx, guts);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max: a.count, prompt: `從${a.areas.join("/")}選擇要支付的 ${a.count} 張 Guts（合計 Q251）` };
+      }
+      break;
+    }
+    case "_millCost": {
+      const milled: number[] = [];
+      for (let k = 0; k < a.count && ps.deck.length > 0; k++) {
+        const uid = ps.deck.shift()!;
+        ps.drop.push(uid);
+        milled.push(uid);
+        log(state, p, `牌組頂 ${cardOf(db, state, uid).nameJa} 置入棄牌區（cost）`);
+      }
+      ctx.milled = [...(ctx.milled ?? []), ...milled];
+      ctx.anyExecuted = true;
+      break;
+    }
+    case "_dropCharaCost": {
+      const cands = charasOf(state, p).filter((x) => x.area === a.area && (!a.filter || matchFilter(db, state, x.uid, a.filter, x.area))).map((x) => x.uid);
+      if (cands.length === 0) throw new Error("無可棄的キャラ（宣言驗證應已擋下）");
+      if (cands.length === 1) {
+        dropChara(db, state, ctx, cands[0]!);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "dropChara", candidates: cands, min: 1, max: 1, prompt: "選擇要棄掉的キャラ（cost）" };
+      }
+      break;
+    }
+    case "_placeEventCost": {
+      const cands = ps.hand.filter((u) => cardOf(db, state, u).type === "EVENT");
+      if (cands.length === 0) throw new Error("手牌無事件卡（宣言驗證應已擋下）");
+      if (cands.length === 1) {
+        removeFromHand(state, p, cands[0]!);
+        ps.eventArea.push(cands[0]!);
+        ctx.anyExecuted = true;
+        log(state, p, `${nameOf(db, state, cands[0]!)} 置於事件區（cost；技能不發動 Q337）`);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "placeEvent", candidates: cands, min: 1, max: 1, prompt: "選擇 1 張事件卡置於事件區（技能不發動）" };
+      }
+      break;
+    }
+    case "_dropSelfCourt": {
+      const stacks = ["serve", "receive", "toss", "attack", "blockCenter"] as const;
+      for (const key of stacks) {
+        const i = ps[key].indexOf(ctx.source);
+        if (i >= 0) {
+          ps[key].splice(i, 1);
+          break;
+        }
+      }
+      const j = ps.blockSides.indexOf(ctx.source);
+      if (j >= 0) ps.blockSides.splice(j, 1);
+      purgeModifiers(state, ctx.source);
+      ps.drop.push(ctx.source);
+      ctx.anyExecuted = true;
+      log(state, p, `${nameOf(db, state, ctx.source)} 進入棄牌區（cost）`);
+      break;
+    }
+    case "_selfToDeckBottom": {
+      const stacks = ["serve", "receive", "toss", "attack", "blockCenter"] as const;
+      for (const key of stacks) {
+        const i = ps[key].indexOf(ctx.source);
+        if (i >= 0) {
+          ps[key].splice(i, 1);
+          break;
+        }
+      }
+      const j = ps.blockSides.indexOf(ctx.source);
+      if (j >= 0) ps.blockSides.splice(j, 1);
+      purgeModifiers(state, ctx.source);
+      ps.deck.push(ctx.source);
+      ctx.anyExecuted = true;
+      log(state, p, `${nameOf(db, state, ctx.source)} 置於牌組底（cost）`);
       break;
     }
     case "_dropHandCost": {
@@ -1094,16 +1458,34 @@ function payGuts(db: CardDb, state: GameState, ctx: EffectCtx, uids: number[]): 
     }
     ps.drop.push(uid);
   }
+  ctx.paidGuts = [...(ctx.paidGuts ?? []), ...uids];
   ctx.anyExecuted = true;
   log(state, ctx.player, `支付 ${uids.length} Guts`);
 }
 
-function completeDeployFromDrop(db: CardDb, state: GameState, ctx: EffectCtx, uid: number, area: CourtArea, then: Action[]): void {
+function dropChara(db: CardDb, state: GameState, ctx: EffectCtx, uid: number): void {
+  const ps = state.players[ctx.player];
+  for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+    const i = ps[key].indexOf(uid);
+    if (i >= 0) {
+      ps[key].splice(i, 1);
+      break;
+    }
+  }
+  const j = ps.blockSides.indexOf(uid);
+  if (j >= 0) ps.blockSides.splice(j, 1);
+  purgeModifiers(state, uid);
+  ps.drop.push(uid);
+  ctx.anyExecuted = true;
+  log(state, ctx.player, `${nameOf(db, state, uid)} 進入棄牌區（cost）`);
+}
+
+function completeDeployFromDrop(db: CardDb, state: GameState, ctx: EffectCtx, uid: number, area: CourtArea, then: Action[], side?: boolean): void {
   const ps = state.players[ctx.player];
   const i = ps.drop.indexOf(uid);
   if (i < 0) throw new Error("卡片不在棄牌區");
   ps.drop.splice(i, 1);
-  deployCard(db, state, ctx.player, uid, area, { origin: "other" });
+  deployCard(db, state, ctx.player, uid, area, { origin: "other", blockSide: side });
   log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區登場 → ${area}`);
   ctx.lastTarget = uid;
   ctx.anyExecuted = true;
@@ -1178,7 +1560,14 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
     ctx.awaiting = null;
     switch (aw.purpose) {
       case "target":
-        if (uids.length === 1) afterTargetChosen(db, state, ctx, uids[0]!, aw.param!, aw.amount!);
+        if (uids.length === 1) {
+          if (aw.then?.some((x) => (x as { op?: string }).op === "__setMarker")) {
+            ctx.lastTarget = uids[0]!;
+            applySetMod(db, state, ctx, uids[0]!, aw.param as ParamName, aw.amount!);
+          } else {
+            afterTargetChosen(db, state, ctx, uids[0]!, aw.param!, aw.amount!);
+          }
+        }
         break;
       case "guts":
         payGuts(db, state, ctx, uids);
@@ -1207,6 +1596,7 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
             log(state, ctx.player, "看過的卡置於牌組底");
           }
         }
+        ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
         fireHandAdds(state, ctx.player, uids.length); // 非抽牌入手（Q321）
         break;
       }
@@ -1236,8 +1626,11 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           };
           const areas = new Set(uids.map(areaOf));
           if (areas.size !== 1 || areas.has(null)) throw new Error("必須從同一區的 Guts 中選擇");
-          const shared = uids.map((u) => cardOf(db, state, u).affiliations).reduce((acc, cur) => acc.filter((x) => cur.includes(x)));
-          if (shared.length === 0) throw new Error("所選 Guts 沒有共通所属");
+          const names = uids.map((u) => nameOf(db, state, u));
+          if (new Set(names).size !== names.length) {
+            const shared = uids.map((u) => cardOf(db, state, u).affiliations).reduce((acc, cur) => acc.filter((x) => cur.includes(x)));
+            if (shared.length === 0) throw new Error("所選 Guts 沒有共通所属");
+          }
           for (const uid of uids) {
             for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
               const i = ps[key].indexOf(uid);
@@ -1263,7 +1656,98 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           ctx.anyExecuted = true;
           log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區加入手牌`);
         }
+        ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
         fireHandAdds(state, ctx.player, uids.length);
+        break;
+      }
+      case "eventToHand": {
+        for (const uid of uids) {
+          const i = ps.eventArea.indexOf(uid);
+          if (i < 0) throw new Error("卡片不在事件區");
+          ps.eventArea.splice(i, 1);
+          ps.hand.push(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從事件區加入手牌`);
+        }
+        if (uids.length) {
+          ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
+          fireHandAdds(state, ctx.player, uids.length);
+          if (aw.then) pushFrame(ctx, [...aw.then]); // 「加えた場合」（D03-001）
+        }
+        break;
+      }
+      case "handToBottom": {
+        for (const uid of uids) {
+          removeFromHand(state, ctx.player, uid);
+          ps.deck.push(uid);
+        }
+        if (uids.length) {
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${uids.length} 張手牌置於牌組底`);
+        }
+        break;
+      }
+      case "placeEvent": {
+        for (const uid of uids) {
+          removeFromHand(state, ctx.player, uid);
+          ps.eventArea.push(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 置於事件區（cost；技能不發動 Q337）`);
+        }
+        break;
+      }
+      case "dropOppGuts": {
+        const opp = other(ctx.player);
+        const os = state.players[opp];
+        for (const uid of uids) {
+          for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+            const i = os[key].indexOf(uid);
+            if (i >= 0) {
+              os[key].splice(i, 1);
+              break;
+            }
+          }
+          os.drop.push(uid);
+          ctx.anyExecuted = true;
+        }
+        if (uids.length) log(state, ctx.player, `棄掉對手 ${uids.length} 張 Guts`);
+        break;
+      }
+      case "moveGuts": {
+        for (const uid of uids) {
+          for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+            const i = ps[key].indexOf(uid);
+            if (i >= 0) {
+              ps[key].splice(i, 1);
+              break;
+            }
+          }
+          const dest = aw.area === "block" ? ps.blockCenter : ps[aw.area!];
+          dest.unshift(uid); // 插入底部＝ガッツ（順序 Master 自由 †1-2-15）
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 移到 ${aw.area} 區當 Guts`);
+        }
+        break;
+      }
+      case "deployFromGuts": {
+        for (const uid of uids) {
+          for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+            const i = ps[key].indexOf(uid);
+            if (i >= 0) {
+              ps[key].splice(i, 1);
+              break;
+            }
+          }
+          deployCard(db, state, ctx.player, uid, aw.area!, { origin: "other", byCard: nameOf(db, state, ctx.source) });
+          ctx.anyExecuted = true;
+          ctx.lastTarget = uid;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從ガッツ登場 → ${aw.area}`);
+        }
+        if (uids.length && aw.then) pushFrame(ctx, [...aw.then]);
+        break;
+      }
+      case "dropChara": {
+        for (const uid of uids) dropChara(db, state, ctx, uid);
         break;
       }
       case "forceDrop": {
@@ -1278,9 +1762,12 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         }
         break;
       }
-      case "deployFromDrop":
-        if (uids.length === 1) completeDeployFromDrop(db, state, ctx, uids[0]!, aw.area!, aw.then ?? []);
+      case "deployFromDrop": {
+        const side = aw.then?.some((x) => (x as { op?: string }).op === "__side");
+        const rest = (aw.then ?? []).filter((x) => (x as { op?: string }).op !== "__side");
+        if (uids.length === 1) completeDeployFromDrop(db, state, ctx, uids[0]!, aw.area!, rest, side);
         break;
+      }
     }
     return;
   }
@@ -1322,6 +1809,6 @@ export function autoPickCards(db: CardDb, state: GameState): number[] {
     }
     return [];
   }
-  if (aw.purpose === "tutor" || aw.purpose === "moveToHand" || aw.purpose === "dropToHand") return aw.candidates.slice(0, aw.max);
+  if (aw.purpose === "tutor" || aw.purpose === "moveToHand" || aw.purpose === "dropToHand" || aw.purpose === "eventToHand" || aw.purpose === "deployFromGuts") return aw.candidates.slice(0, aw.max);
   return aw.candidates.slice(0, aw.min);
 }
