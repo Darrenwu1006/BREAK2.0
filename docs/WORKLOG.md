@@ -20,7 +20,7 @@
 
 ### 已定案（詳見 BLUEPRINT.md「已確認決策」）
 - 本地網頁 App（TS+Vite+React+Node）／repo JSON 為主／AI 越強越好（引擎須支援 MCTS）
-- 繁中為主缺譯顯日文／新卡自動機翻草稿+待校標記／卡圖爬回本地顯示
+- 繁中為主缺譯顯日文／新卡自動產生翻譯草稿＋待確認標記／卡圖爬回本地顯示
 - deck/ 為使用者自製構築會持續改／**卡片編號為主鍵，稀有度（頂、頂P、S、N…）只是同卡的不同卡面版本，牌組編輯器可選卡面**
 
 ### 待自行查證（不需問使用者，讀 PDF/官網即可）
@@ -81,7 +81,7 @@
   - 本地 CSV 卡片名稱其實是繁中譯名 → 名稱不一致時移存 nameZh，nameJa 採官網
   - 所属欄正規化（分隔符 ·・･ 混用、逗號/斜線複數、官網 typo「梟谷2·年」修正表）→ affiliations[] + grades[]
   - 參數不一致以官網為準並警告（發現 HV-P01-049 猿杙大和 本地參數整列錯位）
-- data/translations.json：70 張新卡技能機翻草稿（machine 待校）；merge 時自動套用，重跑不丟
+- data/translations.json：70 張新卡技能翻譯草稿（當時為 machine 待確認）；merge 時自動套用，重跑不丟
 - 卡圖 364/364 → public/cards/（32MB）；稀有度↔圖檔尾碼：頂→H、秘→I、極→K
 - 判例 351 件 → data/raw/official_faq.json + docs/RULINGS.md（141 張卡有個別判例）
 - 測試 7 件全過、typecheck 過
@@ -223,7 +223,7 @@
 - decks/ 的 CSV 現在由編輯器寫入：欄位多了「卡面」（選填），舊檔案不受影響
 
 ### 下一步
-- 本 session：M6 待補項（進階篩選、機翻校對流程）或等使用者回饋
+- 本 session：M6 待補項（進階篩選、翻譯確認流程）或等使用者回饋
 - M3/M7：等使用者點 chip 開工
 
 ### 中斷點
@@ -405,6 +405,18 @@
 
 ## 📌 下次起點（使用者指定）：補完剩餘 94 張 todo 卡
 
+> **開始補卡前先停下做架構回覆**：閱讀 `docs/M3_DSL_ARCHITECTURE_REVIEW.md`。使用者擔心未來「後排攻擊」等新詞綴使 DSL 與 `effects.ts` 難以維護。接手的 Claude 應先回覆 review 六題、分類 94 張卡的機制需求，再決定最小整理方案；不要直接開始大量新增 primitive。
+>
+> ✅ **review 六題已書面回覆**（見上方「2026-06-13 — Claude 對 M3_DSL_ARCHITECTURE_REVIEW 的書面回覆」節）；責任邊界已寫入 BLUEPRINT「核心引擎/DSL/Script」表。**補卡前順序改為下方 Step 0→1→2，不再「直接補」。**
+
+**Step 0（補卡前，~半天）安全網——最小變更（兩項，與 review 一致；effects.ts 拆分降級延後）：**
+1. `tools/apply-effects.mjs` 加 schema validation：walk 每張 effect，檢查 op/type 在白名單、必填欄位齊 → 拼錯立即報錯（現在要對局碰到才爆）。約 40 行
+2. script registry：`SkillDef` 加 `{kind:"script",id}`；effects.ts 加 `Record<string,(db,state,ctx)=>void>` 查表；挑 1 張現有單卡 primitive（建議白布 P02-050 的 paidGutsAll，或天童 coinFlip）改寫成 script 當範例＋驗證。約 50 行
+
+**Step 1（補卡前，~1hr）94 張機制分類（只分類不實作）：** 四類——①現有 DSL 可表達 ②需通用 primitive（須過 rule-of-three：服務≥3卡或對應規則明文）③需核心流程擴充（如後排攻擊→不猜，等規則） ④適合 script。
+
+**Step 2（補卡，分批）** 多數套現有 DSL；新 primitive 過 rule-of-three 否則走 script；每批順手加跨效果不變量測試（禁止優先、modifier 清除、set/add 順序一致、turn player 優先、跳 phase 清理）。
+
 **目標**：把目前 effectStatus=todo 的 94 張卡（無牌組使用的卡面變體）全部實裝成 dsl，達成「整個卡池 100% 效果化」。
 
 **清單（94 張，跑 `node -e` 過濾 effectStatus==="todo" 可重新產生）**：
@@ -427,3 +439,102 @@ HVBP-001/002/003/004/009/013/014
 
 ### 中斷點
 - 無半成品。從上面「下次起點」的步驟 1 開始即可
+
+---
+
+## 2026-06-13 — Claude 對 M3_DSL_ARCHITECTURE_REVIEW 的書面回覆
+
+> 回應 docs/M3_DSL_ARCHITECTURE_REVIEW.md 的六題（review 要求書面回覆）。實測數據：effects.ts 1814 行/83 case、33 action op＋31 condition 服務 98 卡、被點名 primitive 多為 1:1。
+
+**Q1 是否同意規模與耦合風險？** 同意，且數據佐證（上行）。但限定：這是「200+ 卡時兌現的債」，非現在的阻塞——目前擴充一校仍 1~2hr，耦合未拖慢開發。結論：該還，不必恐慌式重寫。
+
+**Q2 哪些 primitive 通用、哪些改 script/小積木？** 反對「一律視為特化」，做三分類：
+- 保留（規則層穩定概念，即使現只 1 卡）：`blockFailIfDpMax`（†5-15-3 追加失敗條件，建議改名 addFailCondition）、`negateCenterBlock`（無效化參照）、`covered`（†1-2-15-2-1 ガッツ技能）、`opponentLost`（觸發時點）、`milledIs`。
+- 一般化成更小積木：`gutsParity`→`gutsCount`+比較運算子；`paidGutsAll`→通用「付出卡集合述詞」。
+- script 候選（純 1 卡無規則普遍性）：之後若無第二張卡用，移 script。現不急搬。
+
+**Q3 後排攻擊放哪？判斷標準？** 標準（採 review 清單）：改變「誰能當攻擊者／OP 組成／階段時序／防守回應」任一 → 核心引擎（擴 AttackContext）；只是條件式數值增減 → DSL；單卡怪交互 → script。後排攻擊大概率核心引擎（改變攻擊參與者）。**但無正式規則前不動、不猜語義。** 目前卡池無此卡。
+
+**Q4 補卡前是否先建 registry/validation/拆分？最小方案？**
+- schema validation：**是，補卡前做**。apply-effects.mjs 加 walk 檢查 op/type 白名單＋必填欄位。~40 行。
+- script registry：**是，補卡前做**。SkillDef 加 `{kind:"script",id}`＋effects.ts 一個 `Record<id,(ctx)=>void>` 查表。~50 行＋首個 script 範例。
+- handler 拆分（effects.ts→registry 目錄）：**否，延後**。單作者階段過早抽象，補完卡或遇 merge 痛點再做。
+
+**Q5 如何避免每詞綴都改 dsl+effects+engine+UI+AI？** 現況其實已大幅收斂：純數值/選卡效果**已不需改** engine/UI/AI（走通用 effect-confirm/cards/option/resolve-pending 決策通道）。這幾批幾乎無新增決策型別＝good。對策：①DSL 新詞只改 dsl.ts+effects.ts（可接受的最小擴散）②嚴禁為單卡新增「決策型別」，複用現有 4 種 ③script registry 當逃生口。
+
+**Q6 調整順序／影響／可延後？** 修正版（與 review 略異，把拆分降級）：
+1.【補卡前 ~半天】schema validation＋script registry（安全網）— 影響：tools/＋dsl.ts/effects.ts 各小幅
+2.【補卡前 ~1hr】94 張機制分類（不實作）
+3.【補卡 分批】多數套現有 DSL；新 primitive 須過 rule-of-three，否則走 script；每批順手加跨效果不變量測試
+4.【延後】effects.ts 漸進拆分（補完卡/痛點時）
+5.【延後，取得正式規則後】後排攻擊等核心流程模型（不猜）
+6.【延後】permanent 型一般化、duration 結構化
+
+**與 review 的分歧（明確記錄）：** review 第 4 步「拆 effects.ts」我降級為延後項，理由＝過早抽象/YAGNI/單作者。其餘大方向認同。
+
+**自我糾正：** 我上則 WORKLOG「下次直接補 94 張」是錯的（違反 review 的 acceptance：先分類/先安全網）。已採納，下次起點改為下節。
+
+---
+
+## 📌 進行中待辦（2026-06-13 使用者定案：把 M3 沉澱成可交接 skill spec）
+
+> 背景：使用者要把卡池更新與技能建置做成 skill spec，讓**不同模型分別建置/檢驗**（測各模型規則建構能力），token 不足時換手。卡池更新週期 ~1.5 月，**下次 6/27**。決策：① verifier 不獨立、Gate 內嵌同一 spec ② 安全網由本次 Claude 先建 ③ 先落兩份 SKILL.md 給 codex 閱讀。
+>
+> ⚠ **token 防失憶**：以下 4 塊每塊獨立可交接，做完一塊即 tsc+vitest 全綠的斷點。換手時從未打勾的塊接續。
+
+**塊 1 ✅ — 安全網：schema validation**（已完成 2026-06-13；dsl-schema.ts＋dsl-validate.test.ts 8 測試）
+- [ ] `src/engine/dsl-schema.ts`：每個 action op / condition type / cost type 的必填欄位白名單
+- [ ] `src/engine/dsl-validate.test.ts`：讀 effects.json 遞迴 walk，驗 op/type 在白名單＋必填欄位齊；拼錯立即 vitest 紅
+- 完成判定：tsc+vitest 全綠，故意拼錯一個 op 會被抓到
+
+**塊 2 ✅ — 安全網：script registry**（已完成 2026-06-13；{op:"script",id} action＋SCRIPTS registry＋3 contract test。註：採 action-level 非 kind-level，理由見下）
+- [ ] dsl.ts：`SkillDef` 加 `{ kind:"script"; id:string }`
+- [ ] effects.ts：`SCRIPTS: Record<string,(api)=>Action[]>` registry；script 回傳 Action[] 塞回 frame 重用解釋器（**不直接改 state**，符合 review）；在 startPendingItem/useSkill/playEvent 觸發點接入
+- [ ] contract test：用注入的合成 script 卡證明機制通（不污染 effects.json）
+- 註：現有 98 卡都能 DSL 表達 → **不硬搬現有卡**，只建機制；未來 paidGutsAll 等可在此搬遷
+- 完成判定：tsc+vitest 全綠
+
+**塊 3 ✅ — `.claude/skills/update-card-pool/SKILL.md`**（已完成 2026-06-13）
+- [ ] frontmatter（name/description）＋章節：前置檢查 API 活著 → 抓取(itemsearch/faq/images) → `data:rebuild` → 翻譯草稿 → Acceptance Gate
+- [ ] 防呆寫死：effect 唯一真實來源=effects.json、永遠跑完整 data:rebuild、6/27 是增量(新卡 todo 既有不動)
+- [ ] Gate：既有 dsl effect 一張沒掉(diff)／新卡全 todo／卡圖數=卡號數／tsc+vitest 綠
+
+**塊 4 ✅ — `.claude/skills/implement-card-skills/SKILL.md`**（已完成 2026-06-13）
+- [ ] frontmatter＋章節：必讀(RULES_SPEC 6/8＋BLUEPRINT 責任邊界＋dsl 詞彙) → **強制分類決策樹**(動手前) → 寫法(只進 effects.json、skillJa 為準勿信機翻) → 判例轉測試 → 分塊 → 交接格式 → Acceptance Gate
+- [ ] Gate：schema 通過／tsc+測試綠／該批全 dsl／每張≥1測試／新 primitive 寫明 rule-of-three 理由
+- 依賴：塊 1+2 先完成（分類樹的「script 出口」要 registry 存在才不是空話）
+
+**全部完成後**：BLUEPRINT 標記 skill 化完成；6/27 拿真實新卡，用不同模型跑 Skill A→B、比較規則建構能力。
+
+---
+
+## 2026-06-13 — Session 11：skill 化＋安全網（4 塊全完成）
+
+### 完成
+- **安全網 1（schema validation）**：`src/engine/dsl-schema.ts`（op/condition/cost 白名單＋必填欄位）＋`dsl-validate.test.ts`（8 測試）。拼錯 op / 漏欄位 / 白名單與 dsl.ts 飄移 → 立即 vitest 紅。接進既有 gate。
+- **安全網 2（script registry）**：`{op:"script",id}` action（**非 kind-level**——多數怪卡是「效果內容怪」非「觸發機制怪」，action 級可重用既有觸發/CP/cost，侵入最小且 script 回傳 Action[] 不直接改 state，符合 review）；`effects.ts` 的 `SCRIPTS` registry（現空，98 卡皆能 DSL）＋`ScriptApi`；`script-registry.test.ts` 3 contract test（draw2 端到端／回傳 actions 仍走子決策／未知 id 立即 throw）。
+- **兩份 SKILL.md**（`.claude/skills/`）：
+  - `update-card-pool`：官網抓取→data:rebuild→機翻→Acceptance Gate。標明缺口：**tools/ 無產生 official_cards.json 的抓取工具**（M1 一次性腳本沒留），更新前需先建 `fetch-official-cards.mjs`。防呆寫死（effect 唯一真實來源、增量非全量、勿單跑 import-csv）。
+  - `implement-card-skills`：靈魂＝**動手前分類決策樹**（核心引擎/DSL rule-of-three/script）＋寫法速查＋testkit 坑＋判例轉測試＋Acceptance Gate＋verifier 怎麼做。
+- 全綠：tsc／vitest 105 件（新增 schema 8＋script 3）
+
+### 設計決策記錄
+- script 採 **action-level** 不 kind-level（理由見上；kind-level 留 YAGNI，遇怪觸發再加）
+- effects.ts 拆分成 registry 目錄＝**延後項**（與 review 分歧，理由：單作者階段過早抽象）
+
+### 下一步
+- **6/27 卡池更新**：用 `update-card-pool`（先補 fetch-official-cards.mjs）→ `implement-card-skills`，可派不同模型跑、比較規則建構能力
+- 仍未做：剩餘無牌組卡的 todo→dsl 補完（用 implement-card-skills 跑）；effects.ts 拆分（延後）；後排攻擊等核心流程（等正式規則）
+
+### 中斷點
+- 無半成品。兩個安全網＋兩份 skill 就緒，105 測試全綠
+
+---
+
+## 2026-06-13 — Session 12：70 張繁中技能翻譯確認完成
+
+### 完成
+- 70 張譯文比對後全部採用，沒有修改技能文字；確認紀錄整理至 `docs/TRANSLATION_REVIEW.md`。
+- `data/translations.json` 改為 `{ text, status }` 結構，70 張狀態全數設為 `human`；`data/cards.json` 同步為 192 張 human、104 張 none、0 張 machine。
+- `merge-official.mjs` 支援新結構與舊字串格式，重建資料時會保留人工確認狀態。
+- 介面的待確認標示統一為「翻譯待確認」，供日後新增、尚未確認的譯文使用。

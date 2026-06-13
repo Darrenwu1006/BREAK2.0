@@ -800,6 +800,25 @@ function pushFrame(ctx: EffectCtx, actions: RtAction[]): void {
   if (actions.length) ctx.frames.push({ actions, pc: 0 });
 }
 
+// ---------- 特例腳本 registry（安全網 2）----------
+
+/** script 可讀的唯讀 context（含 db/state 與發生源資訊）。共用 effects.ts 匯出的查詢 helper（charasOf/nameOf/effParam…），不直接改 state。 */
+export interface ScriptApi {
+  db: CardDb;
+  state: GameState;
+  player: PlayerId;
+  source: number;
+  lastTarget: number | null;
+  triggerUid: number | null;
+}
+
+/** 特例腳本：讀 ScriptApi → 回傳一串 DSL Action（塞回解釋器執行）。
+ *  id 命名建議 `card.<卡號>.<skill序>`。可變物件，測試可注入。 */
+export const SCRIPTS: Record<string, (api: ScriptApi) => Action[]> = {
+  // 目前 98 張卡皆能以 DSL 表達 → registry 暫空。
+  // 未來怪卡（或從 paidGutsAll 等單卡 primitive 搬遷而來）在此註冊。範例見 script-registry.test.ts。
+};
+
 /** 展開關鍵字 †9 */
 function keywordActions(state: GameState, name: string, n: number): Action[] {
   switch (name) {
@@ -1305,6 +1324,14 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       ctx.anyExecuted = true;
       state.lostRequest = other(p);
       finishEffect(db, state); // 中斷剩餘指示
+      break;
+    }
+    case "script": {
+      // 安全網 2：特例腳本逃生口。script 讀 state 後回傳 Action[] 塞回解釋器（不直接改 state）。
+      const fn = SCRIPTS[a.id];
+      if (!fn) throw new Error(`未知 script id "${a.id}"`);
+      const produced = fn({ db, state, player: p, source: ctx.source, lastTarget: ctx.lastTarget, triggerUid: ctx.triggerUid });
+      pushFrame(ctx, produced); // 產生的 actions 執行時自然設 anyExecuted
       break;
     }
     case "_payGuts": {

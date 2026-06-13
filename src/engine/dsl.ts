@@ -209,7 +209,12 @@ export type Action =
   /** 算出自分のアタック OP として N（ツーアタック） */
   | { op: "calcAttackOpAs"; value: number }
   /** 相手はロストする（ブロックアウト） */
-  | { op: "lostOpponent" };
+  | { op: "lostOpponent" }
+  /** 特例腳本逃生口（安全網 2）：DSL 無法表達的怪卡。
+   *  id 對應 effects.ts 的 SCRIPTS registry；script 讀 state 後**回傳 Action[]**塞回解釋器，
+   *  不直接改 state（重用觸發/CP/cost 機制，符合 review「script 不該任意改 state」）。
+   *  使用門檻：只服務 1 卡且無規則普遍性、無法以既有積木組合時才用（見 BLUEPRINT 責任邊界表）。 */
+  | { op: "script"; id: string };
 
 export type PassiveTrigger =
   /** 這張卡登場時（含效果登場 †6-6-2-3 領域移動誘發）。overNames＝「「X」の上に登場した時」 */

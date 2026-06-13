@@ -95,7 +95,7 @@ function importPool(file, kind) {
       timing: parseTiming(get("時機點")),
       skillJa: null, // 日文原文：待官網爬蟲補
       skillZh: isEmpty(get("完整技能")) ? null : clean(get("完整技能")),
-      skillZhStatus: isEmpty(get("完整技能")) ? "none" : "human", // human=使用者翻譯 / machine=機翻待校 / none=無技能
+      skillZhStatus: isEmpty(get("完整技能")) ? "none" : "human", // human=人工確認 / machine=翻譯待確認 / none=無技能
       notes: isEmpty(get("注釋")) ? null : clean(get("注釋")),
       printings: [{ rarity: isEmpty(get("稀有度")) ? "?" : clean(get("稀有度")), image: null }],
       effect: null, // 效果 DSL：M3 填入

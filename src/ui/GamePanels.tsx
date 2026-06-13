@@ -204,7 +204,7 @@ export function CardDetails(props: {
       {(card.skillZh || card.skillJa) && (
         <div className="skill-text">
           {card.skillZh ?? card.skillJa}
-          {card.skillZhStatus === "machine" && <span className="badge-machine">機翻待校</span>}
+          {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
         </div>
       )}
       {card.effectStatus === "todo" && <p className="support-note">這張卡的文字資料已收錄，但技能尚未接入規則引擎；對戰中會視為無效果。</p>}

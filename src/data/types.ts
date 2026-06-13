@@ -55,7 +55,7 @@ export interface Card {
   annotationJa?: string | null;
   /** 技能繁中譯文 */
   skillZh: string | null;
-  /** none=無技能 / human=人工翻譯 / machine=機翻待校 / missing=有日文原文但尚無譯文 */
+  /** none=無技能 / human=人工確認 / machine=翻譯待確認 / missing=有日文原文但尚無譯文 */
   skillZhStatus: "none" | "human" | "machine" | "missing";
   /** 收錄彈（HV-P01…）與商品名 */
   productType?: string;

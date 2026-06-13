@@ -16,6 +16,18 @@
 - **判例＝測試案例**：官網 Q&A／判例逐條轉成引擎的單元測試，保證裁定行為永遠正確，重構不破壞。
 - **引擎與 UI 完全分離**：引擎是純函式狀態機（state in → events out），UI 和 AI 都只是引擎的消費者。
 
+### 責任邊界：核心引擎 / DSL / Script（2026-06-13 定，回應 M3 架構 review）
+
+新效果該放哪一層，依「它改變什麼」決定，**不可為單卡草率繞過**：
+
+| 層 | 放什麼 | 判準 |
+|---|---|---|
+| **核心引擎**（engine.ts／effects.ts runtime） | 改變回合流程本身的能力 | 改變「誰能當攻擊者／OP 來源與組成／phase 時序／防守可做的回應／區域數量」任一項。例：後排攻擊 → 須先建 AttackContext 模型，**取得正式規則前不實作、不猜語義** |
+| **DSL**（dsl.ts 的 condition/action/cost） | 規則層的**穩定概念**、可組合的積木 | 通過「rule-of-three」：能服務 ≥3 張卡或一整類未來效果；或對應規則明文概念（如追加判定失敗條件 †5-15-3）。純數值/選卡效果一律走通用 effect 決策通道，不新增決策型別 |
+| **Script**（`{kind:"script",id}`，待建 registry） | 單卡的怪異交互 | 只服務 1 張卡且無規則普遍性 → 走 script（仍須用共用狀態 API＋合法性檢查＋測試，不可任意改 state）。這是逃生口，避免為維持「全 DSL」而造單卡 primitive |
+
+> 新增 DSL primitive 前必答：①規則穩定概念還是卡片句型？②能否組合既有積木？③只服務少數卡 → script 是否更誠實？
+
 ## 已確認決策（2026-06-11 與使用者定案）
 
 | 項目 | 決策 |
@@ -25,7 +37,7 @@
 | 卡片主鍵 | **卡片編號**（同編號＝同效果）。不同卡面（稀有度 頂/頂P/S/N…）是同一張卡的「印刷版本」，各自有稀有度＋卡圖；牌組編輯器可選卡面 |
 | AI 期望 | **越強越好** → 引擎設計為純函式、狀態可快速複製，支援 determinized MCTS（隱藏資訊搜索）；先做啟發式，再上搜索 |
 | 顯示語言 | 繁中為主，缺譯名時顯示日文；schema 保留日中雙欄位 |
-| 翻譯流程 | 爬蟲補進的新卡自動產生繁中翻譯草稿並標記「機翻待校」，使用者在介面中校對解除 |
+| 翻譯流程 | 爬蟲補進的新卡可先產生繁中翻譯草稿並標記「翻譯待確認」；人工確認後改為 `human` |
 | 卡圖 | 從官網爬回本地（僅個人使用），對戰與牌組編輯介面顯示 |
 | deck/ 七副牌組 | 使用者自製構築、會持續修改 → 編輯器須無損讀入並回寫 |
 | 測試框架 | Vitest（規則引擎 + 判例測試） |
@@ -44,10 +56,10 @@
 - [x] 官網 API：`cardlist/itemsearch.php?p=N`（列表）、`itemsearch_single.php?no=&voba=`（單卡）、`rules/itemsearch.php?cn=`（判例）
 - [x] 全量抓取 → data/raw/official_cards.json（364 列＝296 唯一卡號）
 - [x] 合併工具 tools/merge-official.mjs → data/cards.json 296 張（新增 102；nameJa/skillJa/学年/讀音/卡面清單以官網為準；本地譯名保存於 nameZh/skillZh）
-- [x] 機翻草稿：data/translations.json 70 張（skillZhStatus=machine 待校；重跑 pipeline 不會丟失）
+- [x] 繁中技能翻譯：data/translations.json 70 張已於 2026-06-13 完成人工確認（skillZhStatus=human；重跑 pipeline 不會丟失）
 - [x] 卡圖 364 張全數下載 → public/cards/{卡號}-{圖檔尾碼}.webp（tools/fetch-images.mjs，可重跑續傳）
 - [x] 判例 351 件（通用20＋個別331）→ data/raw/official_faq.json ＋ docs/RULINGS.md（tools/fetch-faq.mjs / gen-rulings.mjs）
-- 資料 pipeline：`npm run data:rebuild`＝import-csv → merge-official（含機翻套用），全程可重跑
+- 資料 pipeline：`npm run data:rebuild`＝import-csv → merge-official（含繁中翻譯套用），全程可重跑
 
 ### M2 — 規則引擎核心 ✅（2026-06-11）
 - [x] 遊戲狀態模型 src/engine/types.ts：10 領域、疊放區（頂=キャラ、下=ガッツ）、OP/DP 為脫鉤獨立值、純資料可 structuredClone
@@ -58,6 +70,7 @@
 - ⚠ チェックプロセス目前為 no-op 占位（M2 無被動技能），M3 在各 phase/step 邊界正式接入 †5-4
 
 ### M3 — 效果系統 ✅ 主體完成（2026-06-13，全 7 校＋混合牌組 100% 實裝）
+- [!] **擴充性 review**：補完剩餘 94 張卡或加入「後排攻擊」等新機制前，先閱讀 `docs/M3_DSL_ARCHITECTURE_REVIEW.md`，由接手者回覆 DSL／核心規則／特例腳本的邊界與最小整理方案
 - [x] 效果 DSL（src/engine/dsl.ts）：trigger/cost/condition/target/action/duration；**effect 唯一真實來源＝data/effects.json**，tools/apply-effects.mjs 併入 cards.json（data:rebuild 末端，重跑不丟）
 - [x] 引擎接入（src/engine/effects.ts＋engine.ts）：チェックプロセス待機佇列（turn player 優先 †5-4）、修正層 modifier pipeline（calcOp/calcDp 走 effParam）、遲發監看（watch）、登場限制（restrict）、置換效果（072/073 登場改名）、自由步驟技能/事件、スキルコスト與 gate 分歧（†7-7-3）
 - [x] 7 個關鍵字全實裝＋測試（ドシャット/ワンタッチ/フェイント/ブロックアウト/ターン1/Aパス/ツーアタック）
@@ -76,7 +89,7 @@
 
 ### M4 — 對戰介面（玩家 vs AI）✅ 第一版（2026-06-11）
 - [x] 主選單：牌組選擇（data/decks 全部 14 副）→ 開戰
-- [x] 盤面：雙方五區（含攔網中央/側邊）、Set/牌組/棄牌/事件區計數、OP/DP、phase 高亮、卡圖、滑過看詳情（含機翻標記）
+- [x] 盤面：雙方五區（含攔網中央/側邊）、Set/牌組/棄牌/事件區計數、OP/DP、phase 高亮、卡圖、滑過看詳情（含翻譯狀態標記）
 - [x] 決策列：發球權/換牌多選/防守選擇/各區登場（不可登場的手牌變暗）/攔網 1~3 張多選＋中央指定/Pass/Lost/撿 Set 卡
 - [x] 對戰 log 面板（中文敘述、自動捲動）；對手＝隨機 AI（src/ai/random.ts，M5 替換）
 - [x] Preview 實測：完整 rally（發球→接球判定→托攻→電腦攔網→side blocker 進棄牌）全流程正常
@@ -94,7 +107,7 @@
 - [x] 牌組編輯：點擊加卡、+/−/移除、合法性即時檢查（40張、事件≤8）、選卡面（稀有度下拉）、候補列（0張）保留
 - [x] 存回 decks/<學校>/<牌組>.csv：與使用者原格式相容＋選填「卡面」欄；Vite dev server 內建 /api/decks（GET/POST）
 - [x] 對戰選單改吃 API：存完即可選用新牌組
-- [ ] 待補：進階篩選（位置/點數區間/稀有度）、機翻校對流程（在詳情面板校對 translations.json 解除待校標記）→ 可併入 M7 討論
+- [ ] 待補：進階篩選（位置/點數區間/稀有度）；若日後新增待確認譯文，再評估是否把確認流程做進介面
 
 ### M7 — 介面美化與互動規劃 ⬜（使用者主導）
 - [ ] 與使用者討論整體介面設計：版面配置、視覺風格

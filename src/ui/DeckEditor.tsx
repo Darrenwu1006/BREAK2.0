@@ -184,7 +184,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
               )}
               {(hovered.skillZh || hovered.skillJa) && (
                 <p className="skill-text">{hovered.skillZh ?? hovered.skillJa}
-                  {hovered.skillZhStatus === "machine" && <span className="badge-machine">機翻待校</span>}
+                  {hovered.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
                 </p>
               )}
             </>

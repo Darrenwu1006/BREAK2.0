@@ -113,17 +113,25 @@ for (const [cardNo, rows] of byNo) {
   else card.effectStatus = card.effectStatus === "vanilla" ? "vanilla" : card.effectStatus;
 }
 
-// 機翻草稿套用（data/translations.json；skillZh 缺漏時補上並標記 machine）
+// 繁中翻譯套用（支援舊版字串與帶 status 的結構化資料）
 try {
   const translations = JSON.parse(readFileSync(join(ROOT, "data", "translations.json"), "utf8"));
-  let applied = 0;
-  for (const [id, zh] of Object.entries(translations)) {
+  const synced = { human: 0, machine: 0 };
+  for (const [id, raw] of Object.entries(translations)) {
     if (id.startsWith("_")) continue;
     const card = cards.get(id);
     if (!card) { warnings.push(`translations.json: 查無卡號 ${id}`); continue; }
-    if (!card.skillZh) { card.skillZh = zh; card.skillZhStatus = "machine"; applied++; }
+    const translation = typeof raw === "string" ? { text: raw, status: "machine" } : raw;
+    const zh = clean(translation?.text);
+    const status = translation?.status === "human" ? "human" : "machine";
+    if (!zh) { warnings.push(`translations.json: ${id} 缺少譯文`); continue; }
+    if (!card.skillZh) card.skillZh = zh;
+    if (card.skillZh === zh) {
+      card.skillZhStatus = status;
+      synced[status]++;
+    }
   }
-  console.log(`機翻草稿套用: ${applied} 張`);
+  console.log(`繁中翻譯同步: ${synced.human} 張已確認／${synced.machine} 張待確認`);
 } catch { /* translations.json 不存在時略過 */ }
 
 // 本地有但官網沒有的卡（理論上為 0）
