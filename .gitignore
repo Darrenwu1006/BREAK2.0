@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .DS_Store
+
+# 協作文件（milestone/討論過程）不公開，本地保留
+docs/
