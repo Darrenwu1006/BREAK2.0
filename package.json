@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "fetch:official": "node tools/fetch-official-cards.mjs",
     "import:csv": "node tools/import-csv.mjs",
     "merge:official": "node tools/merge-official.mjs",
     "apply:effects": "node tools/apply-effects.mjs",

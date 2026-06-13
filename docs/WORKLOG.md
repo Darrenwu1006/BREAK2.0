@@ -538,3 +538,20 @@ HVBP-001/002/003/004/009/013/014
 - `data/translations.json` 改為 `{ text, status }` 結構，70 張狀態全數設為 `human`；`data/cards.json` 同步為 192 張 human、104 張 none、0 張 machine。
 - `merge-official.mjs` 支援新結構與舊字串格式，重建資料時會保留人工確認狀態。
 - 介面的待確認標示統一為「翻譯待確認」，供日後新增、尚未確認的譯文使用。
+
+---
+
+## 2026-06-13 — Session 11 續：補 fetch-official-cards.mjs（卡池 skill 硬前提）
+
+### 完成
+- `tools/fetch-official-cards.mjs`＋`npm run fetch:official`：補回 M1 沒留存的官網卡片抓取工具（merge-official 的上游）。逐頁 itemsearch.php?p=N（每頁 20、空頁停、sleep 300ms），健全性檢查（缺 card_no／ID 重複／筆數過少即中止不覆蓋），印新增/移除卡號。
+- **實測**：364 列／296 唯一卡號，與既有檔一致（git diff 僅末尾換行 1 行）→ 工具正確、merge-official 可無痛消費。
+- raw 檔已還原（今天非更新日，只補工具不更新資料）；update-card-pool SKILL.md「已知缺口」段更新為「已備工具」。
+- 卡池 pipeline 現完整：fetch:official → data:rebuild（import-csv→merge-official→apply-effects）→ gen-rulings。
+
+### 下一步（使用者規劃）
+- codex 接手 94 張 todo 卡測試（用 implement-card-skills skill，實測不同模型規則建構能力）
+- 6/27 卡池更新：直接 `npm run fetch:official` 起跑
+
+### 中斷點
+- 無半成品
