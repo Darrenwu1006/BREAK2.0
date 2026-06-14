@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import type { Card } from "../data/types";
 import type { CourtArea } from "../engine/dsl";
 import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions } from "../engine/engine";
@@ -7,7 +7,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "../ai/heuristic";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
-import { CardDetails, CompactHud, DropBrowser, GameLog, LeftPanel, PHASE_NAME } from "./GamePanels";
+import { CardCounter, CardDetails, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 
@@ -29,7 +29,7 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
   attack: "攻擊",
 };
 
-type ToolMode = { type: "detail" } | { type: "drop"; player: PlayerId };
+type ToolMode = { type: "detail" } | { type: "counter" } | { type: "drop"; player: PlayerId };
 
 function initialSpeed(): AiSpeed {
   const stored = localStorage.getItem("breaktcg-ai-speed");
@@ -56,6 +56,8 @@ export function Game(props: {
   const [speed, setSpeed] = useState<AiSpeed>(initialSpeed);
   const [scoreBanner, setScoreBanner] = useState<string | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
+  const handRef = useRef<HTMLDivElement>(null);
+  const [handWidth, setHandWidth] = useState(0);
   const seenLogCount = useRef(state.log.length);
 
   const pd = state.pendingDecision;
@@ -136,6 +138,16 @@ export function Game(props: {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isMyDecision, toolMode.type]);
+
+  useLayoutEffect(() => {
+    const el = handRef.current;
+    if (!el) return;
+    const update = () => setHandWidth(el.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   function onHandClick(uid: number) {
     if (!isMyDecision || !pd) {
@@ -304,8 +316,19 @@ export function Game(props: {
     }
   }
 
-  const handOverlap = Math.max(24, Math.min(84, state.players[HUMAN].hand.length > 10 ? 42 : 62));
-  const handStyle = { "--hand-step": `${handOverlap}px` } as CSSProperties;
+  // 手牌間距：「分開為主，擁擠才靠近」——夠放就留正向間隔，放不下才漸進收攏成重疊
+  const HAND_CARD = 84;
+  const HAND_GAP = 12;
+  const HAND_MIN_VISIBLE = 34;
+  const handCount = state.players[HUMAN].hand.length;
+  let handStep = HAND_GAP;
+  if (handCount > 1 && handWidth > 0) {
+    const needed = handCount * HAND_CARD + (handCount - 1) * HAND_GAP;
+    if (needed > handWidth) {
+      handStep = Math.max(-(HAND_CARD - HAND_MIN_VISIBLE), (handWidth - HAND_CARD) / (handCount - 1) - HAND_CARD);
+    }
+  }
+  const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
 
   return (
     <div className="game" data-instant={speed === "instant" ? "true" : undefined}>
@@ -342,7 +365,7 @@ export function Game(props: {
 
         <section className="hand-section" aria-label={`你的手牌 ${state.players[HUMAN].hand.length} 張`}>
           <div className="hand-heading"><span>你的手牌</span><strong>{state.players[HUMAN].hand.length}</strong></div>
-          <div className="hand" style={handStyle} data-zone-anchor="p0-hand">
+          <div className="hand" style={handStyle} data-zone-anchor="p0-hand" ref={handRef}>
             {state.players[HUMAN].hand.length === 0 && <span className="hand-empty">沒有手牌</span>}
             {state.players[HUMAN].hand.map((uid) => {
               const selectedIndex = multiSel.indexOf(uid);
@@ -371,24 +394,36 @@ export function Game(props: {
 
       <aside className={`right-panel${mobilePanel === "detail" ? " is-mobile-open" : ""}`}>
         <div className="mobile-panel-heading">
-          <b>{toolMode.type === "drop" ? "棄牌瀏覽" : "卡片詳情"}</b>
+          <b>面板</b>
           <button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button>
         </div>
-        {toolMode.type === "drop" ? (
-          <DropBrowser
-            db={db}
-            state={state}
-            player={toolMode.player}
-            onClose={() => setToolMode({ type: "detail" })}
-            onSelect={(uid) => {
-              inspectUid(uid);
-              setToolMode({ type: "detail" });
-            }}
-            onHover={setHoverUid}
-          />
-        ) : (
-          <CardDetails db={db} state={state} inspected={visibleInspection} />
-        )}
+        <div className="tool-tabs" role="tablist" aria-label="右欄工具">
+          <button role="tab" aria-selected={toolMode.type === "detail"} className={toolMode.type === "detail" ? "is-active" : ""} onClick={() => setToolMode({ type: "detail" })}>詳情</button>
+          <button role="tab" aria-selected={toolMode.type === "counter"} className={toolMode.type === "counter" ? "is-active" : ""} onClick={() => setToolMode({ type: "counter" })}>算牌</button>
+          <button role="tab" aria-selected={toolMode.type === "drop"} className={toolMode.type === "drop" ? "is-active" : ""} onClick={() => setToolMode({ type: "drop", player: HUMAN })}>棄牌</button>
+          <button role="tab" disabled title="需 AI 引擎支援（未來版本）">勝率</button>
+        </div>
+        <div className="tool-content">
+          {toolMode.type === "drop" ? (
+            <DropBrowser
+              db={db}
+              state={state}
+              player={toolMode.player}
+              onClose={() => setToolMode({ type: "detail" })}
+              onSelect={(uid) => {
+                inspectUid(uid);
+                setToolMode({ type: "detail" });
+              }}
+              onHover={setHoverUid}
+            />
+          ) : toolMode.type === "counter" ? (
+            <CardCounter db={db} state={state} />
+          ) : visibleInspection ? (
+            <CardDetails db={db} state={state} inspected={visibleInspection} />
+          ) : (
+            <MatchSummary state={state} />
+          )}
+        </div>
       </aside>
 
       <aside className={`mobile-log-panel${mobilePanel === "log" ? " is-open" : ""}`}>

@@ -22,21 +22,6 @@ export const PHASE_NAME: Record<Phase, string> = {
 
 const PHASE_ORDER: Phase[] = ["serve", "start", "block", "draw", "receive", "toss", "attack", "end"];
 
-function supportText(meta: DeckMeta): string {
-  return meta.unimplementedCount === 0 ? "技能完整" : `${meta.unimplementedCount} 張技能未實作`;
-}
-
-export function DeckSupport({ meta, player }: { meta: DeckMeta; player: PlayerId }) {
-  const complete = meta.unimplementedCount === 0;
-  return (
-    <div className={`deck-support player-tone-${player}`}>
-      <span>{player === 0 ? "你" : "電腦"}</span>
-      <b>{meta.school}／{meta.name}</b>
-      <small className={complete ? "support-complete" : "support-partial"}>{supportText(meta)}</small>
-    </div>
-  );
-}
-
 interface DisplayLogEntry extends LogEntry {
   summary?: boolean;
 }
@@ -109,32 +94,38 @@ export function LeftPanel(props: {
   onSpeedChange: (speed: AiSpeed) => void;
   onExit: () => void;
 }) {
+  const { state, deckMeta } = props;
+  const phaseIndex = PHASE_ORDER.indexOf(state.phase);
   return (
     <aside className="left-panel">
-      <div className="match-heading">
-        <div className="match-counter"><span>SET</span><strong>{props.state.setNo}</strong></div>
-        <div className="match-counter"><span>TURN</span><strong>{props.state.turnNo}</strong></div>
-        <button className="btn-quiet exit-button" onClick={props.onExit}>離開對戰</button>
+      <div className="match-bar">
+        <div className="match-line">
+          <span className="match-counter-inline">SET <b>{state.setNo}</b></span>
+          <span className="match-counter-inline">TURN <b>{state.turnNo}</b></span>
+          <button className="btn-quiet match-exit" onClick={props.onExit}>離開</button>
+        </div>
+        <div className="phase-row">
+          <strong>{PHASE_NAME[state.phase]}</strong>
+          <small className={state.turnPlayer === 0 ? "tone-me" : "tone-op"}>
+            {state.turnPlayer === 0 ? "你的回合" : "電腦回合"}
+          </small>
+        </div>
+        <ol className="phase-pips" aria-label={`回合階段：目前 ${PHASE_NAME[state.phase]}`}>
+          {PHASE_ORDER.map((phase, index) => (
+            <li
+              key={phase}
+              className={state.phase === phase ? "on" : index < phaseIndex ? "done" : ""}
+              title={PHASE_NAME[phase]}
+            />
+          ))}
+        </ol>
+        <div className="match-decks">
+          <span className="player-tone-0"><b>你</b> {deckMeta[0].school}／{deckMeta[0].name}</span>
+          <span className="player-tone-1"><b>電腦</b> {deckMeta[1].school}／{deckMeta[1].name}</span>
+        </div>
       </div>
 
-      <div className="phase-current">
-        <span>目前階段</span>
-        <strong>{PHASE_NAME[props.state.phase]}</strong>
-        <small>{props.state.turnPlayer === 0 ? "你的回合" : "電腦回合"}</small>
-      </div>
-
-      <ol className="phase-rail" aria-label="回合階段">
-        {PHASE_ORDER.map((phase) => (
-          <li key={phase} className={props.state.phase === phase ? "phase-active" : ""}>{PHASE_NAME[phase]}</li>
-        ))}
-      </ol>
-
-      <div className="deck-support-list">
-        <DeckSupport meta={props.deckMeta[0]} player={0} />
-        <DeckSupport meta={props.deckMeta[1]} player={1} />
-      </div>
-
-      <GameLog state={props.state} />
+      <GameLog state={state} />
 
       <div className="speed-control">
         <span>AI 速度</span>
@@ -171,6 +162,15 @@ function ParamsTable(props: { card: Card; state: GameState; db: CardDb; uid?: nu
   );
 }
 
+/** 把技能文裡的 [=關鍵字] 標記轉成可讀的小 chip，而不是裸露的 [=ターン1]。 */
+function renderSkillText(text: string) {
+  return text.split(/(\[=[^\]]+\])/g).map((part, index) => {
+    const marker = part.match(/^\[=([^\]]+)\]$/);
+    if (marker) return <span key={index} className="skill-kw">{marker[1]}</span>;
+    return <span key={index}>{part}</span>;
+  });
+}
+
 export function CardDetails(props: {
   db: CardDb;
   state: GameState;
@@ -187,6 +187,10 @@ export function CardDetails(props: {
   }
 
   const statusLabel = card.effectStatus === "dsl" ? "效果已實作" : card.effectStatus === "todo" ? "效果尚未實作" : card.effectStatus === "script" ? "特例效果" : "無技能";
+  const timingList = card.timing.filter((t) => t !== "回合1");
+  const oncePerTurn = card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
+  const timingLabel = card.type === "EVENT" ? "可使用時機" : "發動時機";
+  const skillText = card.skillZh ?? card.skillJa;
   return (
     <article className="card-detail-content">
       <div className="detail-title">
@@ -200,15 +204,100 @@ export function CardDetails(props: {
         <span>{card.affiliations.join("/") || "無所屬"}</span>
         <span className={`effect-status effect-${card.effectStatus}`}>{statusLabel}</span>
       </div>
+      {(timingList.length > 0 || oncePerTurn) && (
+        <div className="timing-row">
+          <span className="timing-label">{timingLabel}</span>
+          {timingList.map((t) => <span key={t} className="timing-badge">{t}</span>)}
+          {oncePerTurn && <span className="restrict-badge">一回合一次</span>}
+        </div>
+      )}
       <ParamsTable card={card} state={props.state} db={props.db} uid={props.inspected?.uid} />
-      {(card.skillZh || card.skillJa) && (
+      {skillText && (
         <div className="skill-text">
-          {card.skillZh ?? card.skillJa}
+          {renderSkillText(skillText)}
           {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
         </div>
       )}
       {card.effectStatus === "todo" && <p className="support-note">這張卡的文字資料已收錄，但技能尚未接入規則引擎；對戰中會視為無效果。</p>}
     </article>
+  );
+}
+
+const SOURCE_LABEL: Record<string, string> = { serve: "發球", block: "攔網回球", attack: "攻擊", receive: "接球" };
+
+export function MatchSummary({ state }: { state: GameState }) {
+  const rows = ([0, 1] as const).map((player) => {
+    const ps = state.players[player];
+    return { player, deck: ps.deck.length, hand: ps.hand.length, drop: ps.drop.length, set: ps.setArea.length, event: ps.eventArea.length };
+  });
+  return (
+    <div className="match-summary">
+      <div className="summary-block">
+        <b>攻防</b>
+        {state.op ? (
+          <div className="summary-op">
+            <span className="op-tag">OP {state.op.value}</span>
+            <small>{SOURCE_LABEL[state.op.source] ?? state.op.source}・{state.op.owner === 0 ? "你" : "電腦"}</small>
+            {state.dp && <span className="dp-tag">DP {state.dp.value}</span>}
+          </div>
+        ) : (
+          <small className="summary-idle">目前沒有進行中的攻防</small>
+        )}
+      </div>
+      <div className="summary-block">
+        <b>場上資源</b>
+        <table className="summary-table">
+          <thead>
+            <tr><th></th><th>牌組</th><th>手牌</th><th>棄牌</th><th>Set</th><th>事件</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.player}>
+                <td className={`tone-cell player-tone-${row.player}`}>{row.player === 0 ? "你" : "電腦"}</td>
+                <td>{row.deck}</td><td>{row.hand}</td><td>{row.drop}</td><td>{row.set}</td><td>{row.event}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="summary-hint">將游標移到卡片上看詳情，或用上方工具切換「算牌／棄牌」。</p>
+    </div>
+  );
+}
+
+export function CardCounter({ db, state }: { db: CardDb; state: GameState }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const uid of state.players[0].deck) {
+      const id = state.cards[uid]!;
+      map.set(id, (map.get(id) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([id, count]) => ({ id, count, card: db.get(id) }))
+      .filter((row) => row.card)
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+  }, [db, state.cards, state.players]);
+
+  const remaining = state.players[0].deck.length;
+  return (
+    <div className="card-counter">
+      <div className="panel-heading">
+        <div><b>你的牌組剩餘</b><span>{remaining} 張・{groups.length} 種</span></div>
+      </div>
+      {groups.length === 0 ? (
+        <div className="drop-empty">牌組已抽完</div>
+      ) : (
+        <ul className="counter-list">
+          {groups.map((row) => (
+            <li key={row.id}>
+              <span className="counter-name">{displayName(row.card!)}</span>
+              <span className="counter-count"><b>{row.count}</b></span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="summary-hint">只顯示「每種卡還剩幾張」，不洩漏抽牌順序，方便練習算牌。</p>
+    </div>
   );
 }
 

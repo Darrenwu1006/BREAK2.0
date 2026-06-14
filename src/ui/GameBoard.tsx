@@ -169,45 +169,61 @@ function MiniPile(props: {
   );
 }
 
-function PlayerPiles(props: {
+interface PileGroupProps extends InspectHandlers {
   db: CardDb;
   state: GameState;
   player: PlayerId;
   meta: DeckMeta;
-  canPickSet: boolean;
-  onPickSet: (index: number) => void;
-  onOpenDrop: () => void;
-} & InspectHandlers) {
+}
+
+function SetPileGroup(props: PileGroupProps & { canPickSet: boolean; onPickSet: (index: number) => void }) {
+  const ps = props.state.players[props.player];
+  return (
+    <div
+      className="set-pile"
+      data-zone-anchor={`p${props.player}-set`}
+      aria-label={`${props.player === 0 ? "我方" : "對方"} Set 卡 ${ps.setArea.length} 張`}
+    >
+      <span className="pile-group-title">Set</span>
+      <div className="set-card-row">
+        {ps.setArea.map((_, index) => (
+          <CardBack
+            key={index}
+            width={28}
+            school={props.meta.school}
+            label={props.canPickSet && props.player === 0 ? String(index + 1) : undefined}
+            onClick={props.canPickSet && props.player === 0 ? () => props.onPickSet(index) : undefined}
+          />
+        ))}
+        {ps.setArea.length === 0 && <span className="set-empty">0</span>}
+      </div>
+    </div>
+  );
+}
+
+function ResourcePileGroup(props: PileGroupProps & { onOpenDrop: () => void }) {
   const ps = props.state.players[props.player];
   const topDrop = ps.drop.length ? ps.drop[ps.drop.length - 1] : undefined;
   const topEvent = ps.eventArea.length ? ps.eventArea[ps.eventArea.length - 1] : undefined;
   return (
-    <div className={`player-piles player-piles-${props.player}`}>
-      <div
-        className="set-pile"
-        data-zone-anchor={`p${props.player}-set`}
-        aria-label={`${props.player === 0 ? "我方" : "對方"} Set 卡 ${ps.setArea.length} 張`}
-      >
-        <span className="pile-group-title">Set</span>
-        <div className="set-card-row">
-          {ps.setArea.map((_, index) => (
-            <CardBack
-              key={index}
-              width={28}
-              school={props.meta.school}
-              label={props.canPickSet && props.player === 0 ? String(index + 1) : undefined}
-              onClick={props.canPickSet && props.player === 0 ? () => props.onPickSet(index) : undefined}
-            />
-          ))}
-          {ps.setArea.length === 0 && <span className="set-empty">0</span>}
-        </div>
-      </div>
+    <div className="resource-piles">
+      <MiniPile label="事件" count={ps.eventArea.length} topUid={topEvent} db={props.db} state={props.state} player={props.player} pile="event" onHover={props.onHover} onInspect={props.onInspect} />
+      <MiniPile label="牌組" count={ps.deck.length} school={props.meta.school} db={props.db} state={props.state} player={props.player} pile="deck" onHover={props.onHover} onInspect={props.onInspect} />
+      <MiniPile label="棄牌" count={ps.drop.length} topUid={topDrop} db={props.db} state={props.state} player={props.player} pile="drop" onOpen={props.onOpenDrop} onHover={props.onHover} onInspect={props.onInspect} />
+    </div>
+  );
+}
 
-      <div className="resource-piles">
-        <MiniPile label="事件" count={ps.eventArea.length} topUid={topEvent} db={props.db} state={props.state} player={props.player} pile="event" onHover={props.onHover} onInspect={props.onInspect} />
-        <MiniPile label="牌組" count={ps.deck.length} school={props.meta.school} db={props.db} state={props.state} player={props.player} pile="deck" onHover={props.onHover} onInspect={props.onInspect} />
-        <MiniPile label="棄牌" count={ps.drop.length} topUid={topDrop} db={props.db} state={props.state} player={props.player} pile="drop" onOpen={props.onOpenDrop} onHover={props.onHover} onInspect={props.onInspect} />
-      </div>
+/** 手機/平板直式：牌堆疊在球場四角（空間有限） */
+function PlayerPiles(props: PileGroupProps & {
+  canPickSet: boolean;
+  onPickSet: (index: number) => void;
+  onOpenDrop: () => void;
+}) {
+  return (
+    <div className={`player-piles player-piles-${props.player}`}>
+      <SetPileGroup {...props} />
+      <ResourcePileGroup {...props} />
     </div>
   );
 }
@@ -244,47 +260,59 @@ export function GameBoard(props: GameBoardProps) {
         <strong>{state.players[1].hand.length}</strong>
       </div>
 
-      <div className="volleyball-court">
-        <div className="court-surface" aria-hidden="true">
-          <div className="court-inner" />
-          <div className="attack-line attack-line-opponent" />
-          <div className="attack-line attack-line-human" />
-          <div className="net-line" />
+      <div className="court-stage">
+        <div className="court-flank flank-left">
+          <SetPileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
+          <SetPileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
         </div>
 
-        <PlayerPiles db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
-        <PlayerPiles db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+        <div className="volleyball-court">
+          <div className="court-surface" aria-hidden="true">
+            <div className="court-inner" />
+            <div className="attack-line attack-line-opponent" />
+            <div className="attack-line attack-line-human" />
+            <div className="net-line" />
+          </div>
 
-        {([1, 0] as const).flatMap((player) => {
-          const ps = state.players[player];
-          return ([
-            ["serve", ps.serve],
-            ["block", ps.blockCenter, ps.blockSides],
-            ["receive", ps.receive],
-            ["toss", ps.toss],
-            ["attack", ps.attack],
-          ] as const).map(([area, stack, sides]) => (
-            <StackZone
-              key={`${player}-${area}`}
-              db={props.db}
-              state={state}
-              player={player}
-              area={area}
-              stack={stack}
-              sideUids={sides ? [...sides] : undefined}
-              active={activePlayer === player && activeArea === area}
-              canDrop={player === 0 && props.deployArea === area}
-              activeGutsKey={props.activeGutsKey}
-              recentUids={props.recentUids}
-              onToggleGuts={props.onToggleGuts}
-              onDropCard={props.onDropCard}
-              onHover={props.onHover}
-              onInspect={inspect}
-            />
-          ));
-        })}
+          <PlayerPiles db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
+          <PlayerPiles db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
 
-        <NetScore state={state} />
+          {([1, 0] as const).flatMap((player) => {
+            const ps = state.players[player];
+            return ([
+              ["serve", ps.serve],
+              ["block", ps.blockCenter, ps.blockSides],
+              ["receive", ps.receive],
+              ["toss", ps.toss],
+              ["attack", ps.attack],
+            ] as const).map(([area, stack, sides]) => (
+              <StackZone
+                key={`${player}-${area}`}
+                db={props.db}
+                state={state}
+                player={player}
+                area={area}
+                stack={stack}
+                sideUids={sides ? [...sides] : undefined}
+                active={activePlayer === player && activeArea === area}
+                canDrop={player === 0 && props.deployArea === area}
+                activeGutsKey={props.activeGutsKey}
+                recentUids={props.recentUids}
+                onToggleGuts={props.onToggleGuts}
+                onDropCard={props.onDropCard}
+                onHover={props.onHover}
+                onInspect={inspect}
+              />
+            ));
+          })}
+
+          <NetScore state={state} />
+        </div>
+
+        <div className="court-flank flank-right">
+          <ResourcePileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
+          <ResourcePileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+        </div>
       </div>
     </div>
   );

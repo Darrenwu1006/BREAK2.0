@@ -27,10 +27,11 @@ function normalizedSchool(school?: string): string | undefined {
   return school;
 }
 
+// 卡背一律用縮圖（backs/thumb/*.png，~300px）——場上顯示僅 ~60px，大圖太浪費頻寬
 export function cardBackImage(school?: string): string {
   const normalized = normalizedSchool(school);
-  const ext = normalized ? BACK_EXTENSIONS[normalized] : undefined;
-  return publicAsset(normalized && ext ? `backs/${encodeURIComponent(normalized)}.${ext}` : "backs/default.png");
+  const name = normalized && BACK_EXTENSIONS[normalized] ? normalized : "default";
+  return publicAsset(`backs/thumb/${encodeURIComponent(name)}.png`);
 }
 
 export function CardView(props: {
@@ -132,7 +133,7 @@ export function CardBack(props: {
   useEffect(() => setFallback(false), [props.school]);
 
   const classes = ["card", "card-back", props.onClick && "card-clickable", props.className].filter(Boolean).join(" ");
-  const src = fallback ? publicAsset("backs/default.png") : cardBackImage(props.school);
+  const src = fallback ? publicAsset("backs/thumb/default.png") : cardBackImage(props.school);
   return (
     <div
       className={classes}
