@@ -3,7 +3,19 @@ import type { Card } from "../data/types";
 
 const publicAsset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 
+// 牌組編輯器選的卡面版本（稀有度）→ 戰鬥中改用對應版本的卡圖。key=cardId, value=imageEnd/rarity
+const printingOverride = new Map<string, string>();
+export function setCardPrintings(map: Map<string, string>) {
+  printingOverride.clear();
+  for (const [id, sel] of map) printingOverride.set(id, sel);
+}
+
 export function cardImage(card: Card): string | null {
+  const sel = printingOverride.get(card.id);
+  if (sel) {
+    const chosen = card.printings.find((p) => (p.imageEnd ?? p.rarity) === sel);
+    if (chosen?.image) return publicAsset(chosen.image);
+  }
   const p = card.printings[0];
   return p?.image ? publicAsset(p.image) : null;
 }

@@ -83,6 +83,7 @@ export interface Watcher {
   turnMax: number;
   /** turnEnd 觸發已於該 turn 待機過（†5-12-2① 不重複待機） */
   firedTurn?: number;
+  remainingTriggers?: number;
   desc: string;
 }
 
@@ -106,6 +107,9 @@ export interface Restriction {
   banHandReceiveActive?: true;
   /** 禁止指定ポジション登場（P01-084/P02-097；搭配 fromHandOnly） */
   banPositions?: string[];
+  disableSkills?: import("./dsl").CharaFilter;
+  banEventTimings?: import("./dsl").PhaseIcon[];
+  preventOpDecrease?: true;
   /** 「DPがN以下→ブロック失敗」追加判定失敗條件（†5-15-3；P02-039） */
   blockFailIfDpMax?: number;
   setNo: number;
@@ -141,7 +145,7 @@ export interface Turn1Entry {
 }
 
 /** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
-export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number } | { op: "_placeEventCost" } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: { affiliation?: string } };
+export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number } | { op: "_placeEventCost"; filter?: { affiliation?: string } } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: import("./dsl").CharaFilter } | { op: "_moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
 
 export interface EffectFrame {
   actions: RtAction[];
@@ -150,10 +154,10 @@ export interface EffectFrame {
 
 /** 效果解決中的待輸入點 */
 export type Awaiting =
-  | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; count?: number; prompt: string }
+  | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; else?: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "deployFromDrop" | "dropToHand" | "forceDrop" | "eventToHand" | "handToBottom" | "deployFromGuts" | "placeEvent" | "dropChara" | "dropOppGuts" | "moveGuts";
+      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost";
       /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
       chooser?: PlayerId;
       candidates: number[];
@@ -164,6 +168,7 @@ export type Awaiting =
       amount?: number;
       /** deployFromDrop 用 */
       area?: CourtArea;
+      destination?: "drop" | "deckBottom";
       then?: Action[];
       /** tutor 用：實際看過的卡（選中→手牌、其餘→牌組底） */
       looked?: number[];
@@ -182,6 +187,8 @@ export interface EffectCtx {
   lastTarget: number | null;
   /** 遲發觸發卡 */
   triggerUid: number | null;
+  /** 此次效果來自事件卡；解決完畢後才觸發「使用事件卡時」。 */
+  eventSource?: true;
   origin?: "hand" | "other";
   /** 效果登場的來源卡名（deployedByCard 條件） */
   byCard?: string;

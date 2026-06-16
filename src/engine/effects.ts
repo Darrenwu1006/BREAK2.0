@@ -37,6 +37,7 @@ export function drawCards(state: GameState, p: PlayerId, n: number): number {
     ps.hand.push(ps.deck.shift()!);
     drawn++;
   }
+  if (drawn > 0) fireHandAdds(state, p, drawn, "draw");
   return drawn;
 }
 
@@ -122,6 +123,13 @@ export function playTimingsOf(card: Card): PhaseIcon[] {
   return card.timing.map((t) => TIMING_MAP[t]).filter((t): t is PhaseIcon => !!t);
 }
 
+/** 新卡可能只在 skillJa icon 留有時機；effect.phaseIcons 可補足 card.timing 缺漏。 */
+export function eventTimingsOf(db: CardDb, state: GameState, uid: number): PhaseIcon[] {
+  const card = cardOf(db, state, uid);
+  const skill = effectDefOf(db, state, uid)?.skills.find((s) => s.kind === "event");
+  return skill?.kind === "event" && skill.phaseIcons?.length ? skill.phaseIcons : playTimingsOf(card);
+}
+
 /** 072/073 型置換：登場時必須選卡名 */
 export function deployNames(db: CardDb, state: GameState, uid: number): string[] | null {
   const def = effectDefOf(db, state, uid);
@@ -132,7 +140,11 @@ export function deployNames(db: CardDb, state: GameState, uid: number): string[]
 /** ターン1：該 turn 中同卡名的自己的卡技能無效（†9-6-4） */
 export function isSkillInvalid(db: CardDb, state: GameState, p: PlayerId, uid: number): boolean {
   const n = nameOf(db, state, uid);
-  return state.turn1.some((t) => t.player === p && t.name === n && t.setNo === state.setNo && t.turnNo === state.turnNo);
+  if (state.turn1.some((t) => t.player === p && t.name === n && t.setNo === state.setNo && t.turnNo === state.turnNo)) return true;
+  const area = charaAreaOf(state, p, uid);
+  return state.restrictions.some((r) =>
+    r.player === p && r.disableSkills && r.setNo === state.setNo && r.activeTurn === state.turnNo
+    && matchFilter(db, state, uid, r.disableSkills, area));
 }
 
 // ---------- 登場限制 †Q191/Q204 ----------
@@ -159,11 +171,16 @@ function allGutsOf(state: GameState, p: PlayerId): number[] {
 }
 
 /** 非抽牌入手 → handAddByEffect 監看觸發（每張一次 Q317；引く以外 Q321） */
-function fireHandAdds(state: GameState, actor: PlayerId, count: number): void {
+function fireHandAdds(state: GameState, actor: PlayerId, count: number, mode: "draw" | "effect" = "effect"): void {
+  if (state.phase === "interval") return;
   for (const w of state.watchers) {
-    if (w.trigger.on !== "handAddByEffect" || !watcherActive(state, w)) continue;
+    if ((w.trigger.on !== "handAdd" && (w.trigger.on !== "handAddByEffect" || mode === "draw")) || !watcherActive(state, w)) continue;
     if (actor !== other(w.player)) continue; // trigger.player 固定 "opponent"
-    for (let k = 0; k < count; k++) enqueue(state, { player: w.player, source: w.source, kind: "delayed", actions: w.actions, desc: w.desc });
+    for (let k = 0; k < count; k++) {
+      if (w.remainingTriggers !== undefined && w.remainingTriggers <= 0) break;
+      enqueue(state, { player: w.player, source: w.source, kind: "delayed", actions: w.actions, desc: w.desc });
+      if (w.remainingTriggers !== undefined) w.remainingTriggers--;
+    }
   }
 }
 
@@ -227,6 +244,7 @@ export function matchFilter(db: CardDb, state: GameState, uid: number, f: CharaF
   if (f.affiliation && !c.affiliations.includes(f.affiliation)) return false;
   if (f.position && !c.positions.includes(f.position)) return false;
   if (f.positionsAny && !f.positionsAny.some((x) => c.positions.includes(x))) return false;
+  if (f.gradesAny && !f.gradesAny.some((g) => c.grades.includes(g))) return false;
   if (f.area && (area == null || !f.area.includes(area))) return false;
   if (f.baseParamMax) {
     const b = baseParam(db, state, uid, f.baseParamMax.param);
@@ -246,6 +264,11 @@ export function matchFilter(db: CardDb, state: GameState, uid: number, f: CharaF
     if (v !== f.effParamEq.value) return false;
   }
   if (f.skillless && effectDefOf(db, state, uid)) return false;
+  if (f.blockRole) {
+    const isCenter = state.players.some((ps) => topChara(ps.blockCenter) === uid);
+    const isSide = state.players.some((ps) => ps.blockSides.includes(uid));
+    if (f.blockRole === "center" ? !isCenter : !isSide) return false;
+  }
   return true;
 }
 
@@ -280,7 +303,7 @@ function maxDistinctAffiliations(lists: string[][]): number {
   return best;
 }
 
-export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; source: number; origin?: "hand" | "other"; lastTarget: number | null }, cond: Condition): boolean {
+export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; source: number; origin?: "hand" | "other"; lastTarget: number | null; triggerUid?: number | null }, cond: Condition): boolean {
   const p = ctx.player;
   switch (cond.type) {
     case "opponentOp": {
@@ -299,6 +322,8 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       return state.players[cond.player === "opponent" ? other(p) : p].hand.length <= cond.count;
     case "handMin":
       return state.players[cond.player === "opponent" ? other(p) : p].hand.length >= cond.count;
+    case "setTotalMax":
+      return state.players[0].setArea.length + state.players[1].setArea.length <= cond.count;
     case "deployedFromHand":
       return ctx.origin === "hand";
     case "deployedByCard":
@@ -329,7 +354,7 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
     case "paidGutsAll": {
       const paid = (ctx as { paidGuts?: number[] }).paidGuts;
       if (!paid?.length) return false;
-      return paid.every((u) => cardOf(db, state, u).positions.includes(cond.position));
+      return paid.every((u) => matchFilter(db, state, u, cond.filter));
     }
     case "chara": {
       const who = cond.player === "opponent" ? other(p) : p;
@@ -348,7 +373,8 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       for (const uid of state.players[who].eventArea) {
         const c = cardOf(db, state, uid);
         if (cond.name && nameOf(db, state, uid) !== normName(cond.name)) continue;
-        if (cond.playTimingAny && !playTimingsOf(c).some((t) => cond.playTimingAny!.includes(t))) continue;
+        if (cond.affiliation && !c.affiliations.includes(cond.affiliation)) continue;
+        if (cond.playTimingAny && !eventTimingsOf(db, state, uid).some((t) => cond.playTimingAny!.includes(t))) continue;
         n++; // 每張卡計 1 次（Q294）
       }
       if (cond.min !== undefined && n < cond.min) return false;
@@ -359,6 +385,8 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       return state.phase === cond.phase;
     case "targetIs":
       return ctx.lastTarget !== null && matchFilter(db, state, ctx.lastTarget, cond.filter, charaAreaOf(state, p, ctx.lastTarget));
+    case "triggerIs":
+      return ctx.triggerUid != null && matchFilter(db, state, ctx.triggerUid, cond.filter, charaAreaOf(state, p, ctx.triggerUid));
     case "targetParam": {
       if (ctx.lastTarget === null) return false;
       const v = effParam(db, state, ctx.lastTarget, cond.param);
@@ -375,14 +403,15 @@ function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid: numbe
     if (c.type === "guts" && gutsFor(state, p, sourceUid).length < c.count) return false;
     if (c.type === "gutsAny" && allGutsOf(state, p).length < c.count) return false;
     if (c.type === "dropFromHand") {
-      const cands = c.filter?.affiliation
-        ? state.players[p].hand.filter((u) => cardOf(db, state, u).affiliations.includes(c.filter!.affiliation!))
-        : state.players[p].hand;
+      const cands = c.filter ? state.players[p].hand.filter((u) => matchFilter(db, state, u, c.filter!)) : state.players[p].hand;
       if (cands.length < c.count) return false;
     }
     if (c.type === "dropSelf" && !state.players[p].hand.includes(sourceUid)) return false;
     if (c.type === "handToDeckBottom" && state.players[p].hand.length < c.count) return false;
-    if (c.type === "placeEventFromHand" && !state.players[p].hand.some((u) => cardOf(db, state, u).type === "EVENT")) return false;
+    if (c.type === "placeEventFromHand" && !state.players[p].hand.some((u) => {
+      const card = cardOf(db, state, u);
+      return card.type === "EVENT" && (!c.filter?.affiliation || card.affiliations.includes(c.filter.affiliation));
+    })) return false;
     if (c.type === "gutsFrom") {
       let n = 0;
       for (const area of c.areas) {
@@ -398,6 +427,14 @@ function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid: numbe
       if (![ps.serve, ps.receive, ps.toss, ps.attack, ps.blockCenter].some((st) => st.includes(sourceUid)) && !ps.blockSides.includes(sourceUid)) return false;
     }
     if (c.type === "selfToDeckBottom" && charaAreaOf(state, p, sourceUid) === null) return false;
+    if (c.type === "moveOpponentEventCost") {
+      const oppEvents = state.players[other(p)].eventArea;
+      if (!oppEvents.some((u) => {
+        const card = cardOf(db, state, u);
+        return (!c.filter?.names || c.filter.names.map(normName).includes(nameOf(db, state, u)))
+          && (!c.filter?.affiliation || card.affiliations.includes(c.filter.affiliation));
+      })) return false;
+    }
     // tilt：純物理動作，恆可付（Q375）
   }
   return true;
@@ -410,12 +447,13 @@ function costOps(costs: Cost[]): RtAction[] {
     else if (c.type === "gutsAny") out.push({ op: "_payGutsAny", count: c.count });
     else if (c.type === "dropFromHand") out.push({ op: "_dropHandCost", count: c.count, filter: c.filter });
     else if (c.type === "handToDeckBottom") out.push({ op: "handToDeckBottom", count: c.count });
-    else if (c.type === "placeEventFromHand") out.push({ op: "_placeEventCost" });
+    else if (c.type === "placeEventFromHand") out.push({ op: "_placeEventCost", filter: c.filter });
     else if (c.type === "gutsFrom") out.push({ op: "_payGutsFrom", areas: c.areas, count: c.count });
     else if (c.type === "millDeck") out.push({ op: "_millCost", count: c.count });
     else if (c.type === "dropChara") out.push({ op: "_dropCharaCost", area: c.area, filter: c.filter });
     else if (c.type === "dropSelfFromCourt") out.push({ op: "_dropSelfCourt" });
     else if (c.type === "selfToDeckBottom") out.push({ op: "_selfToDeckBottom" });
+    else if (c.type === "moveOpponentEventCost") out.push({ op: "_moveOpponentEventCost", filter: c.filter, destination: c.destination });
     // dropSelf 於宣言當下執行（useSkill）；tilt 無遊戲狀態（Q375）
   }
   return out;
@@ -429,6 +467,26 @@ function watcherActive(state: GameState, w: Watcher): boolean {
 
 function enqueue(state: GameState, item: Omit<PendingItem, "id">): void {
   state.pendingQueue.push({ ...item, id: state.nextId++ });
+}
+
+function enqueueEventPlayed(db: CardDb, state: GameState, actor: PlayerId, eventUid: number): void {
+  for (const owner of [0, 1] as const) {
+    for (const source of charasOf(state, owner)) {
+      const def = effectDefOf(db, state, source.uid);
+      def?.skills.forEach((skill, i) => {
+        if (skill.kind !== "passive" || skill.trigger.on !== "eventPlayed") return;
+        const expected = skill.trigger.player === "self" ? owner : other(owner);
+        if (actor !== expected) return;
+        const f = skill.trigger.filter;
+        if (f) {
+          const card = cardOf(db, state, eventUid);
+          if (f.names && !f.names.map(normName).includes(nameOf(db, state, eventUid))) return;
+          if (f.affiliation && !card.affiliations.includes(f.affiliation)) return;
+        }
+        enqueue(state, { player: owner, source: source.uid, kind: "passive", skillIndex: i, triggerUid: eventUid, desc: `${nameOf(db, state, source.uid)} 的事件觸發技能` });
+      });
+    }
+  }
 }
 
 /**
@@ -492,7 +550,7 @@ export function deployCard(
     d2.skills.forEach((s, i) => {
       if (s.kind !== "passive" || s.trigger.on !== "allyDeploy") return;
       if (s.trigger.area && !s.trigger.area.includes(area)) return;
-      enqueue(state, { player: p, source: c.uid, kind: "passive", skillIndex: i, triggerUid: uid, desc: `${nameOf(db, state, c.uid)} 的技能` });
+      enqueue(state, { player: p, source: c.uid, kind: "passive", skillIndex: i, triggerUid: uid, origin: opts.origin, desc: `${nameOf(db, state, c.uid)} 的技能` });
     });
   }
   // 監看中的遲發（P01-006/010/079、Aパス、ブロックアウト…）
@@ -502,7 +560,9 @@ export function deployCard(
     if (p !== expect) continue;
     if (w.trigger.area && !w.trigger.area.includes(area)) continue;
     if (w.trigger.filter && !matchFilter(db, state, uid, w.trigger.filter, area)) continue;
+    if (w.remainingTriggers !== undefined && w.remainingTriggers <= 0) continue;
     enqueue(state, { player: w.player, source: w.source, kind: "delayed", actions: w.actions, triggerUid: uid, desc: w.desc });
+    if (w.remainingTriggers !== undefined) w.remainingTriggers--;
   }
 }
 
@@ -713,8 +773,9 @@ export function freeOptions(db: CardDb, state: GameState): { skills: FreeOption[
   for (const uid of state.players[p].hand) {
     const c = cardOf(db, state, uid);
     if (c.type !== "EVENT") continue;
-    if (!playTimingsOf(c).includes(phase)) continue;
+    if (!eventTimingsOf(db, state, uid).includes(phase)) continue;
     if (!effectDefOf(db, state, uid)?.skills.some((s) => s.kind === "event")) continue; // 未實裝 DSL 的事件卡＝暫不可打
+    if (state.restrictions.some((r) => r.player === p && r.banEventTimings?.some((t) => eventTimingsOf(db, state, uid).includes(t)) && r.setNo === state.setNo && r.activeTurn === state.turnNo)) continue;
     events.push({ uid, label: `打出 ${nameOf(db, state, uid)}` }); // ターン1 無效時仍可 play（Q300）
   }
   return { skills, events };
@@ -755,16 +816,21 @@ export function playEvent(db: CardDb, state: GameState, uid: number): void {
   log(state, p, `打出事件卡 ${nameOf(db, state, uid)}`);
   if (isSkillInvalid(db, state, p, uid)) {
     log(state, p, `${nameOf(db, state, uid)} 的技能已被ターン1無效化，不發生效果`);
+    enqueueEventPlayed(db, state, p, uid);
     return; // Q300
   }
   const skill = effectDefOf(db, state, uid)?.skills.find((s) => s.kind === "event") as Extract<SkillDef, { kind: "event" }> | undefined;
-  if (!skill) return;
+  if (!skill) {
+    enqueueEventPlayed(db, state, p, uid);
+    return;
+  }
   state.effectCtx = {
     player: p,
     source: uid,
     frames: [{ actions: [...skill.actions], pc: 0 }],
     lastTarget: null,
     triggerUid: null,
+    eventSource: true,
     turn1: !!skill.turn1,
     anyExecuted: false,
     awaiting: null,
@@ -815,8 +881,45 @@ export interface ScriptApi {
 /** 特例腳本：讀 ScriptApi → 回傳一串 DSL Action（塞回解釋器執行）。
  *  id 命名建議 `card.<卡號>.<skill序>`。可變物件，測試可注入。 */
 export const SCRIPTS: Record<string, (api: ScriptApi) => Action[]> = {
-  // 目前 98 張卡皆能以 DSL 表達 → registry 暫空。
-  // 未來怪卡（或從 paidGutsAll 等單卡 primitive 搬遷而來）在此註冊。範例見 script-registry.test.ts。
+  "card.HV-P01-066.condition": ({ db, state, player, source }) => {
+    const allKamomedai = charasOf(state, player).length > 0
+      && charasOf(state, player).every((c) => cardOf(db, state, c.uid).affiliations.includes("鴎台"));
+    const fourAffiliations = maxDistinctAffiliations(charasOf(state, player).map((c) => cardOf(db, state, c.uid).affiliations)) >= 4;
+    if (!allKamomedai && !fourAffiliations) return [];
+    return [{
+      op: "gate",
+      costs: [{ type: "guts", count: 3 }],
+      then: [
+        { op: "addParam", target: "self", param: "attack", amount: 3 },
+        { op: "moveOpponentEvent", count: 2, upTo: true, destination: "drop" },
+        { op: "if", cond: [{ type: "eventAreaCount", player: "opponent", max: 2 }], then: [{ op: "addParam", target: "self", param: "attack", amount: 1 }] },
+      ],
+    }];
+  },
+  "card.HV-P02-004.covered-karasuno": ({ db, state, player, source }) => {
+    const area = charaAreaOf(state, player, source);
+    if (area === null || area === "block") return [];
+    const stack = state.players[player][area];
+    const i = stack.indexOf(source);
+    const covered = i > 0 ? stack[i - 1] : undefined;
+    if (covered === undefined || !cardOf(db, state, covered).affiliations.includes("烏野")) return [];
+    return [{
+      op: "opponentMayPlaceEvent",
+      else: [{ op: "watch", trigger: { on: "handAdd", player: "opponent" }, duration: "nextOpponentTurn", actions: [{ op: "draw", count: 1 }] }],
+    }];
+  },
+  "card.HV-P02-079.choose-guts-area": ({ state, player }) => {
+    const areas = [...new Set(charasOf(state, player).map((c) => c.area))];
+    if (!areas.length) return [];
+    return [{
+      op: "chooseOne",
+      optional: true,
+      options: areas.map((area) => ({
+        label: `${area}區`,
+        actions: [{ op: "handToGuts", area, filter: { affiliation: "烏野" }, upTo: 1 }],
+      })),
+    }];
+  },
 };
 
 /** 展開關鍵字 †9 */
@@ -911,7 +1014,11 @@ function finishEffect(db: CardDb, state: GameState): void {
     state.turn1.push({ player: ctx.player, name: n, setNo: state.setNo, turnNo: state.turnNo });
     log(state, ctx.player, `［ターン1］本回合中「${n}」的技能全部無效`);
   }
+  const eventSource = ctx.eventSource;
+  const eventPlayer = ctx.player;
+  const eventUid = ctx.source;
   state.effectCtx = null;
+  if (eventSource) enqueueEventPlayed(db, state, eventPlayer, eventUid);
 }
 
 function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): void {
@@ -999,11 +1106,17 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "gate": {
-      if (a.cond && !a.cond.every((c) => evalCond(db, state, ctx, c))) break;
+      if (a.cond && !a.cond.every((c) => evalCond(db, state, ctx, c))) {
+        if (a.else) pushFrame(ctx, [...a.else]);
+        break;
+      }
       const costs = a.costs ?? [];
-      if (!costPayable(db, state, p, ctx.source, costs)) break;
+      if (!costPayable(db, state, p, ctx.source, costs)) {
+        if (a.else) pushFrame(ctx, [...a.else]);
+        break;
+      }
       const costText = costs.map((c) => (c.type === "guts" ? `付 ${c.count} Guts` : c.type === "dropFromHand" ? `棄 ${c.count} 張手牌` : "棄掉此卡")).join("、");
-      ctx.awaiting = { kind: "confirm", what: "gate", costs, then: a.then, prompt: costText ? `要${costText}使用技能嗎？` : "要使用技能嗎？" };
+      ctx.awaiting = { kind: "confirm", what: "gate", costs, then: a.then, else: a.else, prompt: costText ? `要${costText}使用技能嗎？` : "要使用技能嗎？" };
       break;
     }
     case "revealTopTutor": {
@@ -1028,6 +1141,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const cands = banHandAddActive(state, p)
         ? []
         : looked.filter((uid) => {
+            if (a.cardType && cardOf(db, state, uid).type !== a.cardType) return false;
             if (a.names && !a.names.map(normName).includes(nameOf(db, state, uid))) return false;
             if (a.affiliation && !cardOf(db, state, uid).affiliations.includes(a.affiliation)) return false;
             return true;
@@ -1077,7 +1191,9 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const c = cardOf(db, state, uid);
       log(state, p, `公開牌組頂：${c.nameJa}，置於牌組底`); // Q210：強制公開
       ps.deck.push(uid);
-      if (!a.match.affiliation || c.affiliations.includes(a.match.affiliation)) pushFrame(ctx, [...a.then]);
+      const absent = !a.match.affiliationAbsentFromCourt || !charasOf(state, p).some((x) =>
+        cardOf(db, state, x.uid).affiliations.some((aff) => c.affiliations.includes(aff)));
+      if ((!a.match.affiliation || c.affiliations.includes(a.match.affiliation)) && absent) pushFrame(ctx, [...a.then]);
       break;
     }
     case "millTop": {
@@ -1121,8 +1237,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         log(state, p, "「手札に加えられない」生效中");
         break;
       }
-      const top = topChara(ps[a.from === "block" ? "blockCenter" : a.from]);
-      const cands = top !== null && matchFilter(db, state, top, a.filter, a.from) ? [top] : [];
+      const cands = a.from === "court"
+        ? charasOf(state, p).filter((c) => matchFilter(db, state, c.uid, a.filter, c.area)).map((c) => c.uid)
+        : (() => {
+            const top = topChara(ps[a.from === "block" ? "blockCenter" : a.from]);
+            return top !== null && matchFilter(db, state, top, a.filter, a.from) ? [top] : [];
+          })();
       if (cands.length === 0) break;
       ctx.awaiting = { kind: "cards", purpose: "moveToHand", candidates: cands, min: 0, max: a.upTo, prompt: `要把 ${nameOf(db, state, cands[0]!)} 加入手牌嗎？（可選 0 張）` }; // Q306：まで可選 0
       break;
@@ -1184,6 +1304,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       }
       break;
     }
+    case "handToDeckTop": {
+      const n = Math.min(a.count, ps.hand.length);
+      if (n === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "handToTop", candidates: [...ps.hand], min: n, max: n, prompt: `選擇 ${n} 張手牌置於牌組頂` };
+      break;
+    }
     case "deployFromGuts": {
       const pool = a.fromArea
         ? (a.fromArea === "block" ? ps.blockCenter : ps[a.fromArea]).slice(0, -1)
@@ -1193,7 +1319,8 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         return c.type === "CHARACTER" && matchFilter(db, state, u, a.filter) && canDeployTo(db, state, p, u, a.area, undefined, "effect");
       });
       if (cands.length === 0) break;
-      ctx.awaiting = { kind: "cards", purpose: "deployFromGuts", candidates: cands, min: 0, max: a.upTo, area: a.area, then: a.then, prompt: `選擇要從ガッツ登場到${a.area}的卡（可選 0 張）` };
+      const min = Math.min(a.min ?? 0, cands.length);
+      ctx.awaiting = { kind: "cards", purpose: "deployFromGuts", candidates: cands, min, max: a.upTo, area: a.area, then: a.then, prompt: `選擇要從ガッツ登場到${a.area}的卡${min ? "" : "（可選 0 張）"}` };
       break;
     }
     case "setParam": {
@@ -1214,6 +1341,22 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       }
       break;
     }
+    case "setParamToBase": {
+      const apply = (uid: number) => {
+        const value = baseParam(db, state, uid, a.param);
+        if (value !== null) applySetMod(db, state, ctx, uid, a.param, value);
+      };
+      if (typeof a.target === "object" && a.target.choose) {
+        const who = a.target.player === "opponent" ? other(p) : p;
+        const cands = charasOf(state, who).filter((c) => matchFilter(db, state, c.uid, a.target as CharaFilter, c.area)).map((c) => c.uid);
+        if (cands.length === 1) apply(cands[0]!);
+        else if (cands.length > 1) ctx.awaiting = { kind: "cards", purpose: "target", candidates: cands, min: 1, max: 1, param: a.param, then: [{ op: "__baseMarker" } as unknown as Action], prompt: `選擇要恢復原本${paramLabel(a.param)}的角色` };
+      } else {
+        const uid = resolveTargetUid(ctx, a.target as "self" | "target" | "trigger");
+        if (uid !== null) apply(uid);
+      }
+      break;
+    }
     case "millTopAll": {
       const n = Math.min(a.count, ps.deck.length);
       const milled: number[] = [];
@@ -1227,7 +1370,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         log(state, p, `牌組頂 ${n} 張置入棄牌區`);
       }
       // Q395：0 枚→不成立；Q396：可能な限り棄到沒有為止、全部符合即成立
-      if (a.match && a.then && milled.length > 0 && milled.every((u) => cardOf(db, state, u).affiliations.includes(a.match!.affiliation))) pushFrame(ctx, [...a.then]);
+      if ((!a.requireFull || milled.length === a.count) && a.match && a.then && milled.length > 0 && milled.every((u) => cardOf(db, state, u).affiliations.includes(a.match!.affiliation))) pushFrame(ctx, [...a.then]);
       break;
     }
     case "dropOpponentGuts": {
@@ -1261,6 +1404,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         setNo: state.setNo,
         turnMin: a.duration === "thisTurn" ? state.turnNo : state.turnNo + 1,
         turnMax: a.duration === "thisTurn" ? state.turnNo : state.turnNo + 1,
+        remainingTriggers: a.maxTriggers,
         desc: `${nameOf(db, state, ctx.source)} 的遲發效果`,
       };
       state.watchers.push(w);
@@ -1268,8 +1412,9 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "restrict": {
+      const target = a.player === "self" ? p : other(p);
       state.restrictions.push({
-        player: other(p),
+        player: target,
         area: a.restriction.area,
         maxCount: a.restriction.maxCount,
         banBaseParamMin: a.restriction.banBaseParamMin,
@@ -1279,9 +1424,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         banOneTouch: a.restriction.banOneTouch,
         banHandReceiveActive: a.restriction.banHandReceiveActive,
         banPositions: a.restriction.banPositions,
+        disableSkills: a.restriction.disableSkills,
+        banEventTimings: a.restriction.banEventTimings,
+        preventOpDecrease: a.restriction.preventOpDecrease,
         blockFailIfDpMax: a.restriction.blockFailIfDpMax,
         setNo: state.setNo,
-        activeTurn: state.turnNo + 1,
+        activeTurn: a.duration === "thisTurn" ? state.turnNo : state.turnNo + 1,
         desc: `${nameOf(db, state, ctx.source)} 的限制`,
       });
       ctx.anyExecuted = true;
@@ -1303,10 +1451,82 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     }
     case "addOpponentOp": {
       if (state.op && state.op.owner !== p && state.op.source === "attack") {
+        if (a.amount < 0 && state.restrictions.some((r) => r.player === state.op!.owner && r.preventOpDecrease && r.setNo === state.setNo && r.activeTurn === state.turnNo)) {
+          log(state, p, "對手 OP 受效果保護，無法減少");
+          break;
+        }
         state.op.value += a.amount;
         ctx.anyExecuted = true;
         log(state, p, `對手的 OP ${a.amount >= 0 ? "+" : ""}${a.amount}（→${state.op.value}）`);
       }
+      break;
+    }
+    case "shuffleHandIntoDeck": {
+      const who = a.player === "self" ? p : other(p);
+      const target = state.players[who];
+      target.deck.push(...target.hand.splice(0));
+      for (let i = target.deck.length - 1; i > 0; i--) {
+        const j = Math.floor(nextRandom(state) * (i + 1));
+        [target.deck[i], target.deck[j]] = [target.deck[j]!, target.deck[i]!];
+      }
+      const n = drawCards(state, who, a.draw);
+      ctx.anyExecuted = true;
+      log(state, who, `手牌洗回牌組後抽 ${n} 張`);
+      break;
+    }
+    case "moveOpponentEvent": {
+      const opp = other(p);
+      const cands = state.players[opp].eventArea.filter((u) => {
+        const card = cardOf(db, state, u);
+        return (!a.filter?.names || a.filter.names.map(normName).includes(nameOf(db, state, u)))
+          && (!a.filter?.affiliation || card.affiliations.includes(a.filter.affiliation));
+      });
+      if (!cands.length) break;
+      const min = a.upTo ? 0 : Math.min(a.count, cands.length);
+      ctx.awaiting = { kind: "cards", purpose: "moveOpponentEvent", candidates: cands, min, max: Math.min(a.count, cands.length), destination: a.destination, prompt: "選擇要移動的對手事件卡" };
+      break;
+    }
+    case "handToGuts": {
+      const dest = a.area === "block" ? ps.blockCenter : ps[a.area];
+      if (topChara(dest) === null) break;
+      const cands = ps.hand.filter((u) => cardOf(db, state, u).type === "CHARACTER" && (!a.filter || matchFilter(db, state, u, a.filter)));
+      if (!cands.length) break;
+      ctx.awaiting = { kind: "cards", purpose: "handToGuts", candidates: cands, min: 0, max: Math.min(a.upTo, cands.length), area: a.area, prompt: `選擇要放到${a.area}區作為 Guts 的手牌` };
+      break;
+    }
+    case "gutsToHandAny": {
+      if (banHandAddActive(state, p)) break;
+      const cands = allGutsOf(state, p).filter((u) => !a.filter || matchFilter(db, state, u, a.filter));
+      if (!cands.length) break;
+      ctx.awaiting = { kind: "cards", purpose: "gutsToHandAny", candidates: cands, min: 0, max: Math.min(a.upTo, cands.length), prompt: "選擇要加入手牌的 Guts" };
+      break;
+    }
+    case "dropTarget": {
+      const uid = resolveTargetUid(ctx, a.target);
+      if (uid === null) break;
+      const owner = charaAreaOf(state, p, uid) !== null ? p : charaAreaOf(state, other(p), uid) !== null ? other(p) : null;
+      if (owner === null) break;
+      const ownerState = state.players[owner];
+      for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+        const i = ownerState[key].indexOf(uid);
+        if (i >= 0) ownerState[key].splice(i, 1);
+      }
+      const side = ownerState.blockSides.indexOf(uid);
+      if (side >= 0) ownerState.blockSides.splice(side, 1);
+      purgeModifiers(state, uid);
+      ownerState.drop.push(uid);
+      ctx.anyExecuted = true;
+      log(state, owner, `${nameOf(db, state, uid)} 進入棄牌區`);
+      break;
+    }
+    case "opponentMayPlaceEvent": {
+      const opp = other(p);
+      const cands = state.players[opp].hand.filter((u) => cardOf(db, state, u).type === "EVENT");
+      if (!cands.length) {
+        pushFrame(ctx, [...a.else]);
+        break;
+      }
+      ctx.awaiting = { kind: "cards", purpose: "placeEventOpponent", chooser: opp, candidates: cands, min: 0, max: 1, then: a.else, prompt: "可從手牌將 1 張事件卡放到事件區；不放則執行後續效果" };
       break;
     }
     case "skipToPhase": {
@@ -1391,7 +1611,10 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "_placeEventCost": {
-      const cands = ps.hand.filter((u) => cardOf(db, state, u).type === "EVENT");
+      const cands = ps.hand.filter((u) => {
+        const card = cardOf(db, state, u);
+        return card.type === "EVENT" && (!a.filter?.affiliation || card.affiliations.includes(a.filter.affiliation));
+      });
       if (cands.length === 0) throw new Error("手牌無事件卡（宣言驗證應已擋下）");
       if (cands.length === 1) {
         removeFromHand(state, p, cands[0]!);
@@ -1438,7 +1661,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "_dropHandCost": {
-      const cands = a.filter?.affiliation ? ps.hand.filter((u) => cardOf(db, state, u).affiliations.includes(a.filter!.affiliation!)) : [...ps.hand];
+      const cands = a.filter ? ps.hand.filter((u) => matchFilter(db, state, u, a.filter!)) : [...ps.hand];
       if (cands.length < a.count) throw new Error("手牌不足（宣言驗證應已擋下）");
       if (cands.length === a.count) {
         for (const uid of cands) {
@@ -1449,6 +1672,23 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         log(state, p, `棄 ${a.count} 張手牌（cost）`);
       } else {
         ctx.awaiting = { kind: "cards", purpose: "dropHand", candidates: cands, min: a.count, max: a.count, prompt: `選擇要棄掉的 ${a.count} 張手牌（cost）` };
+      }
+      break;
+    }
+    case "_moveOpponentEventCost": {
+      const opp = other(p);
+      const cands = state.players[opp].eventArea.filter((u) => {
+        const card = cardOf(db, state, u);
+        return (!a.filter?.names || a.filter.names.map(normName).includes(nameOf(db, state, u)))
+          && (!a.filter?.affiliation || card.affiliations.includes(a.filter.affiliation));
+      });
+      if (!cands.length) throw new Error("對手事件區沒有可支付的卡");
+      if (cands.length === 1) {
+        state.players[opp].eventArea.splice(state.players[opp].eventArea.indexOf(cands[0]!), 1);
+        state.players[opp].deck.push(cands[0]!);
+        ctx.anyExecuted = true;
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "moveOpponentEventCost", candidates: cands, min: 1, max: 1, destination: a.destination, prompt: "選擇要移到牌組底的對手事件卡（cost）" };
       }
       break;
     }
@@ -1547,7 +1787,10 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
     ctx.awaiting = null;
     if (aw.what === "gate") {
       if (accept) pushFrame(ctx, [...costOps(aw.costs ?? []), ...aw.then]);
-      else log(state, ctx.player, "選擇不使用技能");
+      else {
+        log(state, ctx.player, "選擇不使用技能");
+        if (aw.else) pushFrame(ctx, [...aw.else]);
+      }
     } else if (aw.what === "draw") {
       if (accept) {
         const n = drawCards(state, ctx.player, aw.count ?? 1);
@@ -1591,6 +1834,10 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           if (aw.then?.some((x) => (x as { op?: string }).op === "__setMarker")) {
             ctx.lastTarget = uids[0]!;
             applySetMod(db, state, ctx, uids[0]!, aw.param as ParamName, aw.amount!);
+          } else if (aw.then?.some((x) => (x as { op?: string }).op === "__baseMarker")) {
+            ctx.lastTarget = uids[0]!;
+            const value = baseParam(db, state, uids[0]!, aw.param as ParamName);
+            if (value !== null) applySetMod(db, state, ctx, uids[0]!, aw.param as ParamName, value);
           } else {
             afterTargetChosen(db, state, ctx, uids[0]!, aw.param!, aw.amount!);
           }
@@ -1636,12 +1883,15 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
               break;
             }
           }
+          const side = ps.blockSides.indexOf(uid);
+          if (side >= 0) ps.blockSides.splice(side, 1);
           purgeModifiers(state, uid); // 離開コート → 效果洗掉 †8-4-3
           ps.hand.push(uid);
           ctx.anyExecuted = true;
           log(state, ctx.player, `${nameOf(db, state, uid)} 回到手牌`);
         }
         fireHandAdds(state, ctx.player, uids.length);
+        ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
         break;
       }
       case "gutsToHand": {
@@ -1712,6 +1962,59 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           ctx.anyExecuted = true;
           log(state, ctx.player, `${uids.length} 張手牌置於牌組底`);
         }
+        break;
+      }
+      case "handToTop": {
+        for (const uid of [...uids].reverse()) {
+          removeFromHand(state, ctx.player, uid);
+          ps.deck.unshift(uid);
+        }
+        if (uids.length) ctx.anyExecuted = true;
+        break;
+      }
+      case "gutsToHandAny": {
+        for (const uid of uids) {
+          for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+            const i = ps[key].indexOf(uid);
+            if (i >= 0) ps[key].splice(i, 1);
+          }
+          ps.hand.push(uid);
+        }
+        if (uids.length) {
+          ctx.anyExecuted = true;
+          ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
+          fireHandAdds(state, ctx.player, uids.length);
+        }
+        break;
+      }
+      case "handToGuts": {
+        const dest = aw.area === "block" ? ps.blockCenter : ps[aw.area!];
+        for (const uid of uids) {
+          removeFromHand(state, ctx.player, uid);
+          dest.unshift(uid);
+        }
+        if (uids.length) ctx.anyExecuted = true;
+        break;
+      }
+      case "moveOpponentEvent":
+      case "moveOpponentEventCost": {
+        const opp = other(ctx.player);
+        const os = state.players[opp];
+        for (const uid of uids) {
+          os.eventArea.splice(os.eventArea.indexOf(uid), 1);
+          if (aw.destination === "deckBottom") os.deck.push(uid);
+          else os.drop.push(uid);
+        }
+        if (uids.length) ctx.anyExecuted = true;
+        break;
+      }
+      case "placeEventOpponent": {
+        const opp = other(ctx.player);
+        if (uids.length) {
+          removeFromHand(state, opp, uids[0]!);
+          state.players[opp].eventArea.push(uids[0]!);
+          ctx.anyExecuted = true;
+        } else if (aw.then) pushFrame(ctx, [...aw.then]);
         break;
       }
       case "placeEvent": {

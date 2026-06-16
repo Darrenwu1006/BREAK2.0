@@ -13,6 +13,14 @@ const AREA_LABEL: Record<CourtArea, string> = {
   attack: "攻擊",
 };
 
+const AREA_EN: Record<CourtArea, string> = {
+  serve: "SERVE",
+  block: "BLOCK",
+  receive: "RECEIVE",
+  toss: "TOSS",
+  attack: "ATTACK",
+};
+
 const SOURCE_LABEL = {
   serve: "發球",
   block: "攔網回球",
@@ -35,6 +43,7 @@ interface GameBoardProps extends InspectHandlers {
   recentUids: Set<number>;
   onPickSet: (index: number) => void;
   onOpenDrop: (player: PlayerId) => void;
+  onOpenEvent: (player: PlayerId) => void;
   onToggleGuts: (key: string | null) => void;
   onDropCard: (uid: number, area: CourtArea) => void;
 }
@@ -43,6 +52,7 @@ function cardOf(db: CardDb, state: GameState, uid: number): Card {
   return db.get(state.cards[uid]!)!;
 }
 
+/** 單一場區（發球/接球/舉球/攻擊/攔網）。攔網以 sideUids＋中央堆呈現三格。 */
 function StackZone(props: {
   db: CardDb;
   state: GameState;
@@ -65,12 +75,11 @@ function StackZone(props: {
   const topName = top === null ? "空" : displayName(cardOf(db, state, top));
   const aria = `${owner}${AREA_LABEL[area]}區：${topName}${guts.length ? `，Guts ${guts.length}` : ""}`;
 
-  const renderCard = (uid: number, width: number, badge?: string) => (
+  const renderCard = (uid: number, badge?: string) => (
     <CardView
       key={uid}
       card={cardOf(db, state, uid)}
       uid={uid}
-      width={width}
       badge={badge}
       className={props.recentUids.has(uid) ? "card-entering" : undefined}
       onHover={(card) => props.onHover(card ? uid : null)}
@@ -79,6 +88,7 @@ function StackZone(props: {
     />
   );
 
+  const isBlock = area === "block";
   return (
     <section
       className={`court-zone zone-${area} player-${player}${props.active ? " zone-active" : ""}${props.canDrop ? " zone-droppable" : ""}${props.activeGutsKey === key ? " zone-guts-open" : ""}`}
@@ -95,7 +105,8 @@ function StackZone(props: {
       }}
     >
       <div className="zone-heading">
-        <span>{AREA_LABEL[area]}</span>
+        <span className="zone-en">{AREA_EN[area]}</span>
+        <span className="zone-zh">{AREA_LABEL[area]}</span>
         {guts.length > 0 && (
           <button
             className="guts-badge"
@@ -109,8 +120,15 @@ function StackZone(props: {
       </div>
 
       <div className="zone-cards">
-        {props.sideUids?.map((uid) => renderCard(uid, 44))}
-        {top !== null ? renderCard(top, 58, area === "block" ? "中央" : undefined) : <div className="zone-empty" aria-hidden="true" />}
+        {isBlock ? (
+          <>
+            {props.sideUids?.[0] !== undefined ? renderCard(props.sideUids[0]) : <div className="zone-empty" aria-hidden="true" />}
+            {top !== null ? renderCard(top, "中央") : <div className="zone-empty" aria-hidden="true" />}
+            {props.sideUids?.[1] !== undefined ? renderCard(props.sideUids[1]) : <div className="zone-empty" aria-hidden="true" />}
+          </>
+        ) : (
+          top !== null ? renderCard(top) : <div className="zone-empty" aria-hidden="true" />
+        )}
       </div>
 
       {props.activeGutsKey === key && guts.length > 0 && (
@@ -120,7 +138,7 @@ function StackZone(props: {
             <button className="btn-quiet" onClick={() => props.onToggleGuts(null)}>關閉</button>
           </div>
           <div className="guts-cards">
-            {guts.map((uid) => renderCard(uid, 54))}
+            {guts.map((uid) => renderCard(uid))}
           </div>
         </div>
       )}
@@ -128,6 +146,7 @@ function StackZone(props: {
   );
 }
 
+/** 牌堆（牌組/棄牌/事件）小堆，可選 onOpen 開瀏覽。 */
 function MiniPile(props: {
   label: string;
   count: number;
@@ -154,11 +173,10 @@ function MiniPile(props: {
           <CardView
             card={cardOf(props.db, props.state, props.topUid!)}
             uid={props.topUid}
-            width={30}
             onHover={(card) => props.onHover(card ? props.topUid! : null)}
           />
         ) : props.count > 0 ? (
-          <CardBack width={30} school={props.school} />
+          <CardBack school={props.school} />
         ) : (
           <span className="mini-pile-empty" />
         )}
@@ -176,6 +194,7 @@ interface PileGroupProps extends InspectHandlers {
   meta: DeckMeta;
 }
 
+/** SET 側欄（左）。 */
 function SetPileGroup(props: PileGroupProps & { canPickSet: boolean; onPickSet: (index: number) => void }) {
   const ps = props.state.players[props.player];
   return (
@@ -184,12 +203,11 @@ function SetPileGroup(props: PileGroupProps & { canPickSet: boolean; onPickSet: 
       data-zone-anchor={`p${props.player}-set`}
       aria-label={`${props.player === 0 ? "我方" : "對方"} Set 卡 ${ps.setArea.length} 張`}
     >
-      <span className="pile-group-title">Set</span>
+      <span className="pile-group-title">SET<small>{props.player === 0 ? "你" : "對手"}</small></span>
       <div className="set-card-row">
         {ps.setArea.map((_, index) => (
           <CardBack
             key={index}
-            width={28}
             school={props.meta.school}
             label={props.canPickSet && props.player === 0 ? String(index + 1) : undefined}
             onClick={props.canPickSet && props.player === 0 ? () => props.onPickSet(index) : undefined}
@@ -201,29 +219,14 @@ function SetPileGroup(props: PileGroupProps & { canPickSet: boolean; onPickSet: 
   );
 }
 
-function ResourcePileGroup(props: PileGroupProps & { onOpenDrop: () => void }) {
+/** DECK＋DROP 側欄（右）。 */
+function RailDeckDrop(props: PileGroupProps & { onOpenDrop: () => void }) {
   const ps = props.state.players[props.player];
   const topDrop = ps.drop.length ? ps.drop[ps.drop.length - 1] : undefined;
-  const topEvent = ps.eventArea.length ? ps.eventArea[ps.eventArea.length - 1] : undefined;
   return (
-    <div className="resource-piles">
-      <MiniPile label="事件" count={ps.eventArea.length} topUid={topEvent} db={props.db} state={props.state} player={props.player} pile="event" onHover={props.onHover} onInspect={props.onInspect} />
+    <div className="rail-deckdrop" aria-label={`${props.player === 0 ? "我方" : "對手"}牌組與棄牌`}>
       <MiniPile label="牌組" count={ps.deck.length} school={props.meta.school} db={props.db} state={props.state} player={props.player} pile="deck" onHover={props.onHover} onInspect={props.onInspect} />
       <MiniPile label="棄牌" count={ps.drop.length} topUid={topDrop} db={props.db} state={props.state} player={props.player} pile="drop" onOpen={props.onOpenDrop} onHover={props.onHover} onInspect={props.onInspect} />
-    </div>
-  );
-}
-
-/** 手機/平板直式：牌堆疊在球場四角（空間有限） */
-function PlayerPiles(props: PileGroupProps & {
-  canPickSet: boolean;
-  onPickSet: (index: number) => void;
-  onOpenDrop: () => void;
-}) {
-  return (
-    <div className={`player-piles player-piles-${props.player}`}>
-      <SetPileGroup {...props} />
-      <ResourcePileGroup {...props} />
     </div>
   );
 }
@@ -250,68 +253,93 @@ export function GameBoard(props: GameBoardProps) {
   const activeArea = state.phase === "serve" || state.phase === "block" || state.phase === "receive" || state.phase === "toss" || state.phase === "attack" ? state.phase : null;
   const inspect = (uid: number) => props.onInspect(uid);
 
+  const zone = (player: PlayerId, area: CourtArea, stack: Stack, sides?: Stack) => (
+    <StackZone
+      key={`${player}-${area}`}
+      db={props.db}
+      state={state}
+      player={player}
+      area={area}
+      stack={stack}
+      sideUids={sides ? [...sides] : undefined}
+      active={activePlayer === player && activeArea === area}
+      canDrop={player === 0 && props.deployArea === area}
+      activeGutsKey={props.activeGutsKey}
+      recentUids={props.recentUids}
+      onToggleGuts={props.onToggleGuts}
+      onDropCard={props.onDropCard}
+      onHover={props.onHover}
+      onInspect={inspect}
+    />
+  );
+
+  const eventPile = (player: PlayerId) => {
+    const ps = state.players[player];
+    const topEvent = ps.eventArea.length ? ps.eventArea[ps.eventArea.length - 1] : undefined;
+    return (
+      <MiniPile label="事件" count={ps.eventArea.length} topUid={topEvent} db={props.db} state={state} player={player} pile="event" onOpen={() => props.onOpenEvent(player)} onHover={props.onHover} onInspect={inspect} />
+    );
+  };
+
+  const p0 = state.players[0];
+  const p1 = state.players[1];
+
   return (
     <div className="arena">
-      <div className="opponent-hand" data-zone-anchor="p1-hand" aria-label={`對方手牌 ${state.players[1].hand.length} 張`}>
+      <div className="opponent-hand" data-zone-anchor="p1-hand" aria-label={`對方手牌 ${p1.hand.length} 張`}>
         <span>對方手牌</span>
         <div className="opponent-hand-cards">
-          {state.players[1].hand.map((uid) => <CardBack key={uid} width={24} school={props.deckMeta[1].school} />)}
+          {p1.hand.map((uid) => <CardBack key={uid} width={24} school={props.deckMeta[1].school} />)}
         </div>
-        <strong>{state.players[1].hand.length}</strong>
+        <strong>{p1.hand.length}</strong>
       </div>
 
-      <div className="court-stage">
-        <div className="court-flank flank-left">
+      <div className="mat">
+        <div className="mat-rail rail-set">
           <SetPileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
           <SetPileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
         </div>
 
-        <div className="volleyball-court">
-          <div className="court-surface" aria-hidden="true">
-            <div className="court-inner" />
-            <div className="attack-line attack-line-opponent" />
-            <div className="attack-line attack-line-human" />
-            <div className="net-line" />
+        <div className="mat-play">
+          {/* 對手半場（鏡像排版、文字正向） */}
+          <div className="mat-row mat-back mat-opp">
+            {eventPile(1)}
+            {zone(1, "serve", p1.serve)}
+          </div>
+          <div className="mat-row mat-trio mat-opp">
+            {zone(1, "attack", p1.attack)}
+            {zone(1, "toss", p1.toss)}
+            {zone(1, "receive", p1.receive)}
+          </div>
+          <div className="mat-row mat-blockrow mat-opp">
+            {zone(1, "block", p1.blockCenter, p1.blockSides)}
           </div>
 
-          <PlayerPiles db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
-          <PlayerPiles db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+          <div className="mat-net" aria-hidden="true" />
 
-          {([1, 0] as const).flatMap((player) => {
-            const ps = state.players[player];
-            return ([
-              ["serve", ps.serve],
-              ["block", ps.blockCenter, ps.blockSides],
-              ["receive", ps.receive],
-              ["toss", ps.toss],
-              ["attack", ps.attack],
-            ] as const).map(([area, stack, sides]) => (
-              <StackZone
-                key={`${player}-${area}`}
-                db={props.db}
-                state={state}
-                player={player}
-                area={area}
-                stack={stack}
-                sideUids={sides ? [...sides] : undefined}
-                active={activePlayer === player && activeArea === area}
-                canDrop={player === 0 && props.deployArea === area}
-                activeGutsKey={props.activeGutsKey}
-                recentUids={props.recentUids}
-                onToggleGuts={props.onToggleGuts}
-                onDropCard={props.onDropCard}
-                onHover={props.onHover}
-                onInspect={inspect}
-              />
-            ));
-          })}
+          {/* 我方半場 */}
+          <div className="mat-row mat-blockrow">
+            {zone(0, "block", p0.blockCenter, p0.blockSides)}
+          </div>
+          <div className="mat-row mat-trio">
+            {zone(0, "receive", p0.receive)}
+            {zone(0, "toss", p0.toss)}
+            {zone(0, "attack", p0.attack)}
+          </div>
+          <div className="mat-row mat-back">
+            {zone(0, "serve", p0.serve)}
+            {eventPile(0)}
+          </div>
 
-          <NetScore state={state} />
+          {/* OP/DP＋judge：移出中軸，浮在 play 右側留白、貼近網高 */}
+          <div className="net-anchor">
+            <NetScore state={state} />
+          </div>
         </div>
 
-        <div className="court-flank flank-right">
-          <ResourcePileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
-          <ResourcePileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+        <div className="mat-rail rail-res">
+          <RailDeckDrop db={props.db} state={state} player={1} meta={props.deckMeta[1]} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
+          <RailDeckDrop db={props.db} state={state} player={0} meta={props.deckMeta[0]} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
         </div>
       </div>
     </div>

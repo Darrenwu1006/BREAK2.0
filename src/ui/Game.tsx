@@ -29,7 +29,7 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
   attack: "攻擊",
 };
 
-type ToolMode = { type: "detail" } | { type: "counter" } | { type: "drop"; player: PlayerId };
+type ToolMode = { type: "detail" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
 
 function initialSpeed(): AiSpeed {
   const stored = localStorage.getItem("breaktcg-ai-speed");
@@ -58,6 +58,7 @@ export function Game(props: {
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const [handWidth, setHandWidth] = useState(0);
+  const [fitScale, setFitScale] = useState(1);
   const seenLogCount = useRef(state.log.length);
 
   const pd = state.pendingDecision;
@@ -65,6 +66,12 @@ export function Game(props: {
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
   const deployable = isMyDecision && deployArea ? deployableUids(db, state, HUMAN, deployArea) : [];
   const free = isMyDecision && pd?.type === "free" ? freeOptions(db, state) : { skills: [], events: [] };
+  // effect-cards：候選若都在我方手牌 → 就地在手牌選取（不另開卡列）
+  const effectCards = pd && pd.type === "effect-cards" ? pd : null;
+  const effectCandidates = effectCards?.candidates ?? [];
+  const effectMax = effectCards?.max ?? 1;
+  const effectCardsInHand = isMyDecision && !!effectCards && effectCandidates.length > 0
+    && effectCandidates.every((uid) => state.players[HUMAN].hand.includes(uid));
   const { motions, recentUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
 
   const visibleInspection = hovered ?? inspected;
@@ -149,6 +156,14 @@ export function Game(props: {
     return () => observer.disconnect();
   }, []);
 
+  // 固定設計畫布 1600×900，等比縮放置中（封頂 1.0：夠大的瀏覽器尺寸與間距一律相同）
+  useLayoutEffect(() => {
+    const update = () => setFitScale(Math.min(1, window.innerWidth / 1600, window.innerHeight / 1040));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   function onHandClick(uid: number) {
     if (!isMyDecision || !pd) {
       inspectUid(uid);
@@ -163,6 +178,13 @@ export function Game(props: {
       setMultiSel((selected) => selected.includes(uid)
         ? selected.filter((item) => item !== uid)
         : selected.length < 3 ? [...selected, uid] : selected);
+      return;
+    }
+    if (pd.type === "effect-cards") {
+      if (!effectCardsInHand || !effectCandidates.includes(uid)) { inspectUid(uid); return; }
+      setMultiSel((selected) => selected.includes(uid)
+        ? selected.filter((item) => item !== uid)
+        : selected.length < effectMax ? [...selected, uid] : selected);
       return;
     }
     if (!deployArea || !deployable.includes(uid)) {
@@ -256,6 +278,11 @@ export function Game(props: {
       case "effect-cards": {
         const min = pd.min ?? 0;
         const max = pd.max ?? 1;
+        if (effectCardsInHand) {
+          return bar(`${pd.prompt}：在手牌點選 ${min === max ? min : `${min}～${max}`} 張（已選 ${multiSel.length}）`, (
+            <button data-primary="true" disabled={multiSel.length < min || multiSel.length > max} onClick={() => decide({ type: "effect-cards", uids: multiSel })}>確定</button>
+          ));
+        }
         return (
           <div className="decision-bar decision-card-picker">
             <span className="decision-hint">{pd.prompt}（選 {min === max ? min : `${min}～${max}`} 張）</span>
@@ -331,7 +358,8 @@ export function Game(props: {
   const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
 
   return (
-    <div className="game" data-instant={speed === "instant" ? "true" : undefined}>
+    <div className="fit-shell">
+    <div className="game" data-instant={speed === "instant" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
       <CompactHud
         state={state}
         onOpenLog={() => setMobilePanel("log")}
@@ -355,6 +383,10 @@ export function Game(props: {
             setToolMode({ type: "drop", player });
             setMobilePanel("detail");
           }}
+          onOpenEvent={(player) => {
+            setToolMode({ type: "event", player });
+            setMobilePanel("detail");
+          }}
           onToggleGuts={setActiveGutsKey}
           onDropCard={onDropCard}
           onHover={setHoverUid}
@@ -376,9 +408,10 @@ export function Game(props: {
                   card={cardOf(uid)}
                   uid={uid}
                   width={84}
+                  className={recentUids.has(uid) ? "card-entering" : undefined}
                   selected={selectedIndex >= 0}
-                  dimmed={!!deployArea && !deployable.includes(uid)}
-                  badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : undefined}
+                  dimmed={(!!deployArea && !deployable.includes(uid)) || (effectCardsInHand && !effectCandidates.includes(uid))}
+                  badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : effectCardsInHand && selectedIndex === 0 ? "1" : undefined}
                   secondaryBadge={cardOf(uid).effectStatus === "todo" ? "未實作" : undefined}
                   draggable={canDrag}
                   onDragStart={canDrag ? (event) => onDragStart(event, uid) : undefined}
@@ -404,11 +437,12 @@ export function Game(props: {
           <button role="tab" disabled title="需 AI 引擎支援（未來版本）">勝率</button>
         </div>
         <div className="tool-content">
-          {toolMode.type === "drop" ? (
+          {toolMode.type === "drop" || toolMode.type === "event" ? (
             <DropBrowser
               db={db}
               state={state}
               player={toolMode.player}
+              source={toolMode.type === "event" ? "event" : "drop"}
               onClose={() => setToolMode({ type: "detail" })}
               onSelect={(uid) => {
                 inspectUid(uid);
@@ -433,8 +467,18 @@ export function Game(props: {
 
       {mobilePanel && <button className="panel-backdrop" aria-label="關閉面板" onClick={() => setMobilePanel(null)} />}
       {activeGutsKey && <button className="guts-backdrop" aria-label="關閉 Guts" onClick={() => setActiveGutsKey(null)} />}
-      {scoreBanner && <div className="score-banner" role="status">{scoreBanner}</div>}
-      <MotionLayer motions={motions} deckMeta={props.deckMeta} />
+    </div>
+
+    {scoreBanner && <div className="score-banner" role="status">{scoreBanner}</div>}
+    <MotionLayer motions={motions} deckMeta={props.deckMeta} />
+
+    <div className="rotate-overlay" role="alertdialog" aria-label="請將裝置轉為橫向">
+      <div className="rotate-card">
+        <div className="rotate-icon" aria-hidden="true" />
+        <b>請將裝置轉為橫向</b>
+        <span>對戰桌墊為橫式版面</span>
+      </div>
+    </div>
     </div>
   );
 }

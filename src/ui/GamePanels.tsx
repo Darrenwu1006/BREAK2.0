@@ -171,6 +171,32 @@ function renderSkillText(text: string) {
   });
 }
 
+/** 共用：技能發動時機/限制 badge ＋技能文（含關鍵字 chip）。對戰詳情與牌組編輯器共用。 */
+export function CardSkillInfo({ card }: { card: Card }) {
+  const timingList = card.timing.filter((t) => t !== "回合1");
+  const oncePerTurn = card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
+  const timingLabel = card.type === "EVENT" ? "可使用時機" : "發動時機";
+  const skillText = card.skillZh ?? card.skillJa;
+  if (timingList.length === 0 && !oncePerTurn && !skillText) return null;
+  return (
+    <>
+      {(timingList.length > 0 || oncePerTurn) && (
+        <div className="timing-row">
+          <span className="timing-label">{timingLabel}</span>
+          {timingList.map((t) => <span key={t} className="timing-badge">{t}</span>)}
+          {oncePerTurn && <span className="restrict-badge">一回合一次</span>}
+        </div>
+      )}
+      {skillText && (
+        <div className="skill-text">
+          {renderSkillText(skillText)}
+          {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function CardDetails(props: {
   db: CardDb;
   state: GameState;
@@ -187,10 +213,6 @@ export function CardDetails(props: {
   }
 
   const statusLabel = card.effectStatus === "dsl" ? "效果已實作" : card.effectStatus === "todo" ? "效果尚未實作" : card.effectStatus === "script" ? "特例效果" : "無技能";
-  const timingList = card.timing.filter((t) => t !== "回合1");
-  const oncePerTurn = card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
-  const timingLabel = card.type === "EVENT" ? "可使用時機" : "發動時機";
-  const skillText = card.skillZh ?? card.skillJa;
   return (
     <article className="card-detail-content">
       <div className="detail-title">
@@ -204,20 +226,8 @@ export function CardDetails(props: {
         <span>{card.affiliations.join("/") || "無所屬"}</span>
         <span className={`effect-status effect-${card.effectStatus}`}>{statusLabel}</span>
       </div>
-      {(timingList.length > 0 || oncePerTurn) && (
-        <div className="timing-row">
-          <span className="timing-label">{timingLabel}</span>
-          {timingList.map((t) => <span key={t} className="timing-badge">{t}</span>)}
-          {oncePerTurn && <span className="restrict-badge">一回合一次</span>}
-        </div>
-      )}
       <ParamsTable card={card} state={props.state} db={props.db} uid={props.inspected?.uid} />
-      {skillText && (
-        <div className="skill-text">
-          {renderSkillText(skillText)}
-          {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
-        </div>
-      )}
+      <CardSkillInfo card={card} />
       {card.effectStatus === "todo" && <p className="support-note">這張卡的文字資料已收錄，但技能尚未接入規則引擎；對戰中會視為無效果。</p>}
     </article>
   );
@@ -305,19 +315,23 @@ export function DropBrowser(props: {
   db: CardDb;
   state: GameState;
   player: PlayerId;
+  source?: "drop" | "event";
   onClose: () => void;
   onSelect: (uid: number) => void;
   onHover: (uid: number | null) => void;
 }) {
-  const cards = [...props.state.players[props.player].drop].reverse();
+  const source = props.source ?? "drop";
+  const label = source === "event" ? "事件區" : "棄牌";
+  const pile = source === "event" ? props.state.players[props.player].eventArea : props.state.players[props.player].drop;
+  const cards = [...pile].reverse();
   return (
     <div className="drop-browser">
       <div className="panel-heading">
-        <div><b>{props.player === 0 ? "你的" : "對方的"}棄牌</b><span>{cards.length} 張</span></div>
+        <div><b>{props.player === 0 ? "你的" : "對方的"}{label}</b><span>{cards.length} 張</span></div>
         <button className="btn-quiet" onClick={props.onClose}>返回</button>
       </div>
       {cards.length === 0 ? (
-        <div className="drop-empty">棄牌區是空的</div>
+        <div className="drop-empty">{label}是空的</div>
       ) : (
         <div className="drop-grid">
           {cards.map((uid) => (

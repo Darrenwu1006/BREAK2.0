@@ -22,6 +22,7 @@ export interface CharaFilter {
   position?: string;
   /** 任一ポジション符合（「WSかMBの」P02-017） */
   positionsAny?: string[];
+  gradesAny?: string[];
   /** 限定キャラ所在區域（不含ガッツ） */
   area?: CourtArea[];
   /** 元々のパラメータ上限（ブロックアウト：元々のブロックポイントがN以下） */
@@ -35,6 +36,8 @@ export interface CharaFilter {
   effParamEq?: { param: ParamName; value: number };
   /** スキルを持たない（P02-041） */
   skillless?: true;
+  /** ブロック角色的位置（センター／サイド） */
+  blockRole?: "center" | "side";
 }
 
 export type Condition =
@@ -46,6 +49,8 @@ export type Condition =
   | { type: "handMax"; count: number; player?: "self" | "opponent" }
   /** 手牌張數下限（「相手の手札が4枚以上の場合」P01-033） */
   | { type: "handMin"; count: number; player?: "self" | "opponent" }
+  /** 雙方 Set 卡合計上限 */
+  | { type: "setTotalMax"; count: number }
   /** 發生源這回合由手牌登場（Q202：效果登場不算） */
   | { type: "deployedFromHand" }
   /** 存在符合條件的キャラ（player 預設 self；minCount＝N人以上 P02-093） */
@@ -55,10 +60,12 @@ export type Condition =
   /** 別々の所属のキャラ N 人以上 †7-1-5（每人抽一個所属，最大化相異數） */
   | { type: "distinctAffiliationCharas"; min: number }
   /** イベントエリア計數（name=同名卡；playTimingAny=具任一 play icon 的卡，每張計 1 次 Q294） */
-  | { type: "eventAreaCount"; player: "self" | "opponent"; name?: string; playTimingAny?: PhaseIcon[]; min?: number; max?: number }
+  | { type: "eventAreaCount"; player: "self" | "opponent"; name?: string; affiliation?: string; playTimingAny?: PhaseIcon[]; min?: number; max?: number }
   | { type: "phaseIs"; phase: PhaseIcon }
   /** 「そのキャラ」（lastTarget）符合篩選 */
   | { type: "targetIs"; filter: CharaFilter }
+  /** 誘發事件中的角色（allyDeploy／watch deploy）符合篩選 */
+  | { type: "triggerIs"; filter: CharaFilter }
   /** 「そのキャラ」目前參數值範圍（Q190：在前段修正之後評估） */
   | { type: "targetParam"; param: ParamName; max?: number; min?: number }
   /** 發生源由指定卡的效果登場（「どん ぴしゃり」のスキルで登場していた場合；P02-016/020） */
@@ -74,7 +81,7 @@ export type Condition =
   /** 發生源是サイドブロッカー（P02-037/038） */
   | { type: "selfIsSideBlocker" }
   /** 本技能付出的ガッツ全部具指定ポジション（P02-050「払ったガッツすべてがS」） */
-  | { type: "paidGutsAll"; position: string };
+  | { type: "paidGutsAll"; filter: CharaFilter };
 
 export type Cost =
   /** Nガッツ払う †1-4-8：來源在ブロックエリア時付センターブロッカー下（卡片注釈），其餘付來源卡下 */
@@ -82,13 +89,13 @@ export type Cost =
   /** 自分のコートから合計Nガッツ（任意組合 Q315；P01-085） */
   | { type: "gutsAny"; count: number }
   /** 棄手牌 N 張；filter＝「青葉城西のカード」等限定 */
-  | { type: "dropFromHand"; count: number; filter?: { affiliation?: string } }
+  | { type: "dropFromHand"; count: number; filter?: CharaFilter }
   /** 手札からこのカードをドロップする（P01-013 型） */
   | { type: "dropSelf" }
   /** 手札からカードN枚をデッキの下に置く（D03-002） */
   | { type: "handToDeckBottom"; count: number }
   /** 手札からイベントカード1枚をイベントエリアに置く（技能不發動 Q337/Q344；D03-003/P02-003） */
-  | { type: "placeEventFromHand" }
+  | { type: "placeEventFromHand"; filter?: { affiliation?: string } }
   /** 指定エリア（可複數）から合計Nガッツ（D03-012「レシーブエリアから」／P01-045「トスとアタックから合計4」Q251） */
   | { type: "gutsFrom"; areas: CourtArea[]; count: number }
   /** デッキの上からN枚をドロップすれば（P01-051；棄的卡供 milledIs 判定） */
@@ -100,7 +107,9 @@ export type Cost =
   /** ガッツ狀態的這張卡自身をドロップする（P01-023 被蓋觸發的 cost） */
   | { type: "dropSelfFromCourt" }
   /** このキャラを自分のデッキの下に置く（P02-037） */
-  | { type: "selfToDeckBottom" };
+  | { type: "selfToDeckBottom" }
+  /** 對手事件區指定卡移到牌組底，作為「～すれば使える」的支付動作 */
+  | { type: "moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
 
 export type Target =
   | "self" // 發生源（無對象表記 †7-1-1）
@@ -115,7 +124,7 @@ export type DelayedTrigger =
   | { on: "blockSuccess" } // 自分がブロックに成功した時
   | { on: "turnEnd" } // ターン終了時（エンドフェイズ †5-12，一回合至多待機一次）
   /** 「カードを引く以外の方法でカードを手札に加えるたび」（Q321 非抽牌入手；Q317 每張觸發一次；P01-087） */
-  | { on: "handAddByEffect"; player: "opponent" };
+  | { on: "handAddByEffect" | "handAdd"; player: "opponent" };
 
 export type Duration = "thisTurn" | "nextOpponentTurn";
 
@@ -137,6 +146,12 @@ export interface DeployRestriction {
   banHandReceiveActive?: true;
   /** 禁止指定ポジション登場（P01-084/P02-097「MBの…登場させられない」，搭配 fromHandOnly） */
   banPositions?: string[];
+  /** 指定角色的技能無效 */
+  disableSkills?: CharaFilter;
+  /** 禁止 play 具有指定時機的事件卡 */
+  banEventTimings?: PhaseIcon[];
+  /** 該玩家擁有的 OP 不可被減少 */
+  preventOpDecrease?: true;
   /** 「相手のブロックのDPがN以下の場合、相手はブロックに失敗する」（追加判定失敗條件 †5-15-3；P02-039；Q393 判定時點） */
   blockFailIfDpMax?: number;
 }
@@ -156,18 +171,18 @@ export type Action =
   | { op: "addParam"; target: Target; param: ParamName | "choose"; amount: number }
   | { op: "if"; cond: Condition[]; then: Action[] }
   /** 「～ば使える」分歧：條件成立且 cost 付得出時，master 可選擇付出並執行 then；否則跳過 */
-  | { op: "gate"; cond?: Condition[]; costs?: Cost[]; then: Action[] }
+  | { op: "gate"; cond?: Condition[]; costs?: Cost[]; then: Action[]; else?: Action[] }
   /** 公開牌組頂 1 張，名列 names 者可加入手牌（upTo 張，可 0），其餘置於牌組底（P01-006；Q280 比對目前卡名） */
   | { op: "revealTopTutor"; names: string[]; upTo: number }
   /** 看牌組頂 count 張，名列 names 者公開 upTo 張加入手牌，其餘置底（D02-012；不足時看到沒有為止 Q197；置底順序簡化為原順序） */
-  | { op: "lookTopTutor"; count: number; names?: string[]; affiliation?: string; upTo: number }
+  | { op: "lookTopTutor"; count: number; names?: string[]; affiliation?: string; cardType?: "CHARACTER" | "EVENT"; upTo: number }
   /** 「以下から1つを選んで使える」▶選項（†7-3-1；optional＝可不使用） */
   | { op: "chooseOne"; options: { label: string; actions: Action[] }[]; optional?: boolean }
   /** 把發生源移動到自分のブロックエリア當サイドブロッカー（D02-004 灰羽；コート內移動效果保留 †3-1-5-1）。
    *  不可執行條件（補足文＋登場限制 Q196：cost 已付仍不移動）：同名 blocker 已在／blockers 已 3 人／turn 累計登場上限已達 */
   | { op: "moveSelfToBlockSide" }
   /** 公開牌組頂 1 張，符合 match 則執行 then，之後置於牌組底（P01-010；Q210 強制公開） */
-  | { op: "revealTopCheck"; match: { affiliation?: string }; then: Action[] }
+  | { op: "revealTopCheck"; match: { affiliation?: string; affiliationAbsentFromCourt?: true }; then: Action[] }
   /** 牌組頂 N 張置入棄牌區（upTo＝可選 0~N）；棄置的最後一張成為 lastMilled 供 milledIs 判斷（P02-067） */
   | { op: "millTop"; upTo: number; then?: Action[]; milledMatch?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT" } }
   /** 強制棄手牌（可能な限り †0-2-5-5；Q301） */
@@ -175,19 +190,21 @@ export type Action =
   /** 從自己棄牌區強制登場（Q303 強制、Q304 受同名/登場限制約束）；登場卡成為 lastTarget */
   | { op: "deployFromDrop"; filter: CharaFilter; area: CourtArea; side?: true; then?: Action[] }
   /** 從指定區把「キャラ」（頂牌；Q308 ガッツ不可）加入手牌，upTo 可選 0 */
-  | { op: "moveCharaToHand"; from: CourtArea; filter: CharaFilter; upTo: number }
+  | { op: "moveCharaToHand"; from: CourtArea | "court"; filter: CharaFilter; upTo: number }
   /** 自分のエリア1つからガッツ N 枚加入手牌（P01-076 同所属／P01-021 名異なる音駒；Q224/Q297 湊不齊整段不執行） */
   | { op: "gutsToHand"; count: number; sameAffiliation?: true; distinctNames?: true; affiliation?: string }
   /** 自分のイベントエリアから回收（不限頂牌 Q331/Q368）；then＝「加えた場合」分歧（D03-001/P02-024） */
   | { op: "eventAreaToHand"; filter?: { names?: string[]; affiliation?: string }; count: number; upTo?: boolean; then?: Action[] }
   /** 手札からカードN枚をデッキの下に置く（D03-001 的「加えた場合」） */
   | { op: "handToDeckBottom"; count: number }
+  | { op: "handToDeckTop"; count: number }
   /** 自分のガッツから登場（P02-087；fromArea＝限定來源區 P02-096；then＝對登場卡（lastTarget）的後續） */
-  | { op: "deployFromGuts"; filter: CharaFilter; area: CourtArea; upTo: number; fromArea?: CourtArea; then?: Action[] }
+  | { op: "deployFromGuts"; filter: CharaFilter; area: CourtArea; upTo: number; min?: number; fromArea?: CourtArea; then?: Action[] }
   /** 數值「固定」修正（「レシーブポイントを7にする」P01-082；後續 add 再疊加 †0-2-12 依解決順序） */
   | { op: "setParam"; target: Target; param: ParamName; value: number }
+  | { op: "setParamToBase"; target: Target; param: ParamName }
   /** デッキ頂 count 枚強制ドロップ；全部符合 match → then（P02-041；Q395 0枚不成立/Q396 可能な限り） */
-  | { op: "millTopAll"; count: number; match?: { affiliation: string }; then?: Action[] }
+  | { op: "millTopAll"; count: number; requireFull?: true; match?: { affiliation: string }; then?: Action[] }
   /** 相手の指定エリアのガッツを upTo 枚までドロップ（P02-046；Q400 由 master 選） */
   | { op: "dropOpponentGuts"; area: CourtArea; upTo: number }
   /** コインを投げる（P02-048；Q402 任意隨機方式＝引擎內嵌 RNG） */
@@ -195,9 +212,21 @@ export type Action =
   /** 自分のガッツ1枚を指定エリアのガッツにする（P02-050；Q405 任意區來源） */
   | { op: "moveGutsToArea"; filter: CharaFilter; area: CourtArea; upTo: number }
   /** 註冊遲發監看（期限內每次觸發＝待機一次 †6-6-1①） */
-  | { op: "watch"; trigger: DelayedTrigger; duration: Duration; actions: Action[] }
+  | { op: "watch"; trigger: DelayedTrigger; duration: Duration; maxTriggers?: number; actions: Action[] }
   /** 登場限制（次の相手のターン中；效果登場也受限 Q191/Q204） */
-  | { op: "restrict"; restriction: DeployRestriction; duration: "nextOpponentTurn" }
+  | { op: "restrict"; restriction: DeployRestriction; duration: Duration; player?: "self" | "opponent" }
+  /** 對手手牌全部洗回牌組後抽指定張數 */
+  | { op: "shuffleHandIntoDeck"; player: "self" | "opponent"; draw: number }
+  /** 從對手事件區移動卡片 */
+  | { op: "moveOpponentEvent"; filter?: { names?: string[]; affiliation?: string }; count: number; upTo?: boolean; destination: "drop" | "deckBottom" }
+  /** 自己手牌的卡放到有角色的指定區之一作為 Guts */
+  | { op: "handToGuts"; area: CourtArea; filter?: CharaFilter; upTo: number }
+  /** 從任意區 Guts 加入手牌 */
+  | { op: "gutsToHandAny"; filter?: CharaFilter; upTo: number }
+  /** 棄掉最近觸發／選定的角色 */
+  | { op: "dropTarget"; target: "trigger" | "target" }
+  /** 對手可從手牌將事件卡放到事件區；不做時執行 else */
+  | { op: "opponentMayPlaceEvent"; else: Action[] }
   /** 關鍵字 †9（引擎展開） */
   | { op: "keyword"; name: KeywordName; n?: number }
   /** 自分の OP を N にする（ドシャット解決） */
@@ -222,15 +251,16 @@ export type PassiveTrigger =
   /** 自分のキャラが登場した時（D02-004「自分のブロックキャラが登場した時」；發生源自身另在場上） */
   | { on: "allyDeploy"; area?: CourtArea[] }
   /** 這張卡被蓋（成為ガッツ）時觸發——「下にある場合」有效的技能 †1-2-15-2-1（P01-047；by＝蓋上來的卡的條件） */
-  | { on: "covered"; by?: CharaFilter; area?: CourtArea[] };
+  | { on: "covered"; by?: CharaFilter; area?: CourtArea[] }
+  | { on: "eventPlayed"; player: "self" | "opponent"; filter?: { names?: string[]; affiliation?: string } };
 
 export type SkillDef =
   /** パッシブ型：trigger 滿足→待機→CP 解決 */
   | { kind: "passive"; trigger: PassiveTrigger; areaIcons?: AreaIcon[]; turn1?: boolean; actions: Action[] }
   /** アクティブ型：自由 St 宣言。phaseIcons＝使用時機 †1-3-8；cost＝スキルコスト †1-3-5 */
   | { kind: "active"; phaseIcons: PhaseIcon[]; areaIcons: AreaIcon[]; turn1?: boolean; costs?: Cost[]; cond?: Condition[]; actions: Action[] }
-  /** イベント型：play 時機看 card.timing；プレイ→イベントエリア→使用宣言→解決 †6-8 */
-  | { kind: "event"; turn1?: boolean; actions: Action[] }
+  /** イベント型：phaseIcons 優先，未填時沿用 card.timing；プレイ→イベントエリア→使用宣言→解決 †6-8 */
+  | { kind: "event"; phaseIcons?: PhaseIcon[]; turn1?: boolean; actions: Action[] }
   /** 置換效果：登場する際、カード名を names のいずれかにする（072/073；登場前適用 Q284） */
   | { kind: "deployNameChoice"; names: string[] };
 

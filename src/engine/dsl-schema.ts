@@ -13,14 +13,16 @@ export const KNOWN_ACTION_OPS = [
   "eventAreaToHand", "handToDeckBottom", "deployFromGuts", "setParam", "millTopAll",
   "dropOpponentGuts", "coinFlip", "moveGutsToArea", "watch", "restrict", "keyword",
   "setOwnOp", "addOpponentOp", "skipToPhase", "calcAttackOpAs", "lostOpponent",
+  "handToDeckTop", "setParamToBase", "shuffleHandIntoDeck", "moveOpponentEvent",
+  "handToGuts", "gutsToHandAny", "dropTarget", "opponentMayPlaceEvent",
   "script", // 安全網 2：特例腳本逃生口
 ] as const;
 
 /** Condition 的 type（對應 dsl.ts Condition union；effects.ts evalCond 處理） */
 export const KNOWN_CONDITION_TYPES = [
-  "opponentOp", "selfArea", "handMax", "handMin", "deployedFromHand", "chara",
+  "opponentOp", "selfArea", "handMax", "handMin", "setTotalMax", "deployedFromHand", "chara",
   "allCharas", "distinctAffiliationCharas", "eventAreaCount", "phaseIs", "targetIs",
-  "targetParam", "deployedByCard", "dropDistinctNames", "addedThisSkill", "gutsParity",
+  "triggerIs", "targetParam", "deployedByCard", "dropDistinctNames", "addedThisSkill", "gutsParity",
   "milledIs", "selfIsSideBlocker", "paidGutsAll",
 ] as const;
 
@@ -28,13 +30,14 @@ export const KNOWN_CONDITION_TYPES = [
 export const KNOWN_COST_TYPES = [
   "guts", "gutsAny", "dropFromHand", "dropSelf", "handToDeckBottom",
   "placeEventFromHand", "gutsFrom", "millDeck", "dropChara", "tilt",
-  "dropSelfFromCourt", "selfToDeckBottom",
+  "dropSelfFromCourt", "selfToDeckBottom", "moveOpponentEventCost",
 ] as const;
 
 /** PassiveTrigger.on ∪ DelayedTrigger.on */
 export const KNOWN_TRIGGER_ONS = [
   "deploy", "allyDeploy", "covered", // passive
-  "opponentLost", "blockSuccess", "turnEnd", "handAddByEffect", // delayed
+  "opponentLost", "blockSuccess", "turnEnd", "handAddByEffect", "handAdd", // delayed
+  "eventPlayed",
 ] as const;
 
 export const KNOWN_DURATIONS = ["thisTurn", "nextOpponentTurn"] as const;
@@ -66,8 +69,10 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   gutsToHand: ["count"],
   eventAreaToHand: ["count"],
   handToDeckBottom: ["count"],
+  handToDeckTop: ["count"],
   deployFromGuts: ["filter", "area", "upTo"],
   setParam: ["target", "param", "value"],
+  setParamToBase: ["target", "param"],
   millTopAll: ["count"],
   dropOpponentGuts: ["area", "upTo"],
   coinFlip: ["heads", "tails"],
@@ -80,18 +85,27 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   skipToPhase: ["phase"],
   calcAttackOpAs: ["value"],
   script: ["id"],
+  shuffleHandIntoDeck: ["player", "draw"],
+  moveOpponentEvent: ["count", "destination"],
+  moveOpponentEventCost: ["destination"],
+  handToGuts: ["area", "upTo"],
+  gutsToHandAny: ["upTo"],
+  dropTarget: ["target"],
+  opponentMayPlaceEvent: ["else"],
   // conditions
   chara: ["filter"],
   eventAreaCount: ["player"],
+  setTotalMax: ["count"],
   phaseIs: ["phase"],
   targetIs: ["filter"],
+  triggerIs: ["filter"],
   targetParam: ["param"],
   deployedByCard: ["name"],
   dropDistinctNames: ["affiliation", "min"],
   addedThisSkill: ["min"],
   gutsParity: ["area", "parity"],
   milledIs: ["affiliation"],
-  paidGutsAll: ["position"],
+  paidGutsAll: ["filter"],
   allCharas: ["affiliation"],
   distinctAffiliationCharas: ["min"],
   // costs

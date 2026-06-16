@@ -122,7 +122,8 @@ export function useGameMotion(props: {
           player,
           src: cardImage(card),
           label: displayName(card),
-          back: fromZone === "p1-hand" || fromZone === "p1-deck",
+          // 蓋牌移動一律顯示背面：來源是對手手牌/牌組，或目的地是 Set/牌組（避免落地前閃正面）
+          back: fromZone === "p1-hand" || fromZone === "p1-deck" || toZone.endsWith("-set") || toZone.endsWith("-deck"),
           from,
           to,
           kind: motionKind(fromZone, toZone),

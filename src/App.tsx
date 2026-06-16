@@ -3,10 +3,13 @@ import cardsJson from "../data/cards.json";
 import type { Card } from "./data/types";
 import type { CardDb } from "./engine/types";
 import { Game } from "./ui/Game";
+import { setCardPrintings } from "./ui/CardView";
 import { DeckEditor, type ApiDeck } from "./ui/DeckEditor";
 import type { DeckMeta } from "./ui/gameTypes";
 
 const expand = (d: ApiDeck): string[] => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
+
+const APP_VERSION = "0.7.0"; // M7 介面線；卡池/技能進度由資料即時計算
 
 function deckMeta(db: CardDb, deck: ApiDeck): DeckMeta {
   let implementedCount = 0;
@@ -27,6 +30,21 @@ function deckMeta(db: CardDb, deck: ApiDeck): DeckMeta {
 
 export function App() {
   const db: CardDb = useMemo(() => new Map((cardsJson as Card[]).map((c) => [c.id, c])), []);
+  // 當前卡池/版本狀態（由資料即時計算，不硬編、不會過時）
+  const poolStatus = useMemo(() => {
+    let implemented = 0;
+    let withSkill = 0;
+    const expansions = new Set<string>();
+    for (const card of db.values()) {
+      if (card.effectStatus === "dsl" || card.effectStatus === "script") { implemented++; withSkill++; }
+      else if (card.effectStatus === "todo") withSkill++;
+      // 彈號＝id 中字母開頭的段（D01/P01/P02/PR…），跳過 HV 前綴與純數字流水號
+      const code = card.id.split("-").find((seg) => seg !== "HV" && /^[A-Za-z]+\d*$/.test(seg));
+      if (code) expansions.add(code);
+    }
+    const pct = withSkill ? Math.round((implemented / withSkill) * 100) : 100;
+    return { exps: [...expansions].sort().join("／"), implemented, withSkill, pct };
+  }, [db]);
   const [decks, setDecks] = useState<ApiDeck[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myDeck, setMyDeck] = useState(0);
@@ -49,6 +67,12 @@ export function App() {
 
   if (mode === "game" && decks[myDeck] && decks[aiDeck]) {
     const selectedDecks = [decks[myDeck]!, decks[aiDeck]!] as const;
+    // 把兩副牌組選的卡面版本帶進戰鬥（我方優先），讓 cardImage 顯示高版本卡圖
+    const printings = new Map<string, string>();
+    for (const d of [selectedDecks[1], selectedDecks[0]]) {
+      for (const c of d.cards) if (c.printing) printings.set(c.id, c.printing);
+    }
+    setCardPrintings(printings);
     return (
       <Game
         db={db}
@@ -103,8 +127,8 @@ export function App() {
           <button className="btn-start" disabled={!decks.length} onClick={() => setMode("game")}>開始對戰</button>
           <button className="btn-start btn-secondary" onClick={() => setMode("editor")}>牌組編輯</button>
         </div>
-        <p className="dim small">烏野現有三副牌組已支援完整技能流程；其他學校由 M3 工作線逐步補完。</p>
       </section>
+      <div className="version-stamp">v{APP_VERSION} ・ 收錄 {poolStatus.exps} ・ 技能 {poolStatus.implemented}/{poolStatus.withSkill}（{poolStatus.pct}%）</div>
     </main>
   );
 }

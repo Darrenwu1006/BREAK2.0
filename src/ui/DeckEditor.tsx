@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Card } from "../data/types";
 import type { CardDb } from "../engine/types";
 import { CardView, displayName } from "./CardView";
+import { CardSkillInfo } from "./GamePanels";
 
 export interface ApiDeck {
   school: string;
@@ -182,11 +183,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
                   發{hovered.params.serve ?? "－"}／攔{hovered.params.block ?? "－"}／接{hovered.params.receive ?? "－"}／托{hovered.params.toss ?? "－"}／攻{hovered.params.attack ?? "－"}
                 </div>
               )}
-              {(hovered.skillZh || hovered.skillJa) && (
-                <p className="skill-text">{hovered.skillZh ?? hovered.skillJa}
-                  {hovered.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
-                </p>
-              )}
+              <CardSkillInfo card={hovered} />
             </>
           ) : <span className="dim small">滑過卡片查看詳情</span>}
         </div>
