@@ -168,11 +168,52 @@ function ParamsTable(props: { card: Card; state: GameState; db: CardDb; uid?: nu
   );
 }
 
+const KEYWORD_TRANSLATIONS: Record<string, string> = {
+  "登場": "登場",
+  "アタックエリア": "攻擊區",
+  "トスエリア": "托球區",
+  "レシーブエリア": "接球區",
+  "ブロックエリア": "攔網區",
+  "サーブエリア": "發球區",
+  "コート": "球場",
+  "手札": "手牌",
+  "サーブ": "發球",
+  "レシーブ": "接球",
+  "トス": "托球",
+  "アタック": "攻擊",
+  "阻擊": "攔網",
+  "阻擊フェイズ": "攔網階段",
+  "ブロック": "攔網",
+  "抽牌": "抽牌",
+  "一回合一次": "一回合一次",
+  "一回限り": "僅限一次",
+  "ターン1": "一回合一次",
+  "ブロックフェイズ": "攔網階段",
+  "レシーブフェイズ": "接球階段",
+  "ドロー": "抽牌",
+};
+
+function translateKeyword(kw: string): string {
+  if (KEYWORD_TRANSLATIONS[kw]) return KEYWORD_TRANSLATIONS[kw]!;
+  return kw
+    .replace(/ドシャット/g, "攔死")
+    .replace(/ワンタッチ/g, "一次觸球")
+    .replace(/One Touch/g, "一次觸球")
+    .replace(/ツーアタック/g, "二次進攻")
+    .replace(/Aパス/g, "A Pass")
+    .replace(/銅牆鐵壁/g, "銅牆鐵壁")
+    .replace(/虛攻/g, "虛攻")
+    .replace(/ブロックアウト/g, "打手出界");
+}
+
 /** 把技能文裡的 [=關鍵字] 標記轉成可讀的小 chip，而不是裸露的 [=ターン1]。 */
 function renderSkillText(text: string) {
   return text.split(/(\[=[^\]]+\])/g).map((part, index) => {
     const marker = part.match(/^\[=([^\]]+)\]$/);
-    if (marker) return <span key={index} className="skill-kw">{marker[1]}</span>;
+    if (marker) {
+      const translated = translateKeyword(marker[1]!);
+      return <span key={index} className="skill-kw">{translated}</span>;
+    }
     return <span key={index}>{part}</span>;
   });
 }
@@ -283,15 +324,42 @@ export function MatchSummary({ state }: { state: GameState }) {
 
 export function CardCounter({ db, state }: { db: CardDb; state: GameState }) {
   const groups = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const uid of state.players[0].deck) {
+    const ps = state.players[0];
+    const allUids = [
+      ...ps.deck,
+      ...ps.hand,
+      ...ps.setArea,
+      ...ps.drop,
+      ...ps.eventArea,
+      ...ps.serve,
+      ...ps.blockCenter,
+      ...ps.blockSides,
+      ...ps.receive,
+      ...ps.toss,
+      ...ps.attack,
+    ];
+
+    const totalCount = new Map<string, number>();
+    for (const uid of allUids) {
       const id = state.cards[uid]!;
-      map.set(id, (map.get(id) ?? 0) + 1);
+      totalCount.set(id, (totalCount.get(id) ?? 0) + 1);
     }
-    return [...map.entries()]
-      .map(([id, count]) => ({ id, count, card: db.get(id) }))
+
+    const deckCount = new Map<string, number>();
+    for (const uid of ps.deck) {
+      const id = state.cards[uid]!;
+      deckCount.set(id, (deckCount.get(id) ?? 0) + 1);
+    }
+
+    return [...totalCount.entries()]
+      .map(([id, total]) => ({
+        id,
+        count: deckCount.get(id) ?? 0,
+        total,
+        card: db.get(id),
+      }))
       .filter((row) => row.card)
-      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+      .sort((a, b) => b.count - a.count || b.total - a.total || a.id.localeCompare(b.id));
   }, [db, state.cards, state.players]);
 
   const remaining = state.players[0].deck.length;
@@ -305,14 +373,16 @@ export function CardCounter({ db, state }: { db: CardDb; state: GameState }) {
       ) : (
         <ul className="counter-list">
           {groups.map((row) => (
-            <li key={row.id}>
+            <li key={row.id} className={row.count === 0 ? "counter-zero" : ""}>
               <span className="counter-name">{displayName(row.card!)}</span>
-              <span className="counter-count"><b>{row.count}</b></span>
+              <span className="counter-count">
+                <b>{row.count}</b><span className="counter-slash">/</span>{row.total}
+              </span>
             </li>
           ))}
         </ul>
       )}
-      <p className="summary-hint">只顯示「每種卡還剩幾張」，不洩漏抽牌順序，方便練習算牌。</p>
+      <p className="summary-hint">顯示「剩餘數量／投入總量」，不洩漏抽牌順序，方便練習算牌。</p>
     </div>
   );
 }

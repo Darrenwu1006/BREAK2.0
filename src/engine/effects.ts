@@ -1115,7 +1115,19 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         if (a.else) pushFrame(ctx, [...a.else]);
         break;
       }
-      const costText = costs.map((c) => (c.type === "guts" ? `付 ${c.count} Guts` : c.type === "dropFromHand" ? `棄 ${c.count} 張手牌` : "棄掉此卡")).join("、");
+      const costText = costs.map((c) => {
+        if (c.type === "guts" || c.type === "gutsAny" || c.type === "gutsFrom") return `付 ${c.count} Guts`;
+        if (c.type === "dropFromHand") return `棄 ${c.count} 張手牌`;
+        if (c.type === "dropSelf" || c.type === "dropSelfFromCourt") return "棄置此卡";
+        if (c.type === "handToDeckBottom") return `將手牌 ${c.count} 張置於牌組底`;
+        if (c.type === "placeEventFromHand") return "放置 1 張事件卡到事件區";
+        if (c.type === "millDeck") return `從牌組頂棄 ${c.count} 張卡`;
+        if (c.type === "dropChara") return "棄置場上 1 張角色卡";
+        if (c.type === "selfToDeckBottom") return "將此角色置於牌組底";
+        if (c.type === "moveOpponentEventCost") return "將對手事件區的卡移到牌組底";
+        if (c.type === "tilt") return "橫置此卡";
+        return "支付代價";
+      }).join("、");
       ctx.awaiting = { kind: "confirm", what: "gate", costs, then: a.then, else: a.else, prompt: costText ? `要${costText}使用技能嗎？` : "要使用技能嗎？" };
       break;
     }

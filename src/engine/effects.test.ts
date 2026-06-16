@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { blockDeployMax, canChooseBlock, deployableUids, effParam } from "./engine";
+import { gutsFor } from "./effects";
 import { db, deckWith, feed, grab, placeOnStack, placeDeckTop, seedStack, setHandSize, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
 describe("關鍵字 †9（7 個）", () => {
@@ -193,8 +194,66 @@ describe("關鍵字 †9（7 個）", () => {
     expect(effParam(db, s, nishinoya, "receive")).toBe(8); // 沒有再 +2
     expect(s.players[0].eventArea.length).toBe(2);
     expect(s.modifiers.length).toBe(1);
-    // 收尾：接球成功＋修正於クリンナップ失效
+    // 收尾：接球成功＋修正於常駐/Cleanup失效
     s = feed(s, { type: "free", action: "pass" });
     expect(s.phase).toBe("toss");
+  });
+
+  it("HV-P02-003 月島螢：對手事件區有 2 張卡，手牌 1 張事件卡，Guts 排除與代價提示測試", () => {
+    let s = setup(deckWith("HV-P02-003", "HV-P01-077", "HV-D01-002"), deckWith("HV-D01-002", "HV-D01-008"), 0);
+    const tsukki = grab(s, 0, "HV-P02-003");
+
+    // 驗證 Guts 計算：角色下方沒有疊卡時，Guts 應為空，即使 stack.length = 1
+    s.players[0].blockCenter = [tsukki];
+    expect(gutsFor(s, 0, tsukki)).toEqual([]);
+
+    // 驗證 Guts 計算：下方疊 2 張卡時，Guts 應為這 2 張，且不包含月島螢自身
+    s.players[0].blockCenter = [];
+    seedStack(s, 0, "blockCenter", 2);
+    s.players[0].blockCenter.push(tsukki);
+    expect(gutsFor(s, 0, tsukki).length).toBe(2);
+    expect(gutsFor(s, 0, tsukki).includes(tsukki)).toBe(false);
+
+    // 重新建局測試效果與代價
+    s = setup(deckWith("HV-P02-003", "HV-P01-077", "HV-D01-002"), deckWith("HV-D01-002", "HV-D01-008"), 0);
+    s = serveWith(s, "HV-D01-002"); // P0 serve -> OP=1
+    s = receiveTrack(s, "HV-D01-008"); // P1 receive -> OP=1
+
+    // P1 托球與攻擊
+    const toss = grab(s, 1, "HV-D01-002");
+    s = feed(s, { type: "deploy-toss", uid: toss });
+    s = feed(s, { type: "free", action: "pass" });
+    const atk = grab(s, 1, FILLER);
+    s = feed(s, { type: "deploy-attack", uid: atk });
+    s = feed(s, { type: "free", action: "pass" });
+
+    // 讓對手事件區有 2 張卡（使用隨手可得的 FILLER 避開重複抓取問題）
+    const opp = 1;
+    const e1 = grab(s, opp, FILLER);
+    const e2 = grab(s, opp, FILLER, [e1]);
+    s.players[opp].eventArea = [e1, e2];
+
+    // P0 進入防守選擇攔網
+    s = feed(s, { type: "defense-choice", choice: "block" });
+    const tsukkiCard = grab(s, 0, "HV-P02-003");
+    const eventCard = grab(s, 0, "HV-P01-077");
+
+    // 登場月島螢
+    s = feed(s, { type: "deploy-block", uids: [tsukkiCard], center: tsukkiCard });
+
+    // 應觸發被動技能確認，且 prompt 應顯示正確的代價說明
+    expect(s.pendingDecision).toMatchObject({ player: 0, type: "effect-confirm" });
+    expect(s.pendingDecision!.prompt).toContain("要放置 1 張事件卡到事件區使用技能嗎？");
+
+    const handBefore = s.players[0].hand.length;
+    s = feed(s, { type: "effect-confirm", accept: true });
+
+    // 驗證代價事件卡已被放置到事件區，且手牌數不變（-1 + 1）
+    expect(s.players[0].hand.includes(eventCard)).toBe(false);
+    expect(s.players[0].eventArea.includes(eventCard)).toBe(true);
+    expect(s.players[0].hand.length).toBe(handBefore);
+
+    // 驗證屬性加成：基礎 2 + 6 = 8
+    expect(effParam(db, s, tsukkiCard, "block")).toBe(8);
   });
 });
