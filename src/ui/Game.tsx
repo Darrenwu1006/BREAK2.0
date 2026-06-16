@@ -36,6 +36,17 @@ function initialSpeed(): AiSpeed {
   return stored === "0.5" || stored === "1" || stored === "2" || stored === "instant" ? stored : "1";
 }
 
+function initialSfx(): boolean {
+  return localStorage.getItem("breaktcg-sfx") !== "off";
+}
+
+const SFX_SCORE_YOU = ["決まった！", "キメた！", "ナイスキル！"];
+const SFX_SCORE_OPP = ["やられた…", "とられた！"];
+const SFX_ATTACK_YOU = ["ドン！", "バンッ！", "ズバン！"];
+const SFX_ATTACK_OPP = ["ドッ！", "ズバッ！"];
+
+type SplashBanner = { text: string; kind: "set" | "match" };
+
 export function Game(props: {
   db: CardDb;
   decks: [string[], string[]];
@@ -54,7 +65,9 @@ export function Game(props: {
   const [mobilePanel, setMobilePanel] = useState<"log" | "detail" | null>(null);
   const [activeGutsKey, setActiveGutsKey] = useState<string | null>(null);
   const [speed, setSpeed] = useState<AiSpeed>(initialSpeed);
-  const [scoreBanner, setScoreBanner] = useState<string | null>(null);
+  const [scoreBanner, setScoreBanner] = useState<SplashBanner | null>(null);
+  const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
+  const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const [handWidth, setHandWidth] = useState(0);
@@ -72,7 +85,7 @@ export function Game(props: {
   const effectMax = effectCards?.max ?? 1;
   const effectCardsInHand = isMyDecision && !!effectCards && effectCandidates.length > 0
     && effectCandidates.every((uid) => state.players[HUMAN].hand.includes(uid));
-  const { motions, recentUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
+  const { motions, recentUids, settledUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
 
   const visibleInspection = hovered ?? inspected;
 
@@ -102,6 +115,14 @@ export function Game(props: {
     localStorage.setItem("breaktcg-ai-speed", next);
   }
 
+  function toggleSfx() {
+    setSfxEnabled((on) => {
+      const next = !on;
+      localStorage.setItem("breaktcg-sfx", next ? "on" : "off");
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (pd?.player !== AI || state.phase === "gameOver") return;
     const numeric = speed === "instant" ? Infinity : Number(speed);
@@ -117,12 +138,35 @@ export function Game(props: {
   useEffect(() => {
     const newEntries = state.log.slice(seenLogCount.current);
     seenLogCount.current = state.log.length;
-    const lost = [...newEntries].reverse().find((entry) => entry.text.startsWith("宣告 Lost（"));
-    if (!lost) return;
-    setScoreBanner(lost.player === HUMAN ? "電腦得分" : "BREAK! 你得分");
-    const timer = window.setTimeout(() => setScoreBanner(null), 900);
+    const events = newEntries.map((entry) => entry.event).filter((event) => event !== undefined);
+    const result = [...events].reverse().find((event) => event.kind === "set-won" || event.kind === "match-won");
+    const attack = [...events].reverse().find((event) => event.kind === "attack-op");
+
+    if (!result && !attack) return;
+
+    if (result) {
+      const youWon = result.winner === HUMAN;
+      setScoreBanner({
+        kind: result.kind === "match-won" ? "match" : "set",
+        text: result.kind === "match-won"
+          ? youWon ? "MATCH WIN!" : "MATCH LOST"
+          : youWon ? "SET GET!" : "SET LOST",
+      });
+      if (sfxEnabled && speed !== "instant") {
+        const pool = youWon ? SFX_SCORE_YOU : SFX_SCORE_OPP;
+        setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
+      }
+    } else if (attack && sfxEnabled && speed !== "instant") {
+      const pool = attack.player === HUMAN ? SFX_ATTACK_YOU : SFX_ATTACK_OPP;
+      setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
+    }
+
+    const timer = window.setTimeout(() => {
+      setScoreBanner(null);
+      setSfx(null);
+    }, 900);
     return () => window.clearTimeout(timer);
-  }, [state.log]);
+  }, [state.log, sfxEnabled, speed]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -358,7 +402,15 @@ export function Game(props: {
   const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
 
   return (
-    <div className="fit-shell">
+    <div className="fit-shell" data-instant={speed === "instant" ? "true" : undefined}>
+    <svg className="ink-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="ink-rough" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.4" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    </svg>
     <div className="game" data-instant={speed === "instant" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
       <CompactHud
         state={state}
@@ -367,7 +419,15 @@ export function Game(props: {
         onExit={props.onExit}
       />
 
-      <LeftPanel state={state} deckMeta={props.deckMeta} speed={speed} onSpeedChange={changeSpeed} onExit={props.onExit} />
+      <LeftPanel
+        state={state}
+        deckMeta={props.deckMeta}
+        speed={speed}
+        onSpeedChange={changeSpeed}
+        sfxEnabled={sfxEnabled}
+        onToggleSfx={toggleSfx}
+        onExit={props.onExit}
+      />
 
       <main className="center-panel">
         <GameBoard
@@ -378,6 +438,7 @@ export function Game(props: {
           deployArea={deployArea}
           activeGutsKey={activeGutsKey}
           recentUids={recentUids}
+          settledUids={settledUids}
           onPickSet={(index) => decide({ type: "pick-set-card", index })}
           onOpenDrop={(player) => {
             setToolMode({ type: "drop", player });
@@ -408,7 +469,7 @@ export function Game(props: {
                   card={cardOf(uid)}
                   uid={uid}
                   width={84}
-                  className={recentUids.has(uid) ? "card-entering" : undefined}
+                  className={[recentUids.has(uid) ? "card-entering" : "", settledUids.has(uid) ? "card-settle" : ""].filter(Boolean).join(" ") || undefined}
                   selected={selectedIndex >= 0}
                   dimmed={(!!deployArea && !deployable.includes(uid)) || (effectCardsInHand && !effectCandidates.includes(uid))}
                   badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : effectCardsInHand && selectedIndex === 0 ? "1" : undefined}
@@ -469,7 +530,9 @@ export function Game(props: {
       {activeGutsKey && <button className="guts-backdrop" aria-label="關閉 Guts" onClick={() => setActiveGutsKey(null)} />}
     </div>
 
-    {scoreBanner && <div className="score-banner" role="status">{scoreBanner}</div>}
+    {scoreBanner && <div className="focus-lines" aria-hidden="true" />}
+    {sfx && <div key={sfx.key} className="sfx-burst" aria-hidden="true">{sfx.text}</div>}
+    {scoreBanner && <div className={`score-banner score-banner-${scoreBanner.kind}`} role="status">{scoreBanner.text}</div>}
     <MotionLayer motions={motions} deckMeta={props.deckMeta} />
 
     <div className="rotate-overlay" role="alertdialog" aria-label="請將裝置轉為橫向">

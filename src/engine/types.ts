@@ -243,7 +243,13 @@ export interface LogEntry {
   turnNo: number;
   player: PlayerId | null;
   text: string;
+  event?: GameEvent;
 }
+
+export type GameEvent =
+  | { kind: "attack-op"; player: PlayerId; value: number }
+  | { kind: "set-won"; winner: PlayerId; loser: PlayerId; setNo: number; loserSetRemaining: number }
+  | { kind: "match-won"; winner: PlayerId; loser: PlayerId; setNo: number };
 
 export interface GameState {
   rngState: number;

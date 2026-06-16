@@ -41,6 +41,7 @@ interface GameBoardProps extends InspectHandlers {
   deployArea: CourtArea | null;
   activeGutsKey: string | null;
   recentUids: Set<number>;
+  settledUids: Set<number>;
   onPickSet: (index: number) => void;
   onOpenDrop: (player: PlayerId) => void;
   onOpenEvent: (player: PlayerId) => void;
@@ -64,6 +65,7 @@ function StackZone(props: {
   canDrop: boolean;
   activeGutsKey: string | null;
   recentUids: Set<number>;
+  settledUids: Set<number>;
   onToggleGuts: (key: string | null) => void;
   onDropCard: (uid: number, area: CourtArea) => void;
 } & InspectHandlers) {
@@ -81,7 +83,7 @@ function StackZone(props: {
       card={cardOf(db, state, uid)}
       uid={uid}
       badge={badge}
-      className={props.recentUids.has(uid) ? "card-entering" : undefined}
+      className={[props.recentUids.has(uid) ? "card-entering" : "", props.settledUids.has(uid) ? "card-settle" : ""].filter(Boolean).join(" ") || undefined}
       onHover={(card) => props.onHover(card ? uid : null)}
       onClick={() => props.onInspect(uid)}
       onLongPress={() => props.onInspect(uid)}
@@ -266,6 +268,7 @@ export function GameBoard(props: GameBoardProps) {
       canDrop={player === 0 && props.deployArea === area}
       activeGutsKey={props.activeGutsKey}
       recentUids={props.recentUids}
+      settledUids={props.settledUids}
       onToggleGuts={props.onToggleGuts}
       onDropCard={props.onDropCard}
       onHover={props.onHover}

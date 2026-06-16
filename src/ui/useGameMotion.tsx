@@ -20,6 +20,7 @@ interface Motion {
   from: RectLike;
   to: RectLike;
   kind: "move" | "drop" | "guts" | "draw";
+  panelIn: boolean;
 }
 
 function zonesOf(state: GameState): Map<number, string> {
@@ -87,6 +88,10 @@ function motionKind(from: string, to: string): Motion["kind"] {
   return "move";
 }
 
+function shouldPanelIn(from: string, to: string): boolean {
+  return from.endsWith("-hand") && /^p[01]-(serve|receive|toss|attack|block)$/.test(to);
+}
+
 export function useGameMotion(props: {
   state: GameState;
   db: CardDb;
@@ -96,6 +101,7 @@ export function useGameMotion(props: {
   const previousState = useRef<GameState | null>(null);
   const previousPositions = useRef<ReturnType<typeof snapshotPositions> | null>(null);
   const [motions, setMotions] = useState<Motion[]>([]);
+  const [settledUids, setSettledUids] = useState<Set<number>>(new Set());
 
   useLayoutEffect(() => {
     const currentPositions = snapshotPositions();
@@ -127,15 +133,24 @@ export function useGameMotion(props: {
           from,
           to,
           kind: motionKind(fromZone, toZone),
+          panelIn: shouldPanelIn(fromZone, toZone),
         });
         if (nextMotions.length >= 8) break;
       }
       if (nextMotions.length) {
         setMotions(nextMotions);
-        const timer = window.setTimeout(() => setMotions([]), 360);
+        const settleNow = new Set(nextMotions.filter((motion) => motion.panelIn).map((motion) => motion.uid));
+        const clearTimer = window.setTimeout(() => {
+          setMotions([]);
+          setSettledUids(settleNow);
+        }, 360);
+        const settleTimer = window.setTimeout(() => setSettledUids(new Set()), 660);
         previousState.current = props.state;
         previousPositions.current = currentPositions;
-        return () => window.clearTimeout(timer);
+        return () => {
+          window.clearTimeout(clearTimer);
+          window.clearTimeout(settleTimer);
+        };
       }
     }
 
@@ -144,7 +159,7 @@ export function useGameMotion(props: {
   }, [props.state, props.db, props.deckMeta, props.disabled]);
 
   const recentUids = useMemo(() => new Set(motions.map((motion) => motion.uid)), [motions]);
-  return { motions, recentUids };
+  return { motions, recentUids, settledUids };
 }
 
 export function MotionLayer(props: { motions: Motion[]; deckMeta: [DeckMeta, DeckMeta] }) {

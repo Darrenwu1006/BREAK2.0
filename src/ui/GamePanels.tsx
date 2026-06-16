@@ -32,8 +32,8 @@ function enrichedLog(log: LogEntry[]): DisplayLogEntry[] {
   for (const entry of log) {
     out.push(entry);
     if (entry.text.startsWith("判定：")) lastJudge = entry.text.replace("判定：", "").trim();
-    if (entry.text.startsWith("宣告 Lost（")) {
-      const scorer = entry.player === 0 ? "電腦得分" : "你得分";
+    if (entry.event?.kind === "set-won" || entry.event?.kind === "match-won") {
+      const scorer = entry.event.winner === 0 ? "你得分" : "電腦得分";
       out.push({
         ...entry,
         player: null,
@@ -92,6 +92,8 @@ export function LeftPanel(props: {
   deckMeta: [DeckMeta, DeckMeta];
   speed: AiSpeed;
   onSpeedChange: (speed: AiSpeed) => void;
+  sfxEnabled: boolean;
+  onToggleSfx: () => void;
   onExit: () => void;
 }) {
   const { state, deckMeta } = props;
@@ -136,6 +138,10 @@ export function LeftPanel(props: {
             </button>
           ))}
         </div>
+        <label className="sfx-toggle">
+          <input type="checkbox" checked={props.sfxEnabled} onChange={props.onToggleSfx} />
+          擬音字
+        </label>
       </div>
     </aside>
   );

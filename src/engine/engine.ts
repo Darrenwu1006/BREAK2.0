@@ -272,14 +272,22 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
 
 function declareLost(state: GameState, p: PlayerId): void {
   state.lostBy = p;
-  log(state, p, `宣告 Lost（Set ${state.setNo}）`);
+  const winner = other(p);
   // 敗北判定 †0-1-3-1-1：Set 區 0 張時宣告 Lost → 立即敗北
   if (state.players[p].setArea.length === 0) {
-    state.winner = other(p);
+    log(state, p, `宣告 Lost（Set ${state.setNo}）`);
+    state.winner = winner;
     state.phase = "gameOver";
-    log(state, other(p), "獲勝！");
+    log(state, winner, "獲勝！", { kind: "match-won", winner, loser: p, setNo: state.setNo });
     return;
   }
+  log(state, p, `宣告 Lost（Set ${state.setNo}）`, {
+    kind: "set-won",
+    winner,
+    loser: p,
+    setNo: state.setNo,
+    loserSetRemaining: state.players[p].setArea.length - 1,
+  });
   enterPhase(state, "lostSet");
 }
 
@@ -310,7 +318,7 @@ function calcOp(db: CardDb, state: GameState): void {
     value = (t !== null ? (effParam(db, state, t, "toss") ?? 0) : 0) + (a !== null ? (effParam(db, state, a, "attack") ?? 0) : 0);
   }
   state.op = { value, owner: p, source };
-  log(state, p, `OP 算出 = ${value}`);
+  log(state, p, `OP 算出 = ${value}`, source === "attack" ? { kind: "attack-op", player: p, value } : undefined);
 }
 
 /** DP 算出 †5-18 */

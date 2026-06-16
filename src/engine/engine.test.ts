@@ -129,6 +129,9 @@ describe("發球回合 †5-5 與接球軸 †5-8~11", () => {
     s = feed(testDb, s, { type: "deploy-attack", uid: ace });
     s = feed(testDb, s, { type: "free", action: "pass" });
     expect(s.op).toMatchObject({ value: 4 + 4, owner: 1, source: "attack" }); // toss4 + attack4
+    expect(s.log.some((entry) =>
+      entry.event?.kind === "attack-op" && entry.event.player === 1 && entry.event.value === 8,
+    )).toBe(true);
     expect(s.pendingDecision).toEqual({ player: 0, type: "defense-choice" });
     checkInvariants(s);
   });
@@ -151,6 +154,9 @@ describe("發球回合 †5-5 與接球軸 †5-8~11", () => {
     // DP1 < OP4 → P1 Lost → interval：補手牌後等 P1 撿 Set 卡
     expect(s.phase).toBe("interval");
     expect(s.pendingDecision).toEqual({ player: 1, type: "pick-set-card" });
+    expect(s.log.some((entry) =>
+      entry.event?.kind === "set-won" && entry.event.winner === 0 && entry.event.loser === 1 && entry.event.loserSetRemaining === 1,
+    )).toBe(true);
     expect(s.players[0].hand.length).toBe(6);
     expect(s.players[1].hand.length).toBe(6);
     s = feed(testDb, s, { type: "pick-set-card", index: 0 });
@@ -255,6 +261,9 @@ describe("勝負 †0-1-3", () => {
     }
     expect(s.phase).toBe("gameOver");
     expect(s.winner).toBe(0);
+    expect(s.log.some((entry) =>
+      entry.event?.kind === "match-won" && entry.event.winner === 0 && entry.event.loser === 1,
+    )).toBe(true);
     checkInvariants(s);
   });
 });

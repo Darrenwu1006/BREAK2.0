@@ -4,7 +4,7 @@
 
 import type { Card } from "../data/types";
 import type { Action, Condition, Cost, CourtArea, CharaFilter, EffectDef, ParamName, PhaseIcon, SkillDef, Target } from "./dsl";
-import type { Awaiting, CardDb, EffectCtx, GameState, PendingItem, PlayerId, RtAction, Watcher } from "./types";
+import type { Awaiting, CardDb, EffectCtx, GameEvent, GameState, PendingItem, PlayerId, RtAction, Watcher } from "./types";
 import { nextRandom } from "./rng";
 
 // ---------- 共用工具 ----------
@@ -19,8 +19,8 @@ export function cardOf(db: CardDb, state: GameState, uid: number): Card {
 
 export const topChara = (stack: number[]): number | null => (stack.length ? stack[stack.length - 1]! : null);
 
-export function log(state: GameState, player: PlayerId | null, text: string): void {
-  state.log.push({ setNo: state.setNo, turnNo: state.turnNo, player, text });
+export function log(state: GameState, player: PlayerId | null, text: string, event?: GameEvent): void {
+  state.log.push({ setNo: state.setNo, turnNo: state.turnNo, player, text, ...(event ? { event } : {}) });
 }
 
 export function removeFromHand(state: GameState, p: PlayerId, uid: number): void {
