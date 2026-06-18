@@ -7,6 +7,7 @@ import type { BenchmarkPolicyId } from "./benchmark";
 import type { AnalyzerPreset, DeckAnalyzerComparisonReport, DeckAnalyzerReport } from "./deck-analyzer";
 import { runDeckAnalyzer, runDeckAnalyzerComparison } from "./deck-analyzer";
 import { isHeuristicV2ProfileId } from "./heuristic";
+import type { GutsSource, LostReason } from "./benchmark";
 
 const DEFAULTS = {
   deck: "烏野-預組",
@@ -63,11 +64,33 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function formatSources(sources: Record<string, number>): string {
+const GUTS_SOURCE_LABELS: Record<GutsSource, string> = {
+  serve: "發球區",
+  receive: "接球區",
+  toss: "托球區",
+  attack: "攻擊區",
+  blockCenter: "中央攔網",
+};
+
+const LOST_REASON_LABELS: Record<LostReason, string> = {
+  "judge-fail": "OP/DP 判定失敗",
+  "no-deploy": "未能登場",
+  voluntary: "主動宣告 Lost",
+  effect: "效果造成 Lost",
+  unknown: "原因未明",
+};
+
+function formatSources(sources: Record<GutsSource, number>): string {
   const entries = Object.entries(sources)
     .filter(([, value]) => value > 0)
-    .map(([source, value]) => `${source}=${value.toFixed(2)}`);
+    .map(([source, value]) => `${GUTS_SOURCE_LABELS[source as GutsSource]}=${value.toFixed(2)}`);
   return entries.length === 0 ? "none" : entries.join(", ");
+}
+
+function formatLostReasons(reasons: Partial<Record<LostReason, number>>): string {
+  const entries = Object.entries(reasons) as [LostReason, number][];
+  if (entries.length === 0) return "none";
+  return entries.map(([reason, count]) => `${LOST_REASON_LABELS[reason]}:${count}`).join(", ");
 }
 
 function printDecks(): void {
@@ -104,25 +127,25 @@ function printFindings(title: string, findings: { severity: string; label: strin
 function printDeckReport(report: DeckAnalyzerReport, title = "M8 Phase B2 Deck Analyzer"): void {
   const { aggregate } = report;
   console.log(title);
-  console.log(`Deck: ${report.config.deck} (${report.config.deckAxes.join("/") || "no-axis"})`);
-  console.log(`Preset: ${report.config.preset}, opponents=${report.config.opponents.length}, games/seat=${report.config.gamesPerSeat}, completed=${aggregate.completed}/${aggregate.games}`);
-  console.log(`Policies: ${report.config.policy} vs ${report.config.opponentPolicy}`);
-  console.log(`Win rate: ${formatPercent(aggregate.winRate)} (95% CI ${formatPercent(aggregate.winRate95.low)}-${formatPercent(aggregate.winRate95.high)})`);
-  console.log(`Set win rate: ${formatPercent(aggregate.setWinRate)}, average rallies/set=${aggregate.averageRalliesPerSet.toFixed(2)}`);
-  console.log(`Receive success=${formatPercent(aggregate.receiveSuccessRate)}, block success=${formatPercent(aggregate.blockSuccessRate)}, attack OP=${aggregate.averageAttackOp.toFixed(2)}, burst=${formatPercent(aggregate.burstRate)}`);
-  console.log(`OP sources: serve=${aggregate.averageServeOp.toFixed(2)}, block=${aggregate.averageBlockOp.toFixed(2)}, attack=${aggregate.averageAttackOp.toFixed(2)}`);
-  console.log(`Events/match=${aggregate.eventUsesPerMatch.toFixed(2)} (effective ${formatPercent(aggregate.eventEffectiveRate)}), skills/match=${aggregate.skillUsesPerMatch.toFixed(2)} (effective ${formatPercent(aggregate.skillEffectiveRate)}), paid Guts/match=${aggregate.paidGutsPerMatch.toFixed(2)}`);
-  console.log(`Guts sources/match: ${formatSources(aggregate.gutsPaidBySourcePerMatch)}`);
-  console.log("Gameplan:");
+  console.log(`牌組: ${report.config.deck} (${report.config.deckAxes.join("/") || "未標記軸線"})`);
+  console.log(`測試設定: ${report.config.preset}, 對手=${report.config.opponents.length}, 每個先後手場次=${report.config.gamesPerSeat}, 完成=${aggregate.completed}/${aggregate.games}`);
+  console.log(`AI: ${report.config.policy} vs ${report.config.opponentPolicy}`);
+  console.log(`Match 勝率: ${formatPercent(aggregate.winRate)} (95% CI ${formatPercent(aggregate.winRate95.low)}-${formatPercent(aggregate.winRate95.high)})`);
+  console.log(`Set 取得率: ${formatPercent(aggregate.setWinRate)}, 平均每 Set rally=${aggregate.averageRalliesPerSet.toFixed(2)}`);
+  console.log(`接球判定成功=${formatPercent(aggregate.receiveSuccessRate)}, 攔網判定成功=${formatPercent(aggregate.blockSuccessRate)}, 平均攻擊 OP=${aggregate.averageAttackOp.toFixed(2)}, 高 OP 攻擊比例=${formatPercent(aggregate.burstRate)}`);
+  console.log(`OP 來源平均: 發球=${aggregate.averageServeOp.toFixed(2)}, 攔網=${aggregate.averageBlockOp.toFixed(2)}, 攻擊=${aggregate.averageAttackOp.toFixed(2)}`);
+  console.log(`事件使用=${aggregate.eventUsesPerMatch.toFixed(2)} 次/場（有實質效果 ${formatPercent(aggregate.eventEffectiveRate)}）, 技能宣言=${aggregate.skillUsesPerMatch.toFixed(2)} 次/場（有實質效果 ${formatPercent(aggregate.skillEffectiveRate)}）, 支付 Guts=${aggregate.paidGutsPerMatch.toFixed(2)} /場`);
+  console.log(`Guts 支付區域: ${formatSources(aggregate.gutsPaidBySourcePerMatch)}`);
+  console.log("遊戲計畫:");
   for (const line of report.gameplan) console.log(`- ${line}`);
-  printFindings("Weaknesses:", report.weaknesses);
-  printFindings("Brick sources:", report.brickSources);
-  console.log("Recommendations:");
+  printFindings("主要風險:", report.weaknesses);
+  printFindings("起手 / 構築警訊:", report.brickSources);
+  console.log("調整建議:");
   for (const recommendation of report.recommendations.slice(0, 5)) console.log(`- ${recommendation}`);
   const worst = [...report.matchups].sort((a, b) => a.metrics.winRate - b.metrics.winRate).slice(0, 5);
-  console.log("Worst matchups:");
+  console.log("苦手對局:");
   for (const matchup of worst) {
-    console.log(`- ${matchup.opponent}: win=${formatPercent(matchup.metrics.winRate)}, set=${formatPercent(matchup.metrics.setWinRate)}, lost=${Object.entries(matchup.targetLostReasons).map(([reason, count]) => `${reason}:${count}`).join(", ") || "none"}`);
+    console.log(`- ${matchup.opponent}: Match勝率=${formatPercent(matchup.metrics.winRate)}, Set取得率=${formatPercent(matchup.metrics.setWinRate)}, 失Set原因=${formatLostReasons(matchup.targetLostReasons)}`);
     for (const line of matchup.diagnosis.slice(0, 2)) console.log(`  - ${line}`);
   }
 }

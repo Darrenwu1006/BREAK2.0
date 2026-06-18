@@ -568,30 +568,46 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+const LOST_REASON_LABELS: Record<LostReason, string> = {
+  "judge-fail": "OP / DP 判定失敗",
+  "no-deploy": "未能登場而 Lost",
+  voluntary: "主動宣告 Lost",
+  effect: "效果造成 Lost",
+  unknown: "原因未明",
+};
+
+const GUTS_SOURCE_LABELS: Record<GutsSource, string> = {
+  serve: "發球區",
+  receive: "接球區",
+  toss: "托球區",
+  attack: "攻擊區",
+  blockCenter: "中央攔網",
+};
+
+function formatGutsSourceEvidence(sources: Record<GutsSource, number>): string {
+  return Object.entries(sources)
+    .filter(([, value]) => value > 0)
+    .map(([source, value]) => `${GUTS_SOURCE_LABELS[source as GutsSource]}:${value.toFixed(2)}`)
+    .join(", ");
+}
+
 function matchupDiagnosis(opponent: BenchmarkDeckInput, metrics: AnalyzerMetrics, targetLostReasons: Partial<Record<LostReason, number>>): string[] {
   const lines: string[] = [];
-  if (metrics.winRate < 0.4) lines.push(`對 ${opponent.name} 明顯吃虧，勝率 ${percent(metrics.winRate)}，應優先檢查這個 matchup 的斷線點。`);
+  if (metrics.winRate < 0.4) lines.push(`對 ${opponent.name} 明顯吃虧，勝率 ${percent(metrics.winRate)}，應優先檢查這個對局是卡在登場、判定，還是資源支付。`);
   else if (metrics.winRate > 0.6) lines.push(`對 ${opponent.name} 目前有優勢，勝率 ${percent(metrics.winRate)}，可用作調整後的保留基準。`);
-  else lines.push(`對 ${opponent.name} 接近五五開，勝率 ${percent(metrics.winRate)}，需要更多 games 或 holdout seeds 判斷。`);
+  else lines.push(`對 ${opponent.name} 接近五五開，勝率 ${percent(metrics.winRate)}，需要更多場次或 holdout seed 判斷。`);
 
   const reason = topReason(targetLostReasons);
   if (reason) {
     const [name, count] = reason;
-    const labels: Record<LostReason, string> = {
-      "judge-fail": "判定失敗",
-      "no-deploy": "登場斷線",
-      voluntary: "主動 Lost",
-      effect: "效果造成 Lost",
-      unknown: "未知原因",
-    };
-    lines.push(`主要失 Set 來源是${labels[name]}（${count} 次），這是優先調整方向。`);
+    lines.push(`主要失 Set 來源是「${LOST_REASON_LABELS[name]}」（${count} 次），這是優先調整方向。`);
   }
 
   const axes = opponent.axes?.join("/") || "未標記";
   if (opponent.axes?.includes("serve") && metrics.receiveSuccessRate < 0.7) lines.push(`對手含發球軸（${axes}），接球成功率 ${percent(metrics.receiveSuccessRate)} 偏低。`);
   if (opponent.axes?.includes("block") && metrics.averageAttackOp < 4) lines.push(`對手含攔網軸（${axes}），平均攻擊 OP ${metrics.averageAttackOp.toFixed(2)}，突破壓力不足。`);
-  if (metrics.eventUsesPerMatch > 0 && metrics.eventEffectiveRate < 0.5) lines.push(`事件使用率不低但有效率 ${percent(metrics.eventEffectiveRate)}，需檢查事件時機或成本。`);
-  if (metrics.paidGutsPerMatch >= 3) lines.push(`每場平均支付 ${metrics.paidGutsPerMatch.toFixed(2)} Guts，注意是否壓縮後續登場資源。`);
+  if (metrics.eventUsesPerMatch > 0 && metrics.eventEffectiveRate < 0.5) lines.push(`事件有打出，但只有 ${percent(metrics.eventEffectiveRate)} 轉成抽牌、加點或登場等實質效果，需檢查使用時機或成本。`);
+  if (metrics.paidGutsPerMatch >= 3) lines.push(`每場平均支付 ${metrics.paidGutsPerMatch.toFixed(2)} Guts，注意是否把後續需要登場的區域資源先付掉。`);
   return lines;
 }
 
@@ -604,7 +620,7 @@ function inferGameplan(deck: BenchmarkDeckInput, profile: DeckStaticProfile, met
   if (axes.includes("serve")) lines.push(`有發球壓力取向：高發球起手率 ${percent(profile.openingQuality.serveStarterRate)}，目標是先用發球或前段節奏逼對手接球失敗。`);
   if (axes.includes("burst")) lines.push(`有爆發取向：平均攻擊 OP ${metrics.averageAttackOp.toFixed(2)}，高攻擊 OP 比例 ${percent(metrics.burstRate)}，適合尋找托攻線成形後的突破回合。`);
   if (axes.includes("hybrid") || lines.length === 0) lines.push(`混合型 gameplan：五區覆蓋較平均，重點是維持起手角色線與事件/技能的節奏，不把單一區域資源過早耗光。`);
-  lines.push(`目前模擬整體勝率 ${percent(metrics.winRate)}，Set 取得率 ${percent(metrics.setWinRate)}，平均每 Set ${metrics.averageRalliesPerSet.toFixed(2)} rallies。`);
+  lines.push(`目前模擬整體勝率 ${percent(metrics.winRate)}，Set 取得率 ${percent(metrics.setWinRate)}，平均每 Set ${metrics.averageRalliesPerSet.toFixed(2)} 次 rally。`);
   return lines;
 }
 
@@ -614,65 +630,62 @@ function inferFindings(profile: DeckStaticProfile, metrics: AnalyzerMetrics): { 
   const recommendations: string[] = [];
 
   if (metrics.winRate < 0.45) {
-    weaknesses.push(finding("low-win-rate", "risk", "整體勝率偏低", "目前對固定對手池的期望值不足，應先找出是登場斷線還是判定不足。", `winRate=${percent(metrics.winRate)}`));
+    weaknesses.push(finding("low-win-rate", "risk", "整體勝率偏低", "目前對固定對手池的期望值不足，應先找出是無法登場、判定不過，還是資源支付太重。", `Match勝率=${percent(metrics.winRate)}`));
   } else if (metrics.winRate < 0.52) {
-    weaknesses.push(finding("thin-edge", "watch", "勝率優勢不明顯", "目前結果接近五五開，後續比較 A/B 版本時需要更多場次確認。", `winRate=${percent(metrics.winRate)}`));
+    weaknesses.push(finding("thin-edge", "watch", "勝率優勢不明顯", "目前結果接近五五開，後續比較 A/B 版本時需要更多場次確認。", `Match勝率=${percent(metrics.winRate)}`));
   }
 
   if (metrics.noDeployLossRate >= 0.2) {
-    const item = finding("no-deploy-loss", "risk", "登場斷線", "Lost 有明顯比例來自未能登場角色，優先檢查角色密度與對應區域覆蓋。", `noDeployLossRate=${percent(metrics.noDeployLossRate)}`);
+    const item = finding("no-deploy-loss", "risk", "未能登場而 Lost", "Lost 有明顯比例來自該階段沒有可登場角色，優先檢查角色密度與發球/接球/托球/攻擊區域覆蓋。", `失Set中未能登場比例=${percent(metrics.noDeployLossRate)}`);
     weaknesses.push(item);
     brickSources.push(item);
     recommendations.push("提高低點但可登場角色的密度，或降低過度依賴單一卡名/位置的比例。");
   }
   if (metrics.judgeFailLossRate >= 0.6) {
-    const item = finding("judge-fail-loss", "watch", "判定失敗偏多", "主要 Lost 來自 DP/OP 判定不過，表示點數線或效果增幅還不穩。", `judgeFailLossRate=${percent(metrics.judgeFailLossRate)}`);
+    const item = finding("judge-fail-loss", "watch", "判定失敗偏多", "主要 Lost 來自 DP/OP 判定不過，表示點數線或效果增幅還不穩。", `失Set中判定失敗比例=${percent(metrics.judgeFailLossRate)}`);
     weaknesses.push(item);
     brickSources.push(item);
   }
 
   for (const area of AREAS) {
     if (profile.playableCounts[area] < 8) {
-      const item = finding(`${area}-coverage-low`, "risk", `${AREA_LABELS[area]}覆蓋不足`, `${AREA_LABELS[area]}可登場角色少於 8 張，遇到手牌偏移時容易斷線。`, `playable=${profile.playableCounts[area]}/40`);
+      const item = finding(`${area}-coverage-low`, "risk", `${AREA_LABELS[area]}可登場角色偏少`, `${AREA_LABELS[area]}可登場角色少於 8 張，遇到手牌偏移時容易在該階段無法登場。`, `${AREA_LABELS[area]}可登場=${profile.playableCounts[area]}/40`);
       brickSources.push(item);
       recommendations.push(`補強 ${AREA_LABELS[area]} 可登場角色，先以穩定上場為優先。`);
     }
   }
 
   if (profile.eventCount >= 8 && profile.characterCount <= 32) {
-    brickSources.push(finding("event-density-high", "watch", "事件密度接近上限", "事件卡已達或接近 8 張上限，若角色線偏薄會放大卡手。", `events=${profile.eventCount}, characters=${profile.characterCount}`));
+    brickSources.push(finding("event-density-high", "watch", "事件密度接近上限", "事件卡已達或接近 8 張上限，若角色線偏薄會放大卡手。", `事件=${profile.eventCount}, 角色=${profile.characterCount}`));
   }
   if (profile.openingQuality.servingCoreRate < 0.7) {
-    brickSources.push(finding("serving-open-low", "watch", "先攻起手線偏薄", "同時摸到高發球與基本攻擊線的機率偏低。", `servingCore=${percent(profile.openingQuality.servingCoreRate)}`));
+    brickSources.push(finding("serving-open-low", "watch", "先攻起手線偏薄", "同時摸到高發球與基本攻擊線的機率偏低。", `先攻核心起手率=${percent(profile.openingQuality.servingCoreRate)}`));
   }
   if (profile.openingQuality.receivingCoreRate < 0.7) {
-    brickSources.push(finding("receiving-open-low", "watch", "後攻起手線偏薄", "同時摸到防守點與舉球線的機率偏低。", `receivingCore=${percent(profile.openingQuality.receivingCoreRate)}`));
+    brickSources.push(finding("receiving-open-low", "watch", "後攻起手線偏薄", "同時摸到防守點與舉球線的機率偏低。", `後攻核心起手率=${percent(profile.openingQuality.receivingCoreRate)}`));
   }
   if (metrics.receiveSuccessRate > 0 && metrics.receiveSuccessRate < 0.55) {
-    weaknesses.push(finding("receive-rate-low", "risk", "接球成功率偏低", "接球路線判定不穩，對發球/攻擊壓力牌組會吃虧。", `receiveSuccess=${percent(metrics.receiveSuccessRate)}`));
+    weaknesses.push(finding("receive-rate-low", "risk", "接球成功率偏低", "接球路線判定不穩，對發球/攻擊壓力牌組會吃虧。", `接球判定成功=${percent(metrics.receiveSuccessRate)}`));
   }
   if (metrics.blockSuccessRate > 0 && metrics.blockSuccessRate < 0.5) {
-    weaknesses.push(finding("block-rate-low", "watch", "攔網成功率偏低", "攔網投入後未能穩定換回成功判定，可能需要更高 block 點或更少資源的攔網方案。", `blockSuccess=${percent(metrics.blockSuccessRate)}`));
+    weaknesses.push(finding("block-rate-low", "watch", "攔網成功率偏低", "攔網投入後未能穩定換回成功判定，可能需要更高 block 點或更少資源的攔網方案。", `攔網判定成功=${percent(metrics.blockSuccessRate)}`));
   }
   if (metrics.emptyDrawsPerMatch > 0) {
-    weaknesses.push(finding("deck-empty-draw", "watch", "牌組耗竭訊號", "模擬中出現牌組空抽，長 rally 或抽牌效果可能讓資源風險上升。", `emptyDrawsPerMatch=${metrics.emptyDrawsPerMatch.toFixed(2)}`));
+    weaknesses.push(finding("deck-empty-draw", "watch", "牌組耗竭訊號", "模擬中出現牌組空抽，長 rally 或抽牌效果可能讓資源風險上升。", `平均空抽=${metrics.emptyDrawsPerMatch.toFixed(2)} 次/場`));
   }
   if (metrics.paidGutsPerMatch >= 3) {
-    const sourceText = Object.entries(metrics.gutsPaidBySourcePerMatch)
-      .filter(([, value]) => value > 0)
-      .map(([source, value]) => `${source}:${value.toFixed(2)}`)
-      .join(", ");
-    weaknesses.push(finding("guts-demand-high", "watch", "Guts 需求偏高", "技能成本使用頻率高，會壓縮場面資源；需確認支付來源是否吃到關鍵區域。", `paidGutsPerMatch=${metrics.paidGutsPerMatch.toFixed(2)}${sourceText ? `, sources=${sourceText}` : ""}`));
+    const sourceText = formatGutsSourceEvidence(metrics.gutsPaidBySourcePerMatch);
+    weaknesses.push(finding("guts-demand-high", "watch", "Guts 需求偏高", "技能成本使用頻率高，會壓縮場面資源；需確認支付來源是否吃到關鍵區域。", `支付Guts=${metrics.paidGutsPerMatch.toFixed(2)}/場${sourceText ? `, 來源=${sourceText}` : ""}`));
   }
   if (metrics.eventUsesPerMatch >= 1 && metrics.eventEffectiveRate < 0.5) {
-    weaknesses.push(finding("event-low-impact", "watch", "事件有效率偏低", "事件有被使用，但較少轉化為抽牌、點數修正或登場等可觀察收益。", `eventEffectiveRate=${percent(metrics.eventEffectiveRate)}, uses/match=${metrics.eventUsesPerMatch.toFixed(2)}`));
+    weaknesses.push(finding("event-low-impact", "watch", "事件打出後的實質效果偏少", "事件有被使用，但較少轉化為抽牌、點數修正或登場等可觀察效果。", `事件實質效果=${percent(metrics.eventEffectiveRate)}, 事件使用=${metrics.eventUsesPerMatch.toFixed(2)} 次/場`));
     recommendations.push("檢查事件卡是否常在低收益時機被打出；若是構築問題，優先比較少 1-2 張事件的版本。");
   }
   if (metrics.skillUsesPerMatch >= 1 && metrics.skillEffectiveRate < 0.5) {
-    weaknesses.push(finding("skill-low-impact", "watch", "技能有效率偏低", "技能有被使用，但較少轉化為抽牌、點數修正或登場等可觀察收益。", `skillEffectiveRate=${percent(metrics.skillEffectiveRate)}, uses/match=${metrics.skillUsesPerMatch.toFixed(2)}`));
+    weaknesses.push(finding("skill-low-impact", "watch", "技能宣言後的實質效果偏少", "技能有被使用，但較少轉化為抽牌、點數修正或登場等可觀察效果。", `技能實質效果=${percent(metrics.skillEffectiveRate)}, 技能宣言=${metrics.skillUsesPerMatch.toFixed(2)} 次/場`));
   }
 
-  if (recommendations.length === 0) recommendations.push("目前未出現單一明顯卡手源；下一步可用 A/B test 微調 2-4 張卡，觀察勝率與 Set loss reason 是否穩定改善。");
+  if (recommendations.length === 0) recommendations.push("目前未出現單一明顯卡手來源；下一步可用 A/B test 微調 2-4 張卡，觀察勝率與失 Set 原因是否穩定改善。");
   return { weaknesses, brickSources, recommendations: [...new Set(recommendations)] };
 }
 
