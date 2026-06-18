@@ -1,0 +1,67 @@
+{
+ "name": "稻荷崎-0612測試-optimizer",
+ "school": "稻荷崎",
+ "source": "decks/稻荷崎/0612測試-optimizer.csv",
+ "cards": [
+  {
+   "id": "HV-D03-011",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-003",
+   "count": 1
+  },
+  {
+   "id": "HV-P02-017",
+   "count": 4
+  },
+  {
+   "id": "HV-P02-022",
+   "count": 5
+  },
+  {
+   "id": "HV-P02-024",
+   "count": 4
+  },
+  {
+   "id": "HV-P02-027",
+   "count": 3
+  },
+  {
+   "id": "HV-P02-034",
+   "count": 4
+  },
+  {
+   "id": "HV-P02-035",
+   "count": 3
+  },
+  {
+   "id": "HV-P02-077",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-085",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-088",
+   "count": 1
+  },
+  {
+   "id": "HV-P02-089",
+   "count": 2
+  },
+  {
+   "id": "HV-PR-034",
+   "count": 2
+  },
+  {
+   "id": "HV-PR-048",
+   "count": 3
+  },
+  {
+   "id": "HV-PR-049",
+   "count": 2
+  }
+ ]
+}

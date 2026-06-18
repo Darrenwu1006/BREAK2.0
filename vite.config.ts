@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // ---- 牌組 API（dev server middleware）----
@@ -32,6 +32,7 @@ const csvField = (s: string) => (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}
 function deckApi(root: string): Plugin {
   const deckDir = join(root, "decks");
   const dataDeckDir = join(root, "data", "decks");
+  const adoptionLogPath = join(root, "data", "deck-optimizer-adoptions.jsonl");
   const listDecks = () => {
     const decks: unknown[] = [];
     for (const school of readdirSync(deckDir)) {
@@ -53,6 +54,18 @@ function deckApi(root: string): Plugin {
     }
     return decks;
   };
+  const listAdoptions = () => {
+    if (!existsSync(adoptionLogPath)) return [];
+    return readFileSync(adoptionLogPath, "utf8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        try { return [JSON.parse(line) as unknown]; }
+        catch { return []; }
+      })
+      .slice(-50)
+      .reverse();
+  };
 
   return {
     name: "deck-api",
@@ -64,6 +77,15 @@ function deckApi(root: string): Plugin {
       });
     },
     configureServer(server) {
+      server.middlewares.use("/api/deck-optimizer-adoptions", (req, res) => {
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(listAdoptions()));
+      });
       server.middlewares.use("/api/decks", (req, res) => {
         try {
           if (req.method === "GET") {
@@ -76,9 +98,10 @@ function deckApi(root: string): Plugin {
             req.on("data", (c) => (body += c));
             req.on("end", () => {
               try {
-                const { school, name, cards } = JSON.parse(body) as {
+                const { school, name, cards, optimizerAdoption } = JSON.parse(body) as {
                   school: string; name: string;
                   cards: { id: string; count: number; printing?: string }[];
+                  optimizerAdoption?: unknown;
                 };
                 if (!school || !name || /[/\\.]{2}|[/\\]/.test(school + name)) throw new Error("非法的學校或牌組名稱");
                 const cardDb = new Map(
@@ -99,8 +122,21 @@ function deckApi(root: string): Plugin {
                   `${JSON.stringify({ name: `${school}-${name}`, school, source: `decks/${school}/${name}.csv`, cards }, null, 1)}\n`,
                   "utf8",
                 );
+                let adoptionLog: string | undefined;
+                if (optimizerAdoption && typeof optimizerAdoption === "object") {
+                  mkdirSync(join(root, "data"), { recursive: true });
+                  const record = {
+                    savedAt: new Date().toISOString(),
+                    targetDeck: `${school}-${name}`,
+                    source: `decks/${school}/${name}.csv`,
+                    analyzerSource: `data/decks/${school}-${name}.json`,
+                    optimizerAdoption,
+                  };
+                  appendFileSync(adoptionLogPath, `${JSON.stringify(record)}\n`, "utf8");
+                  adoptionLog = "data/deck-optimizer-adoptions.jsonl";
+                }
                 res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ ok: true, source: `decks/${school}/${name}.csv`, analyzerSource: `data/decks/${school}-${name}.json` }));
+                res.end(JSON.stringify({ ok: true, source: `decks/${school}/${name}.csv`, analyzerSource: `data/decks/${school}-${name}.json`, adoptionLog }));
               } catch (e) {
                 res.statusCode = 400;
                 res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));

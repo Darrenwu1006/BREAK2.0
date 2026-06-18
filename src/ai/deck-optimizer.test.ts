@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
+import type { AnalyzerMetrics, DeckAnalyzerComparisonReport } from "./deck-analyzer";
 import {
   DECK_OPTIMIZER_PROPOSAL_SCHEMA_VERSION,
   DECK_OPTIMIZER_VERSION,
+  attachDeckOptimizerEvaluation,
+  attachDeckOptimizerValidationMatrix,
   assertValidDeckOptimizerProposal,
   autoLockCoreCards,
+  buildDeckOptimizerValidationMatrix,
   buildDeckOptimizerChanges,
+  createDeckOptimizerCandidateProposal,
   createDeckOptimizerProposalScaffold,
+  deckOptimizerCardCounts,
   deckOptimizerCardsFromIds,
+  deckOptimizerEventCount,
+  deckOptimizerTotalCards,
   deckSchools,
   resolveOptimizerCardPool,
+  scoreDeckOptimizerComparison,
   validateDeckConstraints,
   validateDeckOptimizerProposal,
 } from "./deck-optimizer";
@@ -49,6 +58,39 @@ function proposalWith(candidateDeckCards: DeckOptimizerCardCount[], changes = bu
     rationale: [],
     risks: [],
     status: "draft",
+  };
+}
+
+function metrics(overrides: Partial<AnalyzerMetrics> = {}): AnalyzerMetrics {
+  return {
+    games: 4,
+    completed: 4,
+    winRate: 0.5,
+    winRate95: { low: 0.25, high: 0.75 },
+    setWinRate: 0.5,
+    averageRalliesPerSet: 2,
+    averageOp: 3,
+    averageServeOp: 3,
+    averageBlockOp: 2,
+    averageAttackOp: 4,
+    burstRate: 0.2,
+    averageDp: 4,
+    receiveSuccessRate: 0.5,
+    blockSuccessRate: 0.5,
+    eventUsesPerMatch: 1,
+    eventEffectiveRate: 0.3,
+    eventDrawsPerMatch: 0,
+    eventPointModsPerMatch: 0,
+    eventDeploysPerMatch: 0,
+    skillUsesPerMatch: 1,
+    skillEffectiveRate: 0.3,
+    paidGutsPerMatch: 1,
+    gutsPaidBySourcePerMatch: { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 },
+    emptyDrawsPerMatch: 0,
+    mulliganRate: 0,
+    noDeployLossRate: 0.2,
+    judgeFailLossRate: 0.2,
+    ...overrides,
   };
 }
 
@@ -230,5 +272,152 @@ describe("M8 deck optimizer C1-3a auto-lock", () => {
 
     expect(locks.get("HV-P01-033")).toBe(9); // explicit 覆蓋 auto 的 5
     expect(locks.get("HV-P01-042")).toBe(2); // 低張數卡也能被明確鎖定
+  });
+});
+
+describe("M8 deck optimizer C1-3b candidate generator", () => {
+  const aobaDeck = findBenchmarkDeck("青葉城西-二彈改");
+
+  it("在候選卡池與核心鎖定下產生小幅 candidate deck", () => {
+    const lockedCards = autoLockCoreCards(benchmarkDb, aobaDeck.ids);
+    const proposal = createDeckOptimizerCandidateProposal({
+      db: benchmarkDb,
+      sourceDeck: aobaDeck,
+      cardPool: resolveOptimizerCardPool(benchmarkDb, aobaDeck.ids),
+      constraints: { lockedCards },
+      objectiveProfile: "preserve-current",
+      maxReplacements: 2,
+      evaluationConfig: {
+        opponents: ["音駒-預組"],
+        policy: "heuristic-v2",
+        opponentPolicy: "heuristic-v2",
+        preset: "smoke",
+      },
+      generatedAt: "2026-06-18T00:00:00.000Z",
+    });
+    const candidateCounts = deckOptimizerCardCounts(proposal.candidateDeckCards);
+
+    expect(proposal.status).toBe("draft");
+    expect(deckOptimizerTotalCards(proposal.candidateDeckCards)).toBe(40);
+    expect(deckOptimizerEventCount(benchmarkDb, proposal.candidateDeckCards)).toBeLessThanOrEqual(8);
+    expect(proposal.changes.reduce((sum, change) => sum + Math.max(0, change.delta), 0)).toBeLessThanOrEqual(2);
+    for (const locked of lockedCards) expect(candidateCounts.get(locked.id) ?? 0).toBeGreaterThanOrEqual(locked.minCount);
+    expect(validateDeckOptimizerProposal(benchmarkDb, proposal).ok).toBe(true);
+  });
+
+  it("banned card 原本在牌組中時，candidate generator 會優先移除", () => {
+    const proposal = createDeckOptimizerCandidateProposal({
+      db: benchmarkDb,
+      sourceDeck: aobaDeck,
+      cardPool: resolveOptimizerCardPool(benchmarkDb, aobaDeck.ids, { banned: ["HV-P01-086"] }),
+      constraints: { lockedCards: autoLockCoreCards(benchmarkDb, aobaDeck.ids), bannedCards: ["HV-P01-086"] },
+      objectiveProfile: "preserve-current",
+      maxReplacements: 1,
+      evaluationConfig: {
+        opponents: ["音駒-預組"],
+        policy: "heuristic-v2",
+        opponentPolicy: "heuristic-v2",
+        preset: "smoke",
+      },
+    });
+
+    expect(deckOptimizerCardCounts(proposal.candidateDeckCards).get("HV-P01-086") ?? 0).toBe(0);
+    expect(validateDeckOptimizerProposal(benchmarkDb, proposal).ok).toBe(true);
+  });
+});
+
+describe("M8 deck optimizer C1-4 evaluation scoring", () => {
+  it("把 Deck Analyzer comparison 轉成 proposal deltas、score 與狀態", () => {
+    const proposal = proposalWith(applyDeltas(sourceDeckCards, { "HV-P02-017": 1, "HV-P02-085": -1 }));
+    const report = {
+      base: { aggregate: metrics({ winRate: 0.45, setWinRate: 0.48, noDeployLossRate: 0.2, judgeFailLossRate: 0.3, paidGutsPerMatch: 2, eventEffectiveRate: 0.3 }) },
+      candidate: { aggregate: metrics({ winRate: 0.55, setWinRate: 0.52, noDeployLossRate: 0.1, judgeFailLossRate: 0.2, paidGutsPerMatch: 1.5, eventEffectiveRate: 0.4 }) },
+      comparison: { notes: ["勝率差 +10.0%"], verdict: "candidate-better" },
+    } as DeckAnalyzerComparisonReport;
+    const scored = scoreDeckOptimizerComparison(report, proposal);
+    const evaluated = attachDeckOptimizerEvaluation(proposal, report);
+
+    expect(scored.deltas.matchWinRateDelta).toBeCloseTo(0.1);
+    expect(scored.deltas.noDeployLossDelta).toBeCloseTo(0.1);
+    expect(scored.score!.value).toBeGreaterThan(0);
+    expect(scored.status).toBe("candidate");
+    expect(evaluated.baselineMetrics).not.toBeNull();
+    expect(evaluated.candidateMetrics).not.toBeNull();
+    expect(evaluated.rationale.some((line) => line.includes("C1-4 evaluation"))).toBe(true);
+  });
+});
+
+describe("M8 deck optimizer C2 validation matrix", () => {
+  function comparison(base: AnalyzerMetrics, candidate: AnalyzerMetrics, note = "勝率差 +0.0%"): DeckAnalyzerComparisonReport {
+    return {
+      base: { aggregate: base },
+      candidate: { aggregate: candidate },
+      comparison: { notes: [note], verdict: "too-close" },
+    } as DeckAnalyzerComparisonReport;
+  }
+
+  it("formal 與 holdout 站得住時才標 validated", () => {
+    const proposal = proposalWith(applyDeltas(sourceDeckCards, { "HV-P02-017": 1, "HV-P02-085": -1 }));
+    const matrix = buildDeckOptimizerValidationMatrix(proposal, [
+      {
+        label: "formal",
+        preset: "formal",
+        gamesPerSeat: 20,
+        seedStart: 3200,
+        report: comparison(metrics({ winRate: 0.5, setWinRate: 0.5 }), metrics({ winRate: 0.58, setWinRate: 0.54 }), "formal improved"),
+      },
+      {
+        label: "holdout",
+        preset: "holdout",
+        gamesPerSeat: 10,
+        seedStart: 9000,
+        report: comparison(metrics({ winRate: 0.5, setWinRate: 0.5 }), metrics({ winRate: 0.53, setWinRate: 0.52 }), "holdout stable"),
+      },
+    ], "2026-06-18T00:00:00.000Z");
+    const attached = attachDeckOptimizerValidationMatrix(proposal, [
+      {
+        label: "formal",
+        preset: "formal",
+        gamesPerSeat: 20,
+        seedStart: 3200,
+        report: comparison(metrics({ winRate: 0.5, setWinRate: 0.5 }), metrics({ winRate: 0.58, setWinRate: 0.54 }), "formal improved"),
+      },
+      {
+        label: "holdout",
+        preset: "holdout",
+        gamesPerSeat: 10,
+        seedStart: 9000,
+        report: comparison(metrics({ winRate: 0.5, setWinRate: 0.5 }), metrics({ winRate: 0.53, setWinRate: 0.52 }), "holdout stable"),
+      },
+    ]);
+
+    expect(matrix.verdict).toBe("validated");
+    expect(matrix.runs).toHaveLength(2);
+    expect(attached.status).toBe("validated");
+    expect(attached.validation?.strategy).toBe("formal-holdout-v1");
+  });
+
+  it("holdout 明顯回落時標 rejected", () => {
+    const proposal = proposalWith(applyDeltas(sourceDeckCards, { "HV-P02-017": 1, "HV-P02-085": -1 }));
+    const attached = attachDeckOptimizerValidationMatrix(proposal, [
+      {
+        label: "formal",
+        preset: "formal",
+        gamesPerSeat: 20,
+        seedStart: 3200,
+        report: comparison(metrics({ winRate: 0.5 }), metrics({ winRate: 0.56 }), "formal improved"),
+      },
+      {
+        label: "holdout",
+        preset: "holdout",
+        gamesPerSeat: 10,
+        seedStart: 9000,
+        report: comparison(metrics({ winRate: 0.5 }), metrics({ winRate: 0.42 }), "holdout dropped"),
+      },
+    ]);
+
+    expect(attached.validation?.verdict).toBe("rejected");
+    expect(attached.status).toBe("rejected");
+    expect(attached.risks.some((line) => line.includes("C2"))).toBe(true);
   });
 });

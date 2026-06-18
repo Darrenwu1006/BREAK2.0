@@ -5,6 +5,7 @@ import type { CardDb } from "./engine/types";
 import { Game } from "./ui/Game";
 import { setCardPrintings } from "./ui/CardView";
 import { DeckEditor, type ApiDeck } from "./ui/DeckEditor";
+import { DeckOptimizerPreview } from "./ui/DeckOptimizerPreview";
 import type { DeckMeta } from "./ui/gameTypes";
 
 const expand = (d: ApiDeck): string[] => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
@@ -49,7 +50,7 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myDeck, setMyDeck] = useState(0);
   const [aiDeck, setAiDeck] = useState(1);
-  const [mode, setMode] = useState<"menu" | "game" | "editor">("menu");
+  const [mode, setMode] = useState<"menu" | "game" | "editor" | "optimizer">("menu");
 
   async function refreshDecks() {
     try {
@@ -85,6 +86,10 @@ export function App() {
 
   if (mode === "editor") {
     return <DeckEditor db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />;
+  }
+
+  if (mode === "optimizer") {
+    return <DeckOptimizerPreview db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />;
   }
 
   const deckLabel = (d: ApiDeck) => `${d.school}／${d.name}（${d.cards.reduce((s, c) => s + c.count, 0)}張）`;
@@ -126,6 +131,7 @@ export function App() {
         <div className="menu-row menu-actions">
           <button className="btn-start" disabled={!decks.length} onClick={() => setMode("game")}>開始對戰</button>
           <button className="btn-start btn-secondary" onClick={() => setMode("editor")}>牌組編輯</button>
+          <button className="btn-start btn-secondary" onClick={() => setMode("optimizer")}>調牌提案</button>
         </div>
       </section>
       <div className="version-stamp">v{APP_VERSION} ・ 收錄 {poolStatus.exps} ・ 技能 {poolStatus.implemented}/{poolStatus.withSkill}（{poolStatus.pct}%）</div>
