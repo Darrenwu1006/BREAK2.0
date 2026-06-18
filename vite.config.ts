@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 // ---- 牌組 API（dev server middleware）----
 // GET  /api/decks         → 讀 decks/<學校>/<牌組>.csv（含 0 張候補列）
-// POST /api/decks         → body {school, name, cards:[{id,count,printing?}]} 寫回 CSV
+// POST /api/decks         → body {school, name, cards:[{id,count,printing?}]} 寫回 CSV，並同步寫入 data/decks/*.json 供 M8 analyzer 使用
 // 跳過 template.csv 與 All Cards（收藏清單）
 
 function parseCSV(text: string): string[][] {
@@ -31,6 +31,7 @@ const csvField = (s: string) => (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}
 
 function deckApi(root: string): Plugin {
   const deckDir = join(root, "decks");
+  const dataDeckDir = join(root, "data", "decks");
   const listDecks = () => {
     const decks: unknown[] = [];
     for (const school of readdirSync(deckDir)) {
@@ -92,8 +93,14 @@ function deckApi(root: string): Plugin {
                 }
                 mkdirSync(join(deckDir, school), { recursive: true });
                 writeFileSync(join(deckDir, school, `${name}.csv`), lines.join("\n") + "\n", "utf8");
+                mkdirSync(dataDeckDir, { recursive: true });
+                writeFileSync(
+                  join(dataDeckDir, `${school}-${name}.json`),
+                  `${JSON.stringify({ name: `${school}-${name}`, school, source: `decks/${school}/${name}.csv`, cards }, null, 1)}\n`,
+                  "utf8",
+                );
                 res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ ok: true, source: `decks/${school}/${name}.csv` }));
+                res.end(JSON.stringify({ ok: true, source: `decks/${school}/${name}.csv`, analyzerSource: `data/decks/${school}-${name}.json` }));
               } catch (e) {
                 res.statusCode = 400;
                 res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));

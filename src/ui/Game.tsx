@@ -5,9 +5,11 @@ import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions 
 import { canDeployTo, deployNames } from "../engine/effects";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "../ai/heuristic";
+import type { CoachWorkerResponse } from "../ai/coach-worker";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
-import { CardCounter, CardDetails, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
+import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
+import type { CoachPanelState } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 
@@ -29,7 +31,7 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
   attack: "攻擊",
 };
 
-type ToolMode = { type: "detail" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
+type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
 
 function initialSpeed(): AiSpeed {
   const stored = localStorage.getItem("breaktcg-ai-speed");
@@ -62,6 +64,7 @@ export function Game(props: {
   const [multiSel, setMultiSel] = useState<number[]>([]);
   const [nameAsk, setNameAsk] = useState<{ uid: number; names: string[] } | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>({ type: "detail" });
+  const [coach, setCoach] = useState<CoachPanelState>({ status: "idle" });
   const [mobilePanel, setMobilePanel] = useState<"log" | "detail" | null>(null);
   const [activeGutsKey, setActiveGutsKey] = useState<string | null>(null);
   const [speed, setSpeed] = useState<AiSpeed>(initialSpeed);
@@ -70,6 +73,8 @@ export function Game(props: {
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
+  const coachRequestRef = useRef(0);
+  const coachWorkerRef = useRef<Worker | null>(null);
   const [handWidth, setHandWidth] = useState(0);
   const [fitScale, setFitScale] = useState(1);
   const seenLogCount = useRef(state.log.length);
@@ -134,6 +139,63 @@ export function Game(props: {
     }, delay);
     return () => window.clearTimeout(timer);
   }, [db, pd, speed, state.phase]);
+
+  useEffect(() => {
+    coachWorkerRef.current?.terminate();
+    coachWorkerRef.current = null;
+    const requestId = String(++coachRequestRef.current);
+
+    if (!isMyDecision || !pd) {
+      setCoach({ status: "idle" });
+      return;
+    }
+
+    let fallback: Decision | null = null;
+    try {
+      fallback = heuristicAiDecision(db, state);
+      setCoach({ status: "loading", fallback });
+    } catch (error) {
+      setCoach({ status: "error", fallback: null, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
+      coachWorkerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
+        if (event.data.requestId !== requestId || coachRequestRef.current !== Number(requestId)) return;
+        if (event.data.ok) setCoach({ status: "ready", report: event.data.report });
+        else setCoach({ status: "error", fallback, error: event.data.error });
+        worker.terminate();
+        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
+      };
+      worker.onerror = (event) => {
+        if (coachRequestRef.current !== Number(requestId)) return;
+        setCoach({ status: "error", fallback, error: event.message || "Coach worker 發生錯誤" });
+        worker.terminate();
+        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
+      };
+      worker.postMessage({
+        requestId,
+        state,
+        options: {
+          perspectivePlayer: HUMAN,
+          knownDecks: props.decks,
+          seed: state.rngState,
+          sampleCount: 4,
+          candidateLimit: 6,
+          rolloutMaxSteps: 1400,
+          timeLimitMs: 1200,
+        },
+      });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      coachWorkerRef.current?.terminate();
+      coachWorkerRef.current = null;
+    };
+  }, [db, isMyDecision, pd, props.decks, state]);
 
   useEffect(() => {
     const newEntries = state.log.slice(seenLogCount.current);
@@ -493,9 +555,9 @@ export function Game(props: {
         </div>
         <div className="tool-tabs" role="tablist" aria-label="右欄工具">
           <button role="tab" aria-selected={toolMode.type === "detail"} className={toolMode.type === "detail" ? "is-active" : ""} onClick={() => setToolMode({ type: "detail" })}>詳情</button>
+          <button role="tab" aria-selected={toolMode.type === "coach"} className={toolMode.type === "coach" ? "is-active" : ""} onClick={() => setToolMode({ type: "coach" })}>教練</button>
           <button role="tab" aria-selected={toolMode.type === "counter"} className={toolMode.type === "counter" ? "is-active" : ""} onClick={() => setToolMode({ type: "counter" })}>算牌</button>
           <button role="tab" aria-selected={toolMode.type === "drop"} className={toolMode.type === "drop" ? "is-active" : ""} onClick={() => setToolMode({ type: "drop", player: HUMAN })}>棄牌</button>
-          <button role="tab" disabled title="需 AI 引擎支援（未來版本）">勝率</button>
         </div>
         <div className="tool-content">
           {toolMode.type === "drop" || toolMode.type === "event" ? (
@@ -511,6 +573,8 @@ export function Game(props: {
               }}
               onHover={setHoverUid}
             />
+          ) : toolMode.type === "coach" ? (
+            <CoachPanel db={db} state={state} coach={coach} onApply={decide} />
           ) : toolMode.type === "counter" ? (
             <CardCounter db={db} state={state} />
           ) : visibleInspection ? (

@@ -47,6 +47,7 @@ export interface MatchResult {
   averageRalliesPerSet: number;
   lostBy: [number, number];
   lostReasonsByPlayer: [Partial<Record<LostReason, number>>, Partial<Record<LostReason, number>>];
+  stats: MatchStats;
   invariants: [PlayerInvariant, PlayerInvariant];
   error?: string;
   logTail: string[];
@@ -59,6 +60,58 @@ export interface SetResult {
   lostReason: LostReason;
   rallies: number;
   logIndex: number;
+}
+
+export type DeployArea = "serve" | "block" | "receive" | "toss" | "attack";
+export type DefenseRoute = "receive" | "block" | "unknown";
+export type OpSource = "serve" | "block" | "attack";
+export type GutsSource = "serve" | "receive" | "toss" | "attack" | "blockCenter";
+
+export interface PointStats {
+  count: number;
+  total: number;
+  max: number;
+  highCount: number;
+}
+
+export interface DefenseStats {
+  attempts: number;
+  successes: number;
+  failures: number;
+}
+
+export interface ActionImpactStats {
+  uses: number;
+  effectiveUses: number;
+  impactCount: number;
+  pointMods: number;
+  draws: number;
+  handAdds: number;
+  deploys: number;
+  paidGuts: number;
+}
+
+export interface MatchPlayerStats {
+  mulligans: number;
+  mulliganReturned: number;
+  deployments: Record<DeployArea, number>;
+  blockDeployCards: number;
+  freeEvents: number;
+  freeSkills: number;
+  paidGuts: number;
+  drawEvents: number;
+  deckEmptyDraws: number;
+  op: PointStats;
+  attackOp: PointStats;
+  opBySource: Record<OpSource, PointStats>;
+  dp: PointStats;
+  defense: Record<DefenseRoute, DefenseStats>;
+  actionImpact: Record<"event" | "skill", ActionImpactStats>;
+  gutsPaidBySource: Record<GutsSource, number>;
+}
+
+export interface MatchStats {
+  players: [MatchPlayerStats, MatchPlayerStats];
 }
 
 export interface BatchConfig {
@@ -246,6 +299,155 @@ function averageRallies(setResults: SetResult[]): number {
   return setResults.reduce((sum, result) => sum + result.rallies, 0) / setResults.length;
 }
 
+function blankPointStats(): PointStats {
+  return { count: 0, total: 0, max: 0, highCount: 0 };
+}
+
+function blankDefenseStats(): DefenseStats {
+  return { attempts: 0, successes: 0, failures: 0 };
+}
+
+function blankActionImpactStats(): ActionImpactStats {
+  return { uses: 0, effectiveUses: 0, impactCount: 0, pointMods: 0, draws: 0, handAdds: 0, deploys: 0, paidGuts: 0 };
+}
+
+function blankPlayerStats(): MatchPlayerStats {
+  return {
+    mulligans: 0,
+    mulliganReturned: 0,
+    deployments: { serve: 0, block: 0, receive: 0, toss: 0, attack: 0 },
+    blockDeployCards: 0,
+    freeEvents: 0,
+    freeSkills: 0,
+    paidGuts: 0,
+    drawEvents: 0,
+    deckEmptyDraws: 0,
+    op: blankPointStats(),
+    attackOp: blankPointStats(),
+    opBySource: { serve: blankPointStats(), block: blankPointStats(), attack: blankPointStats() },
+    dp: blankPointStats(),
+    defense: { receive: blankDefenseStats(), block: blankDefenseStats(), unknown: blankDefenseStats() },
+    actionImpact: { event: blankActionImpactStats(), skill: blankActionImpactStats() },
+    gutsPaidBySource: { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 },
+  };
+}
+
+function firstNumber(text: string): number {
+  const match = text.match(/-?\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function pointValue(text: string, label: "OP" | "DP"): number | null {
+  const match = text.match(new RegExp(`${label} 算出\\s*[=＝]\\s*(-?\\d+)`));
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+function addPoint(stats: PointStats, value: number): void {
+  stats.count++;
+  stats.total += value;
+  stats.max = Math.max(stats.max, value);
+  if (value >= 6) stats.highCount++;
+}
+
+function addDefense(stats: DefenseStats, success: boolean): void {
+  stats.attempts++;
+  if (success) stats.successes++;
+  else stats.failures++;
+}
+
+type ActiveAction = { kind: "event" | "skill"; impacted: boolean } | null;
+
+function markActionImpact(stats: MatchPlayerStats, active: ActiveAction, field: keyof Omit<ActionImpactStats, "uses" | "effectiveUses" | "impactCount" | "paidGuts">, amount = 1): ActiveAction {
+  if (!active) return active;
+  const impact = stats.actionImpact[active.kind];
+  impact.impactCount += amount;
+  impact[field] += amount;
+  if (!active.impacted) {
+    impact.effectiveUses++;
+    return { ...active, impacted: true };
+  }
+  return active;
+}
+
+function collectMatchStats(state: GameState): MatchStats {
+  const players: [MatchPlayerStats, MatchPlayerStats] = [blankPlayerStats(), blankPlayerStats()];
+  const currentRoute: [DefenseRoute, DefenseRoute] = ["unknown", "unknown"];
+  const activeAction: [ActiveAction, ActiveAction] = [null, null];
+
+  for (const entry of state.log) {
+    if (entry.player === null) continue;
+    const p = entry.player;
+    const stats = players[p];
+    const text = entry.text;
+
+    if (text.startsWith("── ")) activeAction[p] = null;
+    if (text.startsWith("換牌 ")) {
+      stats.mulligans++;
+      stats.mulliganReturned += firstNumber(text);
+    }
+    if (text.startsWith("打出事件卡 ")) {
+      stats.freeEvents++;
+      stats.actionImpact.event.uses++;
+      activeAction[p] = { kind: "event", impacted: false };
+    }
+    if (text.startsWith("使用 ") && text.includes(" 的技能")) {
+      stats.freeSkills++;
+      stats.actionImpact.skill.uses++;
+      activeAction[p] = { kind: "skill", impacted: false };
+    }
+    if (text.startsWith("支付 ") && text.includes(" Guts")) {
+      const paid = firstNumber(text);
+      stats.paidGuts += paid;
+      if (activeAction[p]) stats.actionImpact[activeAction[p]!.kind].paidGuts += paid;
+    }
+    if (entry.event?.kind === "pay-guts") {
+      for (const [source, count] of Object.entries(entry.event.sources) as [GutsSource, number][]) {
+        stats.gutsPaidBySource[source] += count;
+      }
+    }
+    if (text.includes("牌組已空，無法抽牌")) stats.deckEmptyDraws++;
+    else if (text.includes("抽")) {
+      const drawCount = Math.max(1, firstNumber(text));
+      stats.drawEvents += drawCount;
+      if (!text.startsWith("接球抽牌")) activeAction[p] = markActionImpact(stats, activeAction[p], "draws", drawCount);
+    }
+    if (text.includes("加入手牌") || text.includes("回到手牌") || text.includes("回收")) activeAction[p] = markActionImpact(stats, activeAction[p], "handAdds");
+
+    const deployMatch = text.match(/→ (serve|receive|toss|attack)$/);
+    if (deployMatch?.[1]) {
+      stats.deployments[deployMatch[1] as DeployArea]++;
+      if (text.includes("從") || text.includes("移動") || text.includes("登場 →")) activeAction[p] = markActionImpact(stats, activeAction[p], "deploys");
+      else activeAction[p] = null;
+    }
+    const blockMatch = text.match(/^攔網登場 (.+)（中央=/);
+    if (blockMatch?.[1]) {
+      stats.deployments.block++;
+      stats.blockDeployCards += blockMatch[1].split("、").filter(Boolean).length;
+      activeAction[p] = null;
+    }
+
+    if (text === "選擇接球") currentRoute[p] = "receive";
+    if (text === "選擇攔網") currentRoute[p] = "block";
+    if (text.includes(" 的") && (text.includes("+") || text.includes("變為"))) activeAction[p] = markActionImpact(stats, activeAction[p], "pointMods");
+
+    const op = pointValue(text, "OP");
+    if (op !== null) {
+      const source: OpSource | null = entry.event?.kind === "attack-op" ? "attack" : entry.event?.kind === "op-calc" ? entry.event.source : text.startsWith("攻擊 OP 算出") ? "attack" : null;
+      addPoint(stats.op, op);
+      if (source) addPoint(stats.opBySource[source], op);
+      if (source === "attack") addPoint(stats.attackOp, op);
+    }
+    const dp = pointValue(text, "DP");
+    if (dp !== null) addPoint(stats.dp, dp);
+
+    if (text.startsWith("判定：")) {
+      addDefense(stats.defense[currentRoute[p]], text.includes("成功"));
+    }
+  }
+
+  return { players };
+}
+
 function logTail(state: GameState, count = 8): string[] {
   return state.log.slice(-count).map((entry) => {
     const player = entry.player === null ? "-" : `P${entry.player}`;
@@ -271,6 +473,7 @@ function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOu
     averageRalliesPerSet: averageRallies(lost.setResults),
     lostBy: lost.lostBy,
     lostReasonsByPlayer: lost.lostReasonsByPlayer,
+    stats: collectMatchStats(state),
     invariants: [
       playerInvariant(state, 0, config.decks[0].ids.length),
       playerInvariant(state, 1, config.decks[1].ids.length),

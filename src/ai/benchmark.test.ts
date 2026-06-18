@@ -53,11 +53,14 @@ describe("M8 benchmark harness", () => {
     for (const match of report.matches) {
       expect(match.setResults.length, `seed ${match.seed}`).toBeGreaterThan(0);
       expect(match.averageRalliesPerSet, `seed ${match.seed}`).toBeGreaterThan(0);
+      expect(match.stats.players[0].opBySource.attack.count + match.stats.players[1].opBySource.attack.count, `seed ${match.seed}`).toBeGreaterThan(0);
+      expect(match.stats.players[0].gutsPaidBySource.attack + match.stats.players[1].gutsPaidBySource.attack, `seed ${match.seed}`).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("現有 14 副 benchmark 牌組都是 40 張", () => {
-    expect(benchmarkDecks).toHaveLength(14);
+  it("benchmark 牌組池會包含 UI 新增牌組且都是 40 張", () => {
+    expect(benchmarkDecks.length).toBeGreaterThanOrEqual(14);
+    expect(benchmarkDecks.some((deck) => deck.name === "稻荷崎-0612測試")).toBe(true);
     for (const deck of benchmarkDecks) {
       expect(deck.ids, deck.name).toHaveLength(40);
       expect(deck.axes.length, deck.name).toBeGreaterThan(0);
@@ -76,7 +79,7 @@ describe("M8 benchmark harness", () => {
     expect(result.invariants.every((entry) => entry.ok)).toBe(true);
   });
 
-  it("ring matrix 可跑完 14 副牌組固定煙霧測試", () => {
+  it("ring matrix 可跑完 benchmark 牌組池固定煙霧測試", () => {
     const report = runBenchmarkMatrix({
       db: benchmarkDb,
       decks: benchmarkDecks,
@@ -87,9 +90,9 @@ describe("M8 benchmark harness", () => {
       mode: "ring",
     });
 
-    expect(report.summary.pairs).toBe(14);
-    expect(report.summary.totalGames).toBe(14);
-    expect(report.summary.completed).toBe(14);
+    expect(report.summary.pairs).toBe(benchmarkDecks.length);
+    expect(report.summary.totalGames).toBe(benchmarkDecks.length);
+    expect(report.summary.completed).toBe(benchmarkDecks.length);
     expect(report.summary.errored).toBe(0);
     expect(report.summary.maxSteps).toBe(0);
     expect(Object.keys(report.summary.winsByAxis).length).toBeGreaterThan(0);

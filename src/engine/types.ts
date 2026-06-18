@@ -248,6 +248,8 @@ export interface LogEntry {
 
 export type GameEvent =
   | { kind: "attack-op"; player: PlayerId; value: number }
+  | { kind: "op-calc"; player: PlayerId; source: "serve" | "block" | "attack"; value: number }
+  | { kind: "pay-guts"; player: PlayerId; count: number; sources: Partial<Record<"serve" | "receive" | "toss" | "attack" | "blockCenter", number>> }
   | { kind: "set-won"; winner: PlayerId; loser: PlayerId; setNo: number; loserSetRemaining: number }
   | { kind: "match-won"; winner: PlayerId; loser: PlayerId; setNo: number };
 

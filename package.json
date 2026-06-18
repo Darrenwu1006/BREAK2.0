@@ -14,7 +14,8 @@
     "merge:official": "node tools/merge-official.mjs",
     "apply:effects": "node tools/apply-effects.mjs",
     "data:rebuild": "node tools/import-csv.mjs && node tools/merge-official.mjs && node tools/apply-effects.mjs",
-    "benchmark:m8": "vite-node src/ai/benchmark-cli.ts"
+    "benchmark:m8": "vite-node src/ai/benchmark-cli.ts",
+    "analyze:m8": "vite-node src/ai/deck-analyzer-cli.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",

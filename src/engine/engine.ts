@@ -318,7 +318,7 @@ function calcOp(db: CardDb, state: GameState): void {
     value = (t !== null ? (effParam(db, state, t, "toss") ?? 0) : 0) + (a !== null ? (effParam(db, state, a, "attack") ?? 0) : 0);
   }
   state.op = { value, owner: p, source };
-  log(state, p, `OP 算出 = ${value}`, source === "attack" ? { kind: "attack-op", player: p, value } : undefined);
+  log(state, p, `OP 算出 = ${value}`, source === "attack" ? { kind: "attack-op", player: p, value } : { kind: "op-calc", player: p, source, value });
 }
 
 /** DP 算出 †5-18 */

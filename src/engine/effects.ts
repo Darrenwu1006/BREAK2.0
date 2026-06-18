@@ -1727,11 +1727,13 @@ function afterTargetChosen(db: CardDb, state: GameState, ctx: EffectCtx, uid: nu
 
 function payGuts(db: CardDb, state: GameState, ctx: EffectCtx, uids: number[]): void {
   const ps = state.players[ctx.player];
+  const sources: Partial<Record<"serve" | "receive" | "toss" | "attack" | "blockCenter", number>> = {};
   for (const uid of uids) {
     for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
       const i = ps[key].indexOf(uid);
       if (i >= 0) {
         ps[key].splice(i, 1);
+        sources[key] = (sources[key] ?? 0) + 1;
         break;
       }
     }
@@ -1739,7 +1741,7 @@ function payGuts(db: CardDb, state: GameState, ctx: EffectCtx, uids: number[]): 
   }
   ctx.paidGuts = [...(ctx.paidGuts ?? []), ...uids];
   ctx.anyExecuted = true;
-  log(state, ctx.player, `支付 ${uids.length} Guts`);
+  log(state, ctx.player, `支付 ${uids.length} Guts`, { kind: "pay-guts", player: ctx.player, count: uids.length, sources });
 }
 
 function dropChara(db: CardDb, state: GameState, ctx: EffectCtx, uid: number): void {

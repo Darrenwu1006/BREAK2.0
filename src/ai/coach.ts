@@ -243,12 +243,11 @@ function enumerateEffectCardChoices(db: CardDb, state: GameState, heuristic: Dec
   const decisions: Decision[] = [heuristic, { type: "effect-cards", uids: autoPickCards(db, state) }];
   if (min === 0) decisions.push({ type: "effect-cards", uids: [] });
   if (max <= 0) return decisions;
-  if (min <= 1 && max >= 1) {
-    for (const uid of candidates.slice(0, 8)) decisions.push({ type: "effect-cards", uids: [uid] });
-  }
-  const size = Math.max(2, min);
-  if (size <= max) {
-    for (const combo of combinations(candidates.slice(0, 8), size, 8)) decisions.push({ type: "effect-cards", uids: combo });
+  const pool = candidates.slice(0, 10);
+  const start = Math.max(1, min);
+  const end = Math.min(max, Math.max(start, min >= 4 ? min : 3));
+  for (let size = start; size <= end; size++) {
+    for (const combo of combinations(pool, size, 18)) decisions.push({ type: "effect-cards", uids: combo });
   }
   return decisions;
 }
@@ -265,8 +264,11 @@ function enumerateCandidates(db: CardDb, state: GameState, limit: number, fallba
       break;
     case "mulligan":
       decisions.push({ type: "mulligan", returnUids: [] });
-      for (const uid of state.players[p].hand) decisions.push({ type: "mulligan", returnUids: [uid] });
-      for (const combo of combinations(state.players[p].hand, 2, 6)) decisions.push({ type: "mulligan", returnUids: combo });
+      for (let size = 1; size <= state.players[p].hand.length; size++) {
+        for (const combo of combinations(state.players[p].hand, size, 80)) {
+          decisions.push({ type: "mulligan", returnUids: combo });
+        }
+      }
       break;
     case "defense-choice":
       decisions.push({ type: "defense-choice", choice: "receive" });
@@ -305,8 +307,7 @@ function enumerateCandidates(db: CardDb, state: GameState, limit: number, fallba
         for (const combo of combinations(opts, size, 12)) {
           const nameChoices = blockNameChoices(db, state, p, combo);
           if (!nameChoices) continue;
-          const center = combo.reduce((best, uid) => (cardParam(db, state, uid, "block") > cardParam(db, state, best, "block") ? uid : best));
-          decisions.push({ type: "deploy-block", uids: combo, center, nameChoices });
+          for (const center of combo) decisions.push({ type: "deploy-block", uids: combo, center, nameChoices });
         }
       }
       break;
