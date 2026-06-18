@@ -1,0 +1,324 @@
+{
+  "schemaVersion": "m8-deck-optimizer-proposal-v1",
+  "generatedAt": "2026-06-18T15:40:01.397Z",
+  "optimizerVersion": "m8-c1-4-candidate-evaluator",
+  "sourceDeck": "稻荷崎-0612測試",
+  "sourceDeckCards": [
+    {
+      "id": "HV-D03-011",
+      "count": 2
+    },
+    {
+      "id": "HV-P02-003",
+      "count": 1
+    },
+    {
+      "id": "HV-P02-017",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-022",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-024",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-027",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-034",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-035",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-077",
+      "count": 2
+    },
+    {
+      "id": "HV-P02-085",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-088",
+      "count": 1
+    },
+    {
+      "id": "HV-P02-089",
+      "count": 3
+    },
+    {
+      "id": "HV-PR-034",
+      "count": 2
+    },
+    {
+      "id": "HV-PR-048",
+      "count": 3
+    },
+    {
+      "id": "HV-PR-049",
+      "count": 2
+    }
+  ],
+  "candidateDeckCards": [
+    {
+      "id": "HV-D03-011",
+      "count": 2
+    },
+    {
+      "id": "HV-P02-003",
+      "count": 1
+    },
+    {
+      "id": "HV-P02-017",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-022",
+      "count": 5
+    },
+    {
+      "id": "HV-P02-024",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-027",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-034",
+      "count": 4
+    },
+    {
+      "id": "HV-P02-035",
+      "count": 3
+    },
+    {
+      "id": "HV-P02-077",
+      "count": 2
+    },
+    {
+      "id": "HV-P02-085",
+      "count": 2
+    },
+    {
+      "id": "HV-P02-088",
+      "count": 1
+    },
+    {
+      "id": "HV-P02-089",
+      "count": 2
+    },
+    {
+      "id": "HV-PR-034",
+      "count": 2
+    },
+    {
+      "id": "HV-PR-048",
+      "count": 3
+    },
+    {
+      "id": "HV-PR-049",
+      "count": 2
+    }
+  ],
+  "changes": [
+    {
+      "cardId": "HV-P02-089",
+      "cardName": "どや俺の仲間すごいやろって もっと言いたかったわ",
+      "before": 3,
+      "after": 2,
+      "delta": -1,
+      "reason": "static coverage v1"
+    },
+    {
+      "cardId": "HV-P02-085",
+      "cardName": "大見 太郎",
+      "before": 3,
+      "after": 2,
+      "delta": -1,
+      "reason": "static coverage v1"
+    },
+    {
+      "cardId": "HV-P02-022",
+      "cardName": "宮 治",
+      "before": 3,
+      "after": 5,
+      "delta": 2,
+      "reason": "static coverage v1"
+    }
+  ],
+  "lockedCards": [
+    {
+      "id": "HV-P02-024",
+      "minCount": 2
+    },
+    {
+      "id": "HV-P02-017",
+      "minCount": 2
+    },
+    {
+      "id": "HV-P02-003",
+      "minCount": 1
+    },
+    {
+      "id": "HV-P02-034",
+      "minCount": 2
+    }
+  ],
+  "bannedCards": [],
+  "cardPool": {
+    "schools": [
+      "稻荷崎"
+    ],
+    "poolIds": [
+      "HV-D03-011",
+      "HV-P02-003",
+      "HV-P02-017",
+      "HV-P02-022",
+      "HV-P02-024",
+      "HV-P02-027",
+      "HV-P02-034",
+      "HV-P02-035",
+      "HV-P02-077",
+      "HV-P02-085",
+      "HV-P02-088",
+      "HV-P02-089",
+      "HV-PR-034",
+      "HV-PR-048",
+      "HV-PR-049"
+    ],
+    "crossSchoolAllowed": []
+  },
+  "generationConfig": {
+    "strategy": "static-coverage-v1",
+    "maxReplacements": 2,
+    "autoLock": true,
+    "allow": [],
+    "unlock": []
+  },
+  "objectiveProfile": "preserve-current",
+  "evaluationConfig": {
+    "opponents": [
+      "伊達工業-攔網軸",
+      "伊達工業-攔網軸改",
+      "梟谷-爆發軸二",
+      "梟谷-高爆發軸",
+      "混合學校-垃圾場",
+      "烏野-山月攔網軸",
+      "烏野-日影攻擊軸",
+      "烏野-預組",
+      "白鳥沢-白板軸",
+      "稲荷崎-六名軸",
+      "稲荷崎-預組",
+      "青葉城西-二彈改",
+      "青葉城西-快攻軸",
+      "音駒-預組"
+    ],
+    "policy": "heuristic-v2",
+    "opponentPolicy": "heuristic-v2",
+    "preset": "smoke",
+    "gamesPerSeat": 1,
+    "seedStart": 1600,
+    "maxSteps": 5000
+  },
+  "baselineMetrics": null,
+  "candidateMetrics": null,
+  "deltas": {},
+  "score": null,
+  "rationale": [
+    "C1-3b static coverage v1：完成 2 張小幅替換，尚未視為正式調牌結論。",
+    "大見 太郎 -1 / 宮 治 +1：以 preserve-current 目標補強靜態角色覆蓋",
+    "どや俺の仲間すごいやろって もっと言いたかったわ -1 / 宮 治 +1：以 preserve-current 目標補強靜態角色覆蓋",
+    "候選卡池：同校 稻荷崎，共 15 張可考慮（含跨校允許 0 張）。",
+    "核心卡保護：自動鎖定（可用 --unlock 解除、--locked 覆蓋）共 4 張。",
+    "C2 formal/holdout validation：formal=candidate score=3.39；holdout=candidate score=0.62。",
+    "formal 與 holdout 沒有明顯回落，proposal 可進入 validated 候選。"
+  ],
+  "risks": [
+    "C1-3b 只看靜態牌組覆蓋與事件上限；仍需 C1-4 / C2 用對局模擬確認。",
+    "validated 只代表通過目前 formal/holdout 對手池；若卡池策略或對手池改變仍需重跑。"
+  ],
+  "status": "validated",
+  "validation": {
+    "strategy": "formal-holdout-v1",
+    "generatedAt": "2026-06-18T15:40:10.826Z",
+    "verdict": "validated",
+    "runs": [
+      {
+        "label": "formal",
+        "preset": "formal",
+        "gamesPerSeat": 5,
+        "seedStart": 3200,
+        "status": "candidate",
+        "deltas": {
+          "matchWinRateDelta": 0.057142857142857106,
+          "setWinRateDelta": 0.03678378567922014,
+          "noDeployLossDelta": -0.005464623297192106,
+          "judgeFailLossDelta": 0.005464623297192104,
+          "paidGutsDelta": 0.2857142857142856,
+          "eventEffectiveRateDelta": 0.020137912440817085
+        },
+        "score": {
+          "value": 3.3855543952153484,
+          "components": {
+            "matchWinRate": 2.2857142857142843,
+            "setWinRate": 0.7356757135844028,
+            "noDeployLossImprovement": -0.09836321934945791,
+            "judgeFailLossImprovement": 0.05464623297192105,
+            "paidGutsReduction": 1.1428571428571423,
+            "eventEffectiveRate": 0.12082747464490251,
+            "deckIdentityPenalty": -0.7,
+            "sampleUncertaintyPenalty": -0.1558032352078459
+          }
+        },
+        "notes": [
+          "勝率差 +6%",
+          "Set 取得率差 +4%"
+        ]
+      },
+      {
+        "label": "holdout",
+        "preset": "holdout",
+        "gamesPerSeat": 5,
+        "seedStart": 9000,
+        "status": "candidate",
+        "deltas": {
+          "matchWinRateDelta": 0.02857142857142858,
+          "setWinRateDelta": 0.012502729226278708,
+          "noDeployLossDelta": 0.0032947653662522836,
+          "judgeFailLossDelta": -0.0032947653662523113,
+          "paidGutsDelta": 0.02857142857142847,
+          "eventEffectiveRateDelta": -0.008686649040667516
+        },
+        "score": {
+          "value": 0.6240532190924482,
+          "components": {
+            "matchWinRate": 1.1428571428571432,
+            "setWinRate": 0.25005458452557416,
+            "noDeployLossImprovement": 0.059305776592541104,
+            "judgeFailLossImprovement": -0.03294765366252311,
+            "paidGutsReduction": 0.11428571428571388,
+            "eventEffectiveRate": -0.052119894244005094,
+            "deckIdentityPenalty": -0.7,
+            "sampleUncertaintyPenalty": -0.15738245126199615
+          }
+        },
+        "notes": [
+          "勝率差 +3%",
+          "Set 取得率差 +1%",
+          "差距小於 3%，建議增加 games 或改用 holdout seeds 再確認。"
+        ]
+      }
+    ],
+    "rationale": [
+      "C2 formal/holdout validation：formal=candidate score=3.39；holdout=candidate score=0.62。",
+      "formal 與 holdout 沒有明顯回落，proposal 可進入 validated 候選。"
+    ]
+  }
+}
