@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Card } from "../data/types";
 import type { CourtArea } from "../engine/dsl";
 import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions } from "../engine/engine";
@@ -6,6 +6,7 @@ import { canDeployTo, deployNames } from "../engine/effects";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
+import type { CoachActionEstimate, CoachReport } from "../ai/coach";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
@@ -13,7 +14,8 @@ import type { CoachPanelState } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "./selection";
-import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory } from "./undoHistory";
+import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory, UNDO_HISTORY_LIMIT } from "./undoHistory";
+import { appendReplayEntry, createReplaySession, keyReplayEntries, stateAtReplayStep, summarizeReplaySession, truncateReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "./replayHistory";
 import type { CardPointerDragInfo } from "./CardView";
 
 const HUMAN: PlayerId = 0;
@@ -52,6 +54,215 @@ const SFX_ATTACK_YOU = ["ドン！", "バンッ！", "ズバン！"];
 const SFX_ATTACK_OPP = ["ドッ！", "ズバッ！"];
 
 type SplashBanner = { text: string; kind: "set" | "match" };
+type GameRuntime = { state: GameState; replay: ReplaySession };
+type ReplayCritiqueState =
+  | { status: "idle" }
+  | { status: "loading"; step: number }
+  | { status: "ready"; step: number; report: CoachReport }
+  | { status: "error"; step: number; error: string };
+type ReplayCritiqueResult =
+  | { status: "ready"; report: CoachReport }
+  | { status: "error"; error: string };
+type ReplayCritiqueCache = Record<number, ReplayCritiqueResult>;
+type ReplayScanState =
+  | { status: "idle" }
+  | { status: "running"; currentStep: number; done: number; total: number }
+  | { status: "done"; total: number }
+  | { status: "stopped"; done: number; total: number };
+
+function decisionLabel(decision: Decision): string {
+  switch (decision.type) {
+    case "serve-rights": return decision.take ? "取得發球權" : "讓出發球權";
+    case "mulligan": return decision.returnUids.length ? `換牌 ${decision.returnUids.length} 張` : "不換牌";
+    case "deploy-serve": return decision.uid === null ? "不登場發球" : "發球登場";
+    case "deploy-receive": return decision.uid === null ? "不登場接球" : "接球登場";
+    case "deploy-toss": return decision.uid === null ? "不登場托球" : "托球登場";
+    case "deploy-attack": return decision.uid === null ? "不登場攻擊" : "攻擊登場";
+    case "deploy-block": return decision.uids === null ? "不登場攔網" : `攔網登場 ${decision.uids.length} 張`;
+    case "defense-choice": return decision.choice === "block" ? "選擇攔網" : "選擇接球";
+    case "free": return decision.action === "pass" ? "Pass" : decision.action === "lost" ? "宣告 Lost" : decision.action === "skill" ? "使用技能" : "打出事件";
+    case "resolve-pending": return "選擇待機技能";
+    case "effect-confirm": return decision.accept ? "使用效果" : "不使用效果";
+    case "effect-cards": return `選卡 ${decision.uids.length} 張`;
+    case "effect-option": return "選擇效果選項";
+    case "pick-set-card": return "拿取 Set 卡";
+  }
+}
+
+function actorLabel(entry: ReplayEntry): string {
+  return entry.source === "ai" ? "電腦" : entry.player === HUMAN ? "你" : "玩家";
+}
+
+function percent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function sameDecision(a: Decision, b: Decision): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function findActualEstimate(report: CoachReport, decision: Decision): CoachActionEstimate | null {
+  return report.recommendations.find((item) => sameDecision(item.decision, decision)) ?? null;
+}
+
+function critiqueTone(delta: number, actual: CoachActionEstimate | null): { label: string; className: string } {
+  if (!actual) return { label: "未覆蓋", className: "is-neutral" };
+  if (delta >= 0.15) return { label: "失誤", className: "is-warning" };
+  if (delta <= -0.03) return { label: "妙手", className: "is-good" };
+  return { label: "可接受", className: "is-neutral" };
+}
+
+function critiqueToneForEntry(entry: ReplayEntry, result: ReplayCritiqueResult | undefined): { label: string; className: string } | null {
+  if (!result) return null;
+  if (result.status === "error") return { label: "錯誤", className: "is-neutral" };
+  const actual = findActualEstimate(result.report, entry.decision);
+  const delta = actual ? result.report.bestAction.winRate - actual.winRate : 0;
+  return critiqueTone(delta, actual);
+}
+
+function ReplayStepSummary(props: {
+  state: GameState;
+  entry: ReplayEntry | null;
+  step: number;
+  total: number;
+  analytics: ReplayAnalytics;
+  keyEntries: ReplayEntry[];
+  critique: ReplayCritiqueState;
+  critiqueCache: ReplayCritiqueCache;
+  scan: ReplayScanState;
+  onEvaluate: () => void;
+  onScan: () => void;
+  onStopScan: () => void;
+  onJump: (step: number) => void;
+}) {
+  const { state, entry, step, total, analytics, keyEntries, critique, critiqueCache, scan } = props;
+  const newLogs = entry ? entry.after.log.slice(entry.logStart, entry.logEnd) : [];
+  const report = critique.status === "ready" && critique.step === step ? critique.report : null;
+  const error = critique.status === "error" && critique.step === step ? critique.error : null;
+  const loading = critique.status === "loading" && critique.step === step;
+  const actual = report && entry ? findActualEstimate(report, entry.decision) : null;
+  const delta = report && actual ? report.bestAction.winRate - actual.winRate : 0;
+  const tone = report ? critiqueTone(delta, actual) : null;
+  return (
+    <div className="replay-panel">
+      <div className="panel-heading">
+        <div>
+          <b>賽後覆盤</b>
+          <span>Step {step} / {total}</span>
+        </div>
+      </div>
+      <div className="replay-body">
+        {entry ? (
+          <div className="replay-card">
+            <span className="replay-pill">{actorLabel(entry)}</span>
+            <b>{decisionLabel(entry.decision)}</b>
+            <small>{PHASE_NAME[entry.phase]}・Set {entry.setNo}・Turn {entry.turnNo}</small>
+          </div>
+        ) : (
+          <div className="replay-card">
+            <span className="replay-pill">開局</span>
+            <b>對局初始狀態</b>
+            <small>{PHASE_NAME[state.phase]}・Set {state.setNo}・Turn {state.turnNo}</small>
+          </div>
+        )}
+        <div className="replay-overview">
+          <div className="replay-overview-heading">
+            <b>全場索引</b>
+            {scan.status === "running" ? (
+              <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
+            ) : (
+              <button className="btn-quiet" disabled={keyEntries.every((item) => item.source !== "player")} onClick={props.onScan}>掃描玩家決策</button>
+            )}
+          </div>
+          <div className="replay-stat-grid">
+            <span><small>玩家決策</small><b>{analytics.playerDecisions}</b></span>
+            <span><small>AI 決策</small><b>{analytics.aiDecisions}</b></span>
+            <span><small>Set</small><b>{analytics.setWins[0]}:{analytics.setWins[1]}</b></span>
+            <span><small>Guts</small><b>{analytics.payGuts[0]}:{analytics.payGuts[1]}</b></span>
+          </div>
+          <div className="replay-source-row" aria-label="OP 來源">
+            <span>發球 {analytics.opSources.serve}</span>
+            <span>攔網 {analytics.opSources.block}</span>
+            <span>攻擊 {analytics.opSources.attack}</span>
+          </div>
+          {scan.status === "running" && (
+            <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>
+          )}
+          {scan.status === "done" && <small className="summary-idle">已完成 {scan.total} 個玩家決策掃描。</small>}
+          {scan.status === "stopped" && <small className="summary-idle">已停止掃描（{scan.done}/{scan.total}）。</small>}
+          <div className="replay-step-list">
+            {keyEntries.length === 0 ? (
+              <small className="summary-idle">目前沒有關鍵步驟。</small>
+            ) : keyEntries.map((item) => {
+              const itemStep = item.index + 1;
+              const cachedTone = critiqueToneForEntry(item, critiqueCache[itemStep]);
+              const scanning = scan.status === "running" && scan.currentStep === itemStep;
+              return (
+                <button
+                  key={item.index}
+                  className={`replay-step-button${itemStep === step ? " is-active" : ""}`}
+                  onClick={() => props.onJump(itemStep)}
+                >
+                  <span>#{itemStep}</span>
+                  <b>{actorLabel(item)}・{decisionLabel(item.decision)}</b>
+                  <small>{PHASE_NAME[item.phase]}・Set {item.setNo} Turn {item.turnNo}</small>
+                  {(cachedTone || scanning) && (
+                    <em className={`replay-step-badge ${cachedTone?.className ?? "is-neutral"}`}>
+                      {scanning ? "評估中" : cachedTone?.label}
+                    </em>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <MatchSummary state={state} replayEntries={total} />
+        <div className="replay-logs">
+          <b>此步新增紀錄</b>
+          {newLogs.length === 0 ? (
+            <small className="summary-idle">這一步沒有新增 log。</small>
+          ) : (
+            <ul>
+              {newLogs.slice(-6).map((log, index) => (
+                <li key={`${log.setNo}-${log.turnNo}-${index}`}>{log.text}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="replay-critique">
+          <div className="replay-critique-heading">
+            <b>出牌檢討</b>
+            <button className="btn-quiet" disabled={!entry || loading} onClick={props.onEvaluate}>
+              {loading ? "評估中" : "評估此步"}
+            </button>
+          </div>
+          {!entry ? (
+            <small className="summary-idle">開局狀態沒有實際決策可評估。</small>
+          ) : error ? (
+            <p className="coach-error">{error}</p>
+          ) : report ? (
+            <div className="critique-result">
+              <span className={`critique-badge ${tone?.className ?? ""}`}>{tone?.label}</span>
+              <div className="critique-row">
+                <small>最佳建議</small>
+                <b>{report.bestAction.label}</b>
+                <span>{percent(report.bestAction.winRate)} 勝率・信心 {percent(report.bestAction.confidence)}</span>
+              </div>
+              <div className="critique-row">
+                <small>實際選擇</small>
+                <b>{actual?.label ?? decisionLabel(entry.decision)}</b>
+                <span>{actual ? `${percent(actual.winRate)} 勝率・差距 ${percent(Math.max(0, delta))}` : "此決策不在本次候選評估內"}</span>
+              </div>
+              <p>{actual ? (delta >= 0.15 ? "這一步可能有更高期望值的選擇，值得回看當時資源與後續防守壓力。" : "這一步和 Coach 推薦差距不大，可先視為合理路線。") : "Coach v1 的候選列舉沒有覆蓋這個實際決策；後續需擴充候選生成再評分。"}</p>
+            </div>
+          ) : (
+            <small className="summary-idle">按下評估後，會用 Coach / PIMC 從此步決策前狀態估算推薦選擇。</small>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Game(props: {
   db: CardDb;
@@ -60,9 +271,18 @@ export function Game(props: {
   onExit: () => void;
 }) {
   const { db } = props;
-  const [state, setState] = useState<GameState>(() =>
-    createGame(db, { seed: (Date.now() % 0xffffffff) >>> 0, decks: props.decks }),
-  );
+  const initialGameRef = useRef<GameRuntime | null>(null);
+  if (!initialGameRef.current) {
+    const seed = (Date.now() % 0xffffffff) >>> 0;
+    const initialState = createGame(db, { seed, decks: props.decks });
+    initialGameRef.current = {
+      state: initialState,
+      replay: createReplaySession(initialState, props.decks, props.deckMeta, undefined, seed),
+    };
+  }
+  const [game, setGame] = useState<GameRuntime>(() => initialGameRef.current!);
+  const state = game.state;
+  const replay = game.replay;
   const [hovered, setHovered] = useState<InspectedCard | null>(null);
   const [inspected, setInspected] = useState<InspectedCard | null>(null);
   const [multiSel, setMultiSel] = useState<number[]>([]);
@@ -77,15 +297,30 @@ export function Game(props: {
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [undoHistory, setUndoHistory] = useState<UndoHistory>([]);
+  const [undoReplayLengths, setUndoReplayLengths] = useState<number[]>([]);
+  const [replayMode, setReplayMode] = useState(false);
+  const [replayStep, setReplayStep] = useState(0);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
   const coachWorkerRef = useRef<Worker | null>(null);
+  const replayCoachRequestRef = useRef(0);
+  const replayScanTokenRef = useRef(0);
+  const replayCoachWorkerRef = useRef<Worker | null>(null);
+  const replayCoachRejectRef = useRef<((error: Error) => void) | null>(null);
+  const replayCritiquesRef = useRef<ReplayCritiqueCache>({});
   const [handWidth, setHandWidth] = useState(0);
   const [fitScale, setFitScale] = useState(1);
+  const [replayCritique, setReplayCritique] = useState<ReplayCritiqueState>({ status: "idle" });
+  const [replayCritiques, setReplayCritiques] = useState<ReplayCritiqueCache>({});
+  const [replayScan, setReplayScan] = useState<ReplayScanState>({ status: "idle" });
   const seenLogCount = useRef(state.log.length);
 
   const pd = state.pendingDecision;
+  const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
+  const replayEntry = replayStep > 0 ? replay.entries[replayStep - 1] ?? null : null;
+  const replayAnalytics = useMemo(() => summarizeReplaySession(replay), [replay]);
+  const replayKeyEntries = useMemo(() => keyReplayEntries(replay), [replay]);
   const isMyDecision = pd?.player === HUMAN && state.phase !== "gameOver";
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
   const deployable = isMyDecision && deployArea ? deployableUids(db, state, HUMAN, deployArea) : [];
@@ -96,21 +331,21 @@ export function Game(props: {
   const effectMax = effectCards?.max ?? 1;
   const effectCardsInPlace = isMyDecision && !!effectCards
     && canUseInPlaceEffectSelection(state, HUMAN, effectCandidates);
-  const { motions, recentUids, settledUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
+  const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: speed === "instant" || replayMode });
 
   const visibleInspection = hovered ?? inspected;
-  const canUndo = undoHistory.length > 0;
+  const canUndo = !replayMode && undoHistory.length > 0;
 
   function cardOf(uid: number): Card {
-    return db.get(state.cards[uid]!)!;
+    return db.get(viewState.cards[uid]!)!;
   }
 
   function setHoverUid(uid: number | null) {
-    setHovered(uid === null ? null : { cardId: state.cards[uid]!, uid });
+    setHovered(uid === null ? null : { cardId: viewState.cards[uid]!, uid });
   }
 
   function inspectUid(uid: number) {
-    setInspected({ cardId: state.cards[uid]!, uid });
+    setInspected({ cardId: viewState.cards[uid]!, uid });
     setToolMode({ type: "detail" });
     setMobilePanel("detail");
   }
@@ -127,16 +362,171 @@ export function Game(props: {
   function decide(decision: Decision) {
     clearTransientUi();
     setUndoHistory((history) => pushPlayerUndoSnapshot(history, state, HUMAN));
-    setState((current) => applyDecision(db, current, decision));
+    setUndoReplayLengths((lengths) => {
+      const next = [...lengths, replay.entries.length];
+      return next.length > UNDO_HISTORY_LIMIT ? next.slice(next.length - UNDO_HISTORY_LIMIT) : next;
+    });
+    setGame((current) => {
+      const nextState = applyDecision(db, current.state, decision);
+      return {
+        state: nextState,
+        replay: appendReplayEntry(current.replay, current.state, decision, nextState, "player"),
+      };
+    });
   }
 
   function undoLastDecision() {
     const popped = popUndoSnapshot(undoHistory);
     if (!popped.snapshot) return;
+    const replayLength = undoReplayLengths[undoReplayLengths.length - 1] ?? replay.entries.length;
     clearTransientUi();
     seenLogCount.current = popped.snapshot.log.length;
     setUndoHistory(popped.stack);
-    setState(popped.snapshot);
+    setUndoReplayLengths((lengths) => lengths.slice(0, -1));
+    setGame((current) => ({
+      state: popped.snapshot!,
+      replay: truncateReplaySession(current.replay, replayLength),
+    }));
+  }
+
+  function enterReplayMode() {
+    clearTransientUi();
+    setToolMode({ type: "detail" });
+    setMobilePanel(null);
+    setReplayStep(replay.entries.length);
+    setReplayMode(true);
+  }
+
+  function exitReplayMode() {
+    clearTransientUi();
+    setReplayMode(false);
+    setReplayStep(0);
+    setReplayCritique({ status: "idle" });
+    setReplayScan({ status: "idle" });
+    replayScanTokenRef.current++;
+    replayCoachRejectRef.current?.(new Error("__cancelled__"));
+    replayCoachRejectRef.current = null;
+    replayCoachWorkerRef.current?.terminate();
+    replayCoachWorkerRef.current = null;
+  }
+
+  function storeReplayCritique(step: number, result: ReplayCritiqueResult) {
+    replayCritiquesRef.current = { ...replayCritiquesRef.current, [step]: result };
+    setReplayCritiques(replayCritiquesRef.current);
+  }
+
+  function requestReplayCoach(entry: ReplayEntry, step: number, token: number): Promise<CoachReport> {
+    const requestId = String(++replayCoachRequestRef.current);
+    replayCoachRejectRef.current?.(new Error("__cancelled__"));
+    replayCoachRejectRef.current = null;
+    replayCoachWorkerRef.current?.terminate();
+    replayCoachWorkerRef.current = null;
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
+      replayCoachWorkerRef.current = worker;
+      replayCoachRejectRef.current = reject;
+      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
+        if (event.data.requestId !== requestId || replayCoachRequestRef.current !== Number(requestId)) return;
+        worker.terminate();
+        if (replayCoachWorkerRef.current === worker) replayCoachWorkerRef.current = null;
+        if (replayCoachRejectRef.current === reject) replayCoachRejectRef.current = null;
+        if (replayScanTokenRef.current !== token) {
+          reject(new Error("__cancelled__"));
+          return;
+        }
+        if (event.data.ok) resolve(event.data.report);
+        else reject(new Error(event.data.error));
+      };
+      worker.onerror = (event) => {
+        if (replayCoachRequestRef.current !== Number(requestId)) return;
+        worker.terminate();
+        if (replayCoachWorkerRef.current === worker) replayCoachWorkerRef.current = null;
+        if (replayCoachRejectRef.current === reject) replayCoachRejectRef.current = null;
+        if (replayScanTokenRef.current !== token) {
+          reject(new Error("__cancelled__"));
+          return;
+        }
+        reject(new Error(event.message || "Replay Coach worker 發生錯誤"));
+      };
+      worker.postMessage({
+        requestId,
+        state: entry.before,
+        options: {
+          perspectivePlayer: entry.player,
+          knownDecks: props.decks,
+          seed: entry.before.rngState + step * 97,
+          sampleCount: 4,
+          candidateLimit: 6,
+          rolloutMaxSteps: 1200,
+          timeLimitMs: 1400,
+        },
+      });
+    });
+  }
+
+  async function evaluateReplayStep() {
+    if (!replayMode || !replayEntry) return;
+    const step = replayStep;
+    const token = ++replayScanTokenRef.current;
+    setReplayScan({ status: "idle" });
+    setReplayCritique({ status: "loading", step });
+    try {
+      const report = await requestReplayCoach(replayEntry, step, token);
+      storeReplayCritique(step, { status: "ready", report });
+      setReplayCritique({ status: "ready", step, report });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "__cancelled__") return;
+      storeReplayCritique(step, { status: "error", error: message });
+      setReplayCritique({ status: "error", step, error: message });
+    }
+  }
+
+  async function scanReplayDecisions() {
+    if (!replayMode) return;
+    const targets = replayKeyEntries
+      .filter((entry) => entry.source === "player")
+      .filter((entry) => replayCritiquesRef.current[entry.index + 1]?.status !== "ready");
+    const total = targets.length;
+    if (total === 0) {
+      setReplayScan({ status: "done", total: 0 });
+      return;
+    }
+    const token = ++replayScanTokenRef.current;
+    let done = 0;
+    for (const entry of targets) {
+      if (replayScanTokenRef.current !== token) {
+        setReplayScan({ status: "stopped", done, total });
+        return;
+      }
+      const step = entry.index + 1;
+      setReplayScan({ status: "running", currentStep: step, done, total });
+      setReplayCritique({ status: "loading", step });
+      try {
+        const report = await requestReplayCoach(entry, step, token);
+        storeReplayCritique(step, { status: "ready", report });
+        if (replayStep === step) setReplayCritique({ status: "ready", step, report });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "__cancelled__") {
+          setReplayScan({ status: "stopped", done, total });
+          return;
+        }
+        storeReplayCritique(step, { status: "error", error: message });
+        if (replayStep === step) setReplayCritique({ status: "error", step, error: message });
+      }
+      done++;
+    }
+    if (replayScanTokenRef.current === token) setReplayScan({ status: "done", total });
+  }
+
+  function stopReplayScan() {
+    replayScanTokenRef.current++;
+    replayCoachRejectRef.current?.(new Error("__cancelled__"));
+    replayCoachRejectRef.current = null;
+    replayCoachWorkerRef.current?.terminate();
+    replayCoachWorkerRef.current = null;
+    setReplayScan((scan) => scan.status === "running" ? { status: "stopped", done: scan.done, total: scan.total } : scan);
   }
 
   function changeSpeed(next: AiSpeed) {
@@ -153,23 +543,31 @@ export function Game(props: {
   }
 
   useEffect(() => {
+    if (replayMode) return;
     if (pd?.player !== AI || state.phase === "gameOver") return;
     const numeric = speed === "instant" ? Infinity : Number(speed);
     const delay = speed === "instant" ? 0 : 650 / numeric;
     const timer = window.setTimeout(() => {
-      setState((current) => current.pendingDecision?.player === AI && current.phase !== "gameOver"
-        ? applyDecision(db, current, heuristicAiDecision(db, current))
+      setGame((current) => current.state.pendingDecision?.player === AI && current.state.phase !== "gameOver"
+        ? (() => {
+            const decision = heuristicAiDecision(db, current.state);
+            const nextState = applyDecision(db, current.state, decision);
+            return {
+              state: nextState,
+              replay: appendReplayEntry(current.replay, current.state, decision, nextState, "ai"),
+            };
+          })()
         : current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [db, pd, speed, state.phase]);
+  }, [db, pd, replayMode, speed, state.phase]);
 
   useEffect(() => {
     coachWorkerRef.current?.terminate();
     coachWorkerRef.current = null;
     const requestId = String(++coachRequestRef.current);
 
-    if (!isMyDecision || !pd) {
+    if (replayMode || !isMyDecision || !pd) {
       setCoach({ status: "idle" });
       return;
     }
@@ -219,7 +617,19 @@ export function Game(props: {
       coachWorkerRef.current?.terminate();
       coachWorkerRef.current = null;
     };
-  }, [db, isMyDecision, pd, props.decks, state]);
+  }, [db, isMyDecision, pd, props.decks, replayMode, state]);
+
+  useEffect(() => {
+    const cached = replayCritiquesRef.current[replayStep];
+    if (cached?.status === "ready") setReplayCritique({ status: "ready", step: replayStep, report: cached.report });
+    else if (cached?.status === "error") setReplayCritique({ status: "error", step: replayStep, error: cached.error });
+    else if (replayScan.status !== "running" || replayScan.currentStep !== replayStep) setReplayCritique({ status: "idle" });
+  }, [replayStep]);
+
+  useEffect(() => () => {
+    replayCoachRejectRef.current?.(new Error("__cancelled__"));
+    replayCoachWorkerRef.current?.terminate();
+  }, []);
 
   useEffect(() => {
     const newEntries = state.log.slice(seenLogCount.current);
@@ -329,7 +739,7 @@ export function Game(props: {
   }
 
   function onHandClick(uid: number) {
-    if (!isMyDecision || !pd) {
+    if (replayMode || !isMyDecision || !pd) {
       inspectUid(uid);
       return;
     }
@@ -380,10 +790,18 @@ export function Game(props: {
   }
 
   function DecisionBar() {
+    if (replayMode) {
+      return bar(`賽後覆盤 ${replayStep}/${replay.entries.length}${replayEntry ? `・${actorLabel(replayEntry)}：${decisionLabel(replayEntry.decision)}` : "・開局"}`, <>
+        <button disabled={replayStep <= 0} onClick={() => setReplayStep((step) => Math.max(0, step - 1))}>上一步</button>
+        <button data-primary="true" disabled={replayStep >= replay.entries.length} onClick={() => setReplayStep((step) => Math.min(replay.entries.length, step + 1))}>下一步</button>
+        <button className="btn-secondary" onClick={exitReplayMode}>回到結算</button>
+      </>);
+    }
     if (state.phase === "gameOver") {
-      return bar(state.winner === HUMAN ? "你贏得了這場對戰" : "電腦贏得了這場對戰", (
-        <button data-primary="true" onClick={props.onExit}>回主選單</button>
-      ));
+      return bar(state.winner === HUMAN ? "你贏得了這場對戰" : "電腦贏得了這場對戰", <>
+        <button data-primary="true" disabled={replay.entries.length === 0} onClick={enterReplayMode}>進入賽後覆盤</button>
+        <button className="btn-secondary" onClick={props.onExit}>回主選單</button>
+      </>);
     }
     if (!pd) return <div className="decision-bar decision-idle"><span>規則引擎正在推進對局</span></div>;
     if (!isMyDecision) return <div className="decision-bar decision-idle"><span>電腦思考中</span><small>{PHASE_NAME[state.phase]}</small></div>;
@@ -500,7 +918,7 @@ export function Game(props: {
   const HAND_CARD = 84;
   const HAND_GAP = 12;
   const HAND_MIN_VISIBLE = 34;
-  const handCount = state.players[HUMAN].hand.length;
+  const handCount = viewState.players[HUMAN].hand.length;
   let handStep = HAND_GAP;
   if (handCount > 1 && handWidth > 0) {
     const needed = handCount * HAND_CARD + (handCount - 1) * HAND_GAP;
@@ -522,14 +940,14 @@ export function Game(props: {
     </svg>
     <div className="game" data-instant={speed === "instant" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
       <CompactHud
-        state={state}
+        state={viewState}
         onOpenLog={() => setMobilePanel("log")}
         onOpenDetail={() => setMobilePanel("detail")}
         onExit={props.onExit}
       />
 
       <LeftPanel
-        state={state}
+        state={viewState}
         deckMeta={props.deckMeta}
         speed={speed}
         onSpeedChange={changeSpeed}
@@ -541,18 +959,18 @@ export function Game(props: {
       <main className="center-panel">
         <GameBoard
           db={db}
-          state={state}
+          state={viewState}
           deckMeta={props.deckMeta}
-          canPickSet={isMyDecision && pd?.type === "pick-set-card"}
-          deployArea={deployArea}
+          canPickSet={!replayMode && isMyDecision && pd?.type === "pick-set-card"}
+          deployArea={replayMode ? null : deployArea}
           activeGutsKey={activeGutsKey}
-          recentUids={recentUids}
-          settledUids={settledUids}
-          candidateUids={isMyDecision && effectCardsInPlace ? effectCandidates : []}
-          selectableUids={isMyDecision && effectCardsInPlace ? effectCandidates : []}
-          selectedUids={effectCardsInPlace ? multiSel : []}
+          recentUids={replayMode ? new Set() : recentUids}
+          settledUids={replayMode ? new Set() : settledUids}
+          candidateUids={!replayMode && isMyDecision && effectCardsInPlace ? effectCandidates : []}
+          selectableUids={!replayMode && isMyDecision && effectCardsInPlace ? effectCandidates : []}
+          selectedUids={!replayMode && effectCardsInPlace ? multiSel : []}
           hoveredUid={hovered?.uid ?? null}
-          dragOverArea={dragging?.valid ? dragging.overArea : null}
+          dragOverArea={!replayMode && dragging?.valid ? dragging.overArea : null}
           onPickSet={(index) => decide({ type: "pick-set-card", index })}
           onOpenDrop={(player) => {
             setToolMode({ type: "drop", player });
@@ -571,13 +989,13 @@ export function Game(props: {
 
         <div ref={decisionRef}><DecisionBar /></div>
 
-        <section className="hand-section" aria-label={`你的手牌 ${state.players[HUMAN].hand.length} 張`}>
-          <div className="hand-heading"><span>你的手牌</span><strong>{state.players[HUMAN].hand.length}</strong></div>
+        <section className="hand-section" aria-label={`你的手牌 ${viewState.players[HUMAN].hand.length} 張`}>
+          <div className="hand-heading"><span>{replayMode ? "覆盤手牌" : "你的手牌"}</span><strong>{viewState.players[HUMAN].hand.length}</strong></div>
           <div className="hand" style={handStyle} data-zone-anchor="p0-hand" ref={handRef}>
-            {state.players[HUMAN].hand.length === 0 && <span className="hand-empty">沒有手牌</span>}
-            {state.players[HUMAN].hand.map((uid) => {
+            {viewState.players[HUMAN].hand.length === 0 && <span className="hand-empty">沒有手牌</span>}
+            {viewState.players[HUMAN].hand.map((uid) => {
               const selectedIndex = multiSel.indexOf(uid);
-              const canDrag = !!deployArea && deployable.includes(uid);
+              const canDrag = !replayMode && !!deployArea && deployable.includes(uid);
               return (
                 <CardView
                   key={uid}
@@ -589,7 +1007,7 @@ export function Game(props: {
                   selectable={effectCardsInPlace && effectCandidates.includes(uid)}
                   candidate={effectCardsInPlace && effectCandidates.includes(uid)}
                   candidateHovered={effectCardsInPlace && effectCandidates.includes(uid) && hovered?.uid === uid}
-                  dimmed={(!!deployArea && !deployable.includes(uid)) || (effectCardsInPlace && !effectCandidates.includes(uid))}
+                  dimmed={!replayMode && ((!!deployArea && !deployable.includes(uid)) || (effectCardsInPlace && !effectCandidates.includes(uid)))}
                   badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : effectCardsInPlace && selectedIndex === 0 ? "1" : undefined}
                   secondaryBadge={cardOf(uid).effectStatus === "todo" ? "未實作" : undefined}
                   draggable={canDrag}
@@ -622,7 +1040,27 @@ export function Game(props: {
           <button role="tab" aria-selected={toolMode.type === "drop"} className={toolMode.type === "drop" ? "is-active" : ""} onClick={() => setToolMode({ type: "drop", player: HUMAN })}>棄牌</button>
         </div>
         <div className="tool-content">
-          {toolMode.type === "drop" || toolMode.type === "event" ? (
+          {replayMode ? (
+            visibleInspection ? (
+              <CardDetails db={db} state={viewState} inspected={visibleInspection} />
+            ) : (
+              <ReplayStepSummary
+                state={viewState}
+                entry={replayEntry}
+                step={replayStep}
+                total={replay.entries.length}
+                analytics={replayAnalytics}
+                keyEntries={replayKeyEntries}
+                critique={replayCritique}
+                critiqueCache={replayCritiques}
+                scan={replayScan}
+                onEvaluate={evaluateReplayStep}
+                onScan={scanReplayDecisions}
+                onStopScan={stopReplayScan}
+                onJump={setReplayStep}
+              />
+            )
+          ) : toolMode.type === "drop" || toolMode.type === "event" ? (
             <DropBrowser
               db={db}
               state={state}
@@ -642,14 +1080,14 @@ export function Game(props: {
           ) : visibleInspection ? (
             <CardDetails db={db} state={state} inspected={visibleInspection} />
           ) : (
-            <MatchSummary state={state} />
+            <MatchSummary state={state} replayEntries={replay.entries.length} />
           )}
         </div>
       </aside>
 
       <aside className={`mobile-log-panel${mobilePanel === "log" ? " is-open" : ""}`}>
         <div className="mobile-panel-heading"><b>對戰紀錄</b><button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button></div>
-        <GameLog state={state} />
+        <GameLog state={viewState} />
       </aside>
 
       {mobilePanel && <button className="panel-backdrop" aria-label="關閉面板" onClick={() => setMobilePanel(null)} />}
@@ -659,7 +1097,7 @@ export function Game(props: {
     {scoreBanner && <div className="focus-lines" aria-hidden="true" />}
     {sfx && <div key={sfx.key} className="sfx-burst" aria-hidden="true">{sfx.text}</div>}
     {scoreBanner && <div className={`score-banner score-banner-${scoreBanner.kind}`} role="status">{scoreBanner.text}</div>}
-    {dragging && (
+    {!replayMode && dragging && (
       <div
         className={`drag-ghost-wrap${dragging.valid ? " is-valid" : ""}`}
         style={{ left: dragging.x, top: dragging.y, width: dragging.width } as CSSProperties}

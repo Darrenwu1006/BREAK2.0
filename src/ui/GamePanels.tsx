@@ -304,7 +304,7 @@ export function CardDetails(props: {
 
 const SOURCE_LABEL: Record<string, string> = { serve: "發球", block: "攔網回球", attack: "攻擊", receive: "接球" };
 
-export function MatchSummary({ state }: { state: GameState }) {
+export function MatchSummary({ state, replayEntries = 0 }: { state: GameState; replayEntries?: number }) {
   const rows = ([0, 1] as const).map((player) => {
     const ps = state.players[player];
     return { player, deck: ps.deck.length, hand: ps.hand.length, drop: ps.drop.length, set: ps.setArea.length, event: ps.eventArea.length };
@@ -338,6 +338,10 @@ export function MatchSummary({ state }: { state: GameState }) {
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="summary-block">
+        <b>覆盤資料</b>
+        <small className="summary-idle">已記錄 {replayEntries} 個決策點，賽後覆盤會以這條歷史鏈重播。</small>
       </div>
       <p className="summary-hint">將游標移到卡片上看詳情，或用上方工具切換「算牌／棄牌」。</p>
     </div>
