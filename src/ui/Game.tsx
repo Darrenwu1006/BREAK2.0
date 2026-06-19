@@ -4,7 +4,7 @@ import type { CourtArea } from "../engine/dsl";
 import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions } from "../engine/engine";
 import { canDeployTo, deployNames } from "../engine/effects";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { heuristicAiDecision } from "../ai/heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
 import { CardView } from "./CardView";
@@ -174,14 +174,13 @@ function critiqueSummary(entries: ReplayEntry[], cache: ReplayCritiqueCache) {
   return summary;
 }
 
-function PostMatchReport(props: {
+function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
   onScan: () => void;
   onStopScan: () => void;
-  onReplay: () => void;
 }) {
   const { analytics, keyEntries, critiqueCache, scan } = props;
   const quality = critiqueSummary(keyEntries, critiqueCache);
@@ -194,93 +193,165 @@ function PostMatchReport(props: {
   const humanDp = analytics.dp[HUMAN];
   const aiDp = analytics.dp[AI];
   return (
+    <div className="postmatch-body">
+      <section className="report-hero">
+        <span className="replay-pill">Set {analytics.setWins[0]}:{analytics.setWins[1]}</span>
+        <b>{analytics.matchWinner === HUMAN ? "這場可以回看哪些選擇拉開勝負。" : "先看資源與決策分布，再回放關鍵步。"}</b>
+        <small>{analytics.totalDecisions} 個決策點・玩家 {analytics.playerDecisions}・AI {analytics.aiDecisions}</small>
+      </section>
+
+      <section className="report-section">
+        <div className="replay-overview-heading">
+          <b>勝率分布</b>
+          {scan.status === "running" ? (
+            <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
+          ) : (
+            <button className="btn-quiet" disabled={quality.totalPlayerSteps === 0} onClick={props.onScan}>掃描玩家決策</button>
+          )}
+        </div>
+        <div className="report-stat-grid">
+          <span><small>已評估</small><b>{quality.evaluated}/{quality.totalPlayerSteps}</b></span>
+          <span><small>失誤</small><b>{quality.mistakes}</b></span>
+          <span><small>可接受</small><b>{quality.acceptable}</b></span>
+          <span><small>妙手</small><b>{quality.brilliants}</b></span>
+        </div>
+        {scan.status === "running" && <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>}
+        {scan.status === "done" && <small className="summary-idle">玩家決策掃描完成。</small>}
+        {quality.evaluated > 0 ? (
+          <>
+            <div className="winrate-bars" aria-label="實際選擇勝率分布">
+              {([
+                ["low", "<40%", quality.bands.low],
+                ["mid", "40-55%", quality.bands.mid],
+                ["good", "55-70%", quality.bands.good],
+                ["high", "70%+", quality.bands.high],
+              ] as const).map(([key, label, count]) => (
+                <div key={key} className={`winrate-bar is-${key}`}>
+                  <span style={{ width: `${Math.max(6, (count / bandTotal) * 100)}%` }} />
+                  <b>{label}</b>
+                  <small>{count}</small>
+                </div>
+              ))}
+            </div>
+            <p className="report-note">
+              實際選擇平均勝率 {percent(avgActual)}，Coach 最佳候選平均 {percent(avgBest)}
+              {quality.largestSwing && quality.largestSwing.delta > 0
+                ? `；最大可回看差距在 Step ${quality.largestSwing.step}（約 ${percent(quality.largestSwing.delta)}）。`
+                : "。"}
+            </p>
+          </>
+        ) : (
+          <small className="summary-idle">尚未掃描玩家決策；掃描後這裡會出現勝率區間與失誤分布。</small>
+        )}
+        {quality.uncovered > 0 && <small className="summary-idle">有 {quality.uncovered} 步未被 Coach 候選列舉覆蓋，先不要把它當成錯誤。</small>}
+      </section>
+
+      <section className="report-section">
+        <b>攻防平均</b>
+        <div className="report-compare">
+          <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>最高 {humanOp.max || "-"}</em></span>
+          <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>最高 {aiOp.max || "-"}</em></span>
+          <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count} 次</em></span>
+          <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count} 次</em></span>
+        </div>
+      </section>
+
+      <section className="report-section">
+        <b>Guts 使用</b>
+        <div className="report-compare">
+          <span><small>你 總支付</small><b>{analytics.payGuts[HUMAN]}</b><em>每場</em></span>
+          <span><small>AI 總支付</small><b>{analytics.payGuts[AI]}</b><em>每場</em></span>
+        </div>
+        <div className="replay-source-row">
+          <span>你：發球 {analytics.payGutsBySource[HUMAN].serve}</span>
+          <span>接球 {analytics.payGutsBySource[HUMAN].receive}</span>
+          <span>托球 {analytics.payGutsBySource[HUMAN].toss}</span>
+          <span>攻擊 {analytics.payGutsBySource[HUMAN].attack}</span>
+          <span>攔網 {analytics.payGutsBySource[HUMAN].blockCenter}</span>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PostMatchReport(props: {
+  analytics: ReplayAnalytics;
+  keyEntries: ReplayEntry[];
+  critiqueCache: ReplayCritiqueCache;
+  scan: ReplayScanState;
+  onScan: () => void;
+  onStopScan: () => void;
+  onReplay: () => void;
+}) {
+  return (
     <div className="postmatch-report">
       <div className="panel-heading">
         <div>
           <b>賽後戰報</b>
-          <span>{analytics.matchWinner === HUMAN ? "你贏了這場比賽" : analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}</span>
+          <span>{props.analytics.matchWinner === HUMAN ? "你贏了這場比賽" : props.analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}</span>
         </div>
       </div>
-      <div className="postmatch-body">
-        <section className="report-hero">
-          <span className="replay-pill">Set {analytics.setWins[0]}:{analytics.setWins[1]}</span>
-          <b>{analytics.matchWinner === HUMAN ? "這場可以回看哪些選擇拉開勝負。" : "先看資源與決策分布，再回放關鍵步。"}</b>
-          <small>{analytics.totalDecisions} 個決策點・玩家 {analytics.playerDecisions}・AI {analytics.aiDecisions}</small>
-        </section>
+      <PostMatchReportBody
+        analytics={props.analytics}
+        keyEntries={props.keyEntries}
+        critiqueCache={props.critiqueCache}
+        scan={props.scan}
+        onScan={props.onScan}
+        onStopScan={props.onStopScan}
+      />
+      <div className="report-actions" style={{ padding: "0 var(--sp-4) var(--sp-4)" }}>
+        <button data-primary="true" disabled={props.analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
+      </div>
+    </div>
+  );
+}
 
-        <section className="report-section">
-          <div className="replay-overview-heading">
-            <b>勝率分布</b>
-            {scan.status === "running" ? (
-              <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
-            ) : (
-              <button className="btn-quiet" disabled={quality.totalPlayerSteps === 0} onClick={props.onScan}>掃描玩家決策</button>
-            )}
+function PostMatchModal(props: {
+  analytics: ReplayAnalytics;
+  keyEntries: ReplayEntry[];
+  critiqueCache: ReplayCritiqueCache;
+  scan: ReplayScanState;
+  winner: PlayerId | null;
+  replayMode: boolean;
+  onScan: () => void;
+  onStopScan: () => void;
+  onReplay: () => void;
+  onClose: () => void;
+}) {
+  const won = props.winner === HUMAN;
+  return (
+    <div className="postmatch-modal-overlay" role="dialog" aria-modal="true" aria-label="賽後戰報">
+      <div className="postmatch-modal">
+        <div className="postmatch-modal-header">
+          <div className="postmatch-modal-result">
+            <span className={`postmatch-result-badge ${won ? "is-win" : "is-lose"}`}>
+              {won ? "MATCH WIN" : "MATCH LOST"}
+            </span>
+            <b className="postmatch-modal-title">賽後戰報</b>
+            <span className="postmatch-modal-sub">
+              {props.analytics.matchWinner === HUMAN ? "你贏了這場比賽" : props.analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}
+            </span>
           </div>
-          <div className="report-stat-grid">
-            <span><small>已評估</small><b>{quality.evaluated}/{quality.totalPlayerSteps}</b></span>
-            <span><small>失誤</small><b>{quality.mistakes}</b></span>
-            <span><small>可接受</small><b>{quality.acceptable}</b></span>
-            <span><small>妙手</small><b>{quality.brilliants}</b></span>
-          </div>
-          {scan.status === "running" && <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>}
-          {scan.status === "done" && <small className="summary-idle">玩家決策掃描完成。</small>}
-          {quality.evaluated > 0 ? (
-            <>
-              <div className="winrate-bars" aria-label="實際選擇勝率分布">
-                {([
-                  ["low", "<40%", quality.bands.low],
-                  ["mid", "40-55%", quality.bands.mid],
-                  ["good", "55-70%", quality.bands.good],
-                  ["high", "70%+", quality.bands.high],
-                ] as const).map(([key, label, count]) => (
-                  <div key={key} className={`winrate-bar is-${key}`}>
-                    <span style={{ width: `${Math.max(6, (count / bandTotal) * 100)}%` }} />
-                    <b>{label}</b>
-                    <small>{count}</small>
-                  </div>
-                ))}
-              </div>
-              <p className="report-note">
-                實際選擇平均勝率 {percent(avgActual)}，Coach 最佳候選平均 {percent(avgBest)}
-                {quality.largestSwing && quality.largestSwing.delta > 0
-                  ? `；最大可回看差距在 Step ${quality.largestSwing.step}（約 ${percent(quality.largestSwing.delta)}）。`
-                  : "。"}
-              </p>
-            </>
+        </div>
+        <div className="postmatch-modal-body">
+          <PostMatchReportBody
+            analytics={props.analytics}
+            keyEntries={props.keyEntries}
+            critiqueCache={props.critiqueCache}
+            scan={props.scan}
+            onScan={props.onScan}
+            onStopScan={props.onStopScan}
+          />
+        </div>
+        <div className="postmatch-modal-footer">
+          {props.replayMode ? (
+            <button data-primary="true" onClick={props.onClose}>返回覆盤</button>
           ) : (
-            <small className="summary-idle">尚未掃描玩家決策；掃描後這裡會出現勝率區間與失誤分布。</small>
+            <>
+              <button className="btn-secondary" onClick={props.onClose}>先看看</button>
+              <button data-primary="true" disabled={props.analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
+            </>
           )}
-          {quality.uncovered > 0 && <small className="summary-idle">有 {quality.uncovered} 步未被 Coach 候選列舉覆蓋，先不要把它當成錯誤。</small>}
-        </section>
-
-        <section className="report-section">
-          <b>攻防平均</b>
-          <div className="report-compare">
-            <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>最高 {humanOp.max || "-"}</em></span>
-            <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>最高 {aiOp.max || "-"}</em></span>
-            <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count} 次</em></span>
-            <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count} 次</em></span>
-          </div>
-        </section>
-
-        <section className="report-section">
-          <b>Guts 使用</b>
-          <div className="report-compare">
-            <span><small>你 總支付</small><b>{analytics.payGuts[HUMAN]}</b><em>每場</em></span>
-            <span><small>AI 總支付</small><b>{analytics.payGuts[AI]}</b><em>每場</em></span>
-          </div>
-          <div className="replay-source-row">
-            <span>你：發球 {analytics.payGutsBySource[HUMAN].serve}</span>
-            <span>接球 {analytics.payGutsBySource[HUMAN].receive}</span>
-            <span>托球 {analytics.payGutsBySource[HUMAN].toss}</span>
-            <span>攻擊 {analytics.payGutsBySource[HUMAN].attack}</span>
-            <span>攔網 {analytics.payGutsBySource[HUMAN].blockCenter}</span>
-          </div>
-        </section>
-
-        <div className="report-actions">
-          <button data-primary="true" disabled={analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
         </div>
       </div>
     </div>
@@ -435,17 +506,29 @@ export function Game(props: {
   db: CardDb;
   decks: [string[], string[]];
   deckMeta: [DeckMeta, DeckMeta];
+  loadedReplay?: ReplaySession;
   onExit: () => void;
 }) {
   const { db } = props;
+  const aiProfile = useMemo(
+    () => heuristicProfileForDeckText(`${props.deckMeta[AI].school} ${props.deckMeta[AI].name}`),
+    [props.deckMeta],
+  );
   const initialGameRef = useRef<GameRuntime | null>(null);
   if (!initialGameRef.current) {
-    const seed = (Date.now() % 0xffffffff) >>> 0;
-    const initialState = createGame(db, { seed, decks: props.decks });
-    initialGameRef.current = {
-      state: initialState,
-      replay: createReplaySession(initialState, props.decks, props.deckMeta, undefined, seed),
-    };
+    if (props.loadedReplay) {
+      initialGameRef.current = {
+        state: stateAtReplayStep(props.loadedReplay, props.loadedReplay.entries.length),
+        replay: props.loadedReplay,
+      };
+    } else {
+      const seed = (Date.now() % 0xffffffff) >>> 0;
+      const initialState = createGame(db, { seed, decks: props.decks });
+      initialGameRef.current = {
+        state: initialState,
+        replay: createReplaySession(initialState, props.decks, props.deckMeta, undefined, seed),
+      };
+    }
   }
   const [game, setGame] = useState<GameRuntime>(() => initialGameRef.current!);
   const state = game.state;
@@ -465,8 +548,8 @@ export function Game(props: {
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [undoHistory, setUndoHistory] = useState<UndoHistory>([]);
   const [undoReplayLengths, setUndoReplayLengths] = useState<number[]>([]);
-  const [replayMode, setReplayMode] = useState(false);
-  const [replayStep, setReplayStep] = useState(0);
+  const [replayMode, setReplayMode] = useState(!!props.loadedReplay);
+  const [replayStep, setReplayStep] = useState(props.loadedReplay ? props.loadedReplay.entries.length : 0);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
@@ -475,12 +558,14 @@ export function Game(props: {
   const replayScanTokenRef = useRef(0);
   const replayCoachWorkerRef = useRef<Worker | null>(null);
   const replayCoachRejectRef = useRef<((error: Error) => void) | null>(null);
+  const savedReplayRef = useRef(false);
   const replayCritiquesRef = useRef<ReplayCritiqueCache>({});
   const [handWidth, setHandWidth] = useState(0);
   const [fitScale, setFitScale] = useState(1);
   const [replayCritique, setReplayCritique] = useState<ReplayCritiqueState>({ status: "idle" });
   const [replayCritiques, setReplayCritiques] = useState<ReplayCritiqueCache>({});
   const [replayScan, setReplayScan] = useState<ReplayScanState>({ status: "idle" });
+  const [showPostMatchModal, setShowPostMatchModal] = useState(false);
   const seenLogCount = useRef(state.log.length);
 
   const pd = state.pendingDecision;
@@ -560,6 +645,7 @@ export function Game(props: {
     clearTransientUi();
     setToolMode({ type: "detail" });
     setMobilePanel(null);
+    setShowPostMatchModal(false);
     setReplayStep(replay.entries.length);
     setReplayMode(true);
   }
@@ -717,7 +803,7 @@ export function Game(props: {
     const timer = window.setTimeout(() => {
       setGame((current) => current.state.pendingDecision?.player === AI && current.state.phase !== "gameOver"
         ? (() => {
-            const decision = heuristicAiDecision(db, current.state);
+            const decision = heuristicAiDecision(db, current.state, aiProfile);
             const nextState = applyDecision(db, current.state, decision);
             return {
               state: nextState,
@@ -727,7 +813,7 @@ export function Game(props: {
         : current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [db, pd, replayMode, speed, state.phase]);
+  }, [aiProfile, db, pd, replayMode, speed, state.phase]);
 
   useEffect(() => {
     coachWorkerRef.current?.terminate();
@@ -797,6 +883,32 @@ export function Game(props: {
     replayCoachRejectRef.current?.(new Error("__cancelled__"));
     replayCoachWorkerRef.current?.terminate();
   }, []);
+
+  // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
+  useEffect(() => {
+    if (state.phase !== "gameOver") return;
+    setToolMode({ type: "detail" });
+    setShowPostMatchModal(true);
+
+    if (!props.loadedReplay && !savedReplayRef.current) {
+      savedReplayRef.current = true;
+      fetch("/api/replays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(replay),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("儲存對戰失敗");
+          return res.json();
+        })
+        .then((data) => {
+          console.log("對戰紀錄已儲存:", data.file);
+        })
+        .catch((err) => {
+          console.error("自動儲存對戰紀錄錯誤:", err);
+        });
+    }
+  }, [state.phase, replay, props.loadedReplay]);
 
   useEffect(() => {
     const newEntries = state.log.slice(seenLogCount.current);
@@ -961,12 +1073,17 @@ export function Game(props: {
       return bar(`賽後覆盤 ${replayStep}/${replay.entries.length}${replayEntry ? `・${actorLabel(replayEntry)}：${decisionLabel(replayEntry.decision)}` : "・開局"}`, <>
         <button disabled={replayStep <= 0} onClick={() => setReplayStep((step) => Math.max(0, step - 1))}>上一步</button>
         <button data-primary="true" disabled={replayStep >= replay.entries.length} onClick={() => setReplayStep((step) => Math.min(replay.entries.length, step + 1))}>下一步</button>
-        <button className="btn-secondary" onClick={exitReplayMode}>回到結算</button>
+        <button className="btn-secondary" onClick={() => setShowPostMatchModal(true)}>查看戰報</button>
+        {props.loadedReplay ? (
+          <button className="btn-secondary" onClick={props.onExit}>回主選單</button>
+        ) : (
+          <button className="btn-secondary" onClick={exitReplayMode}>回到結算</button>
+        )}
       </>);
     }
     if (state.phase === "gameOver") {
       return bar(state.winner === HUMAN ? "你贏得了這場對戰" : "電腦贏得了這場對戰", <>
-        <button data-primary="true" disabled={replay.entries.length === 0} onClick={enterReplayMode}>進入賽後覆盤</button>
+        <button data-primary="true" onClick={() => setShowPostMatchModal(true)}>進入賽後覆盤</button>
         <button className="btn-secondary" onClick={props.onExit}>回主選單</button>
       </>);
     }
@@ -1274,6 +1391,20 @@ export function Game(props: {
     {scoreBanner && <div className="focus-lines" aria-hidden="true" />}
     {sfx && <div key={sfx.key} className="sfx-burst" aria-hidden="true">{sfx.text}</div>}
     {scoreBanner && <div className={`score-banner score-banner-${scoreBanner.kind}`} role="status">{scoreBanner.text}</div>}
+    {showPostMatchModal && (
+      <PostMatchModal
+        analytics={replayAnalytics}
+        keyEntries={replayKeyEntries}
+        critiqueCache={replayCritiques}
+        scan={replayScan}
+        winner={state.winner ?? null}
+        replayMode={replayMode}
+        onScan={scanReplayDecisions}
+        onStopScan={stopReplayScan}
+        onReplay={enterReplayMode}
+        onClose={() => setShowPostMatchModal(false)}
+      />
+    )}
     {!replayMode && dragging && (
       <div
         className={`drag-ghost-wrap${dragging.valid ? " is-valid" : ""}`}

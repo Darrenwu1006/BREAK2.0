@@ -14,12 +14,24 @@ import { pickDeployName } from "./util";
 type Area = CourtArea;
 type CandidateOrder = "low" | "high";
 
-export type HeuristicV2ProfileId = "heuristic-v2" | "heuristic-v2-safe" | "heuristic-v2-aggressive";
+export type HeuristicStrategyProfileId = "neutral" | "serve" | "block" | "burst" | "defense" | "hybrid";
+export type HeuristicV2ProfileId =
+  | "heuristic-v2"
+  | "heuristic-v2-safe"
+  | "heuristic-v2-aggressive"
+  | "heuristic-v2-serve"
+  | "heuristic-v2-block"
+  | "heuristic-v2-burst"
+  | "heuristic-v2-defense"
+  | "heuristic-v2-hybrid"
+  | "heuristic-v2-personality";
 
 export interface HeuristicV2Weights {
   id: HeuristicV2ProfileId;
+  strategy: HeuristicStrategyProfileId;
   futureEventValue: number;
   futureServeValue: number;
+  futureBlockValue: number;
   futureDefenseValue: number;
   futureAttackValue: number;
   coverageValue: number;
@@ -38,13 +50,23 @@ export interface HeuristicV2Weights {
   freeActionThreshold: number;
   gateAcceptThreshold: number;
   defenseBias: number;
+  blockChoiceBias: number;
+  blockTimingValue: number;
+  blockActionValue: number;
+  blockSideFutureCost: number;
+  blockCenterFutureCost: number;
+  blockDeployCountCost: number;
 }
 
-export const HEURISTIC_V2_PROFILES: Record<HeuristicV2ProfileId, HeuristicV2Weights> = {
+type BaseProfileId = "heuristic-v2" | "heuristic-v2-safe" | "heuristic-v2-aggressive";
+
+const BASE_HEURISTIC_V2_PROFILES: Record<BaseProfileId, HeuristicV2Weights> = {
   "heuristic-v2": {
     id: "heuristic-v2",
+    strategy: "neutral",
     futureEventValue: 1,
     futureServeValue: 1,
+    futureBlockValue: 1,
     futureDefenseValue: 1,
     futureAttackValue: 1,
     coverageValue: 1,
@@ -63,11 +85,19 @@ export const HEURISTIC_V2_PROFILES: Record<HeuristicV2ProfileId, HeuristicV2Weig
     freeActionThreshold: 1.15,
     gateAcceptThreshold: 0.7,
     defenseBias: 1,
+    blockChoiceBias: 0,
+    blockTimingValue: 1,
+    blockActionValue: 0,
+    blockSideFutureCost: 1,
+    blockCenterFutureCost: 1,
+    blockDeployCountCost: 1,
   },
   "heuristic-v2-safe": {
     id: "heuristic-v2-safe",
+    strategy: "neutral",
     futureEventValue: 0.92,
     futureServeValue: 0.92,
+    futureBlockValue: 1.08,
     futureDefenseValue: 1.18,
     futureAttackValue: 0.9,
     coverageValue: 1.08,
@@ -86,11 +116,19 @@ export const HEURISTIC_V2_PROFILES: Record<HeuristicV2ProfileId, HeuristicV2Weig
     freeActionThreshold: 1.35,
     gateAcceptThreshold: 0.9,
     defenseBias: 1.2,
+    blockChoiceBias: 0,
+    blockTimingValue: 1.05,
+    blockActionValue: 0,
+    blockSideFutureCost: 1,
+    blockCenterFutureCost: 1,
+    blockDeployCountCost: 1,
   },
   "heuristic-v2-aggressive": {
     id: "heuristic-v2-aggressive",
+    strategy: "neutral",
     futureEventValue: 1.15,
     futureServeValue: 1.14,
+    futureBlockValue: 0.95,
     futureDefenseValue: 0.9,
     futureAttackValue: 1.2,
     coverageValue: 0.94,
@@ -109,7 +147,83 @@ export const HEURISTIC_V2_PROFILES: Record<HeuristicV2ProfileId, HeuristicV2Weig
     freeActionThreshold: 0.85,
     gateAcceptThreshold: 0.45,
     defenseBias: 0.9,
+    blockChoiceBias: 0,
+    blockTimingValue: 0.95,
+    blockActionValue: 0,
+    blockSideFutureCost: 1,
+    blockCenterFutureCost: 1,
+    blockDeployCountCost: 1,
   },
+};
+
+function strategyProfile(id: HeuristicV2ProfileId, strategy: HeuristicStrategyProfileId, patch: Partial<HeuristicV2Weights>): HeuristicV2Weights {
+  return { ...BASE_HEURISTIC_V2_PROFILES["heuristic-v2"], ...patch, id, strategy };
+}
+
+export const HEURISTIC_V2_PROFILES: Record<HeuristicV2ProfileId, HeuristicV2Weights> = {
+  ...BASE_HEURISTIC_V2_PROFILES,
+  "heuristic-v2-serve": strategyProfile("heuristic-v2-serve", "serve", {
+    futureServeValue: 1.35,
+    futureAttackValue: 1.08,
+    setupEventValue: 1.08,
+    deployFuturePenalty: 0.9,
+    freeActionThreshold: 1,
+    gateAcceptThreshold: 0.6,
+  }),
+  "heuristic-v2-block": strategyProfile("heuristic-v2-block", "block", {
+    futureServeValue: 0.9,
+    futureBlockValue: 1.65,
+    futureDefenseValue: 0.95,
+    futureAttackValue: 0.92,
+    setupEventValue: 1.12,
+    blockSideCost: 0.55,
+    blockExcessCost: 0.75,
+    deployFuturePenalty: 0.9,
+    skillValue: 1.12,
+    actionValue: 1.02,
+    costValue: 0.92,
+    freeActionThreshold: 0.95,
+    gateAcceptThreshold: 0.45,
+    defenseBias: 1.08,
+    blockChoiceBias: 6,
+    blockTimingValue: 1.45,
+    blockActionValue: 1.6,
+    blockSideFutureCost: 0.45,
+    blockCenterFutureCost: 1.35,
+    blockDeployCountCost: 0.55,
+  }),
+  "heuristic-v2-burst": strategyProfile("heuristic-v2-burst", "burst", {
+    futureEventValue: 1.1,
+    futureAttackValue: 1.35,
+    setupEventValue: 1.12,
+    deployFuturePenalty: 0.85,
+    freeActionThreshold: 0.95,
+    gateAcceptThreshold: 0.55,
+  }),
+  "heuristic-v2-defense": strategyProfile("heuristic-v2-defense", "defense", {
+    futureBlockValue: 1.18,
+    futureDefenseValue: 1.35,
+    coverageValue: 1.1,
+    blockChoiceBias: 1.2,
+    defenseBias: 1.25,
+    freeActionThreshold: 1.15,
+  }),
+  "heuristic-v2-hybrid": strategyProfile("heuristic-v2-hybrid", "hybrid", {
+    futureEventValue: 1.02,
+    futureServeValue: 1.05,
+    futureBlockValue: 1.05,
+    futureDefenseValue: 1.08,
+    futureAttackValue: 1.08,
+    coverageValue: 1.12,
+  }),
+  "heuristic-v2-personality": strategyProfile("heuristic-v2-personality", "hybrid", {
+    futureEventValue: 1.02,
+    futureServeValue: 1.05,
+    futureBlockValue: 1.05,
+    futureDefenseValue: 1.08,
+    futureAttackValue: 1.08,
+    coverageValue: 1.12,
+  }),
 };
 
 function profileOf(profile: HeuristicV2ProfileId | HeuristicV2Weights = "heuristic-v2"): HeuristicV2Weights {
@@ -117,7 +231,24 @@ function profileOf(profile: HeuristicV2ProfileId | HeuristicV2Weights = "heurist
 }
 
 export function isHeuristicV2ProfileId(id: string): id is HeuristicV2ProfileId {
-  return id === "heuristic-v2" || id === "heuristic-v2-safe" || id === "heuristic-v2-aggressive";
+  return id in HEURISTIC_V2_PROFILES;
+}
+
+export function heuristicProfileForDeckAxes(axes: readonly string[] | undefined): HeuristicV2ProfileId {
+  const set = new Set(axes ?? []);
+  if (set.has("block")) return "heuristic-v2-block";
+  if (set.has("serve")) return "heuristic-v2-serve";
+  if (set.has("burst")) return "heuristic-v2-burst";
+  if (set.has("defense")) return "heuristic-v2-defense";
+  return "heuristic-v2-hybrid";
+}
+
+export function heuristicProfileForDeckText(text: string): HeuristicV2ProfileId {
+  if (/攔網|ブロック|block/i.test(text)) return "heuristic-v2-block";
+  if (/發球|サーブ|serve/i.test(text)) return "heuristic-v2-serve";
+  if (/爆發|攻擊|快攻|burst|attack/i.test(text)) return "heuristic-v2-burst";
+  if (/防守|接球|垃圾場|defense|receive/i.test(text)) return "heuristic-v2-defense";
+  return "heuristic-v2-hybrid";
 }
 
 const AREAS: Area[] = ["serve", "block", "receive", "toss", "attack"];
@@ -203,7 +334,7 @@ function phaseTimingMatches(card: Card, phase: string): boolean {
 function skillBonus(card: Card, weights: HeuristicV2Weights, param?: ParamName): number {
   if (card.effectStatus === "vanilla" || card.effectStatus === "todo") return 0;
   let bonus = card.effectStatus === "script" ? 0.9 : 0.55;
-  if (param && timingMatches(card, param)) bonus += 0.55;
+  if (param && timingMatches(card, param)) bonus += 0.55 * (param === "block" ? weights.blockTimingValue : 1);
   if (card.skillJa?.includes("[=ターン1]")) bonus += 0.25;
   return bonus * weights.skillValue;
 }
@@ -229,7 +360,7 @@ function futureCardValue(db: CardDb, state: GameState, p: PlayerId, uid: number,
     receive * 1.05 * weights.futureDefenseValue +
     toss * 0.8 +
     attack * 0.95 * weights.futureAttackValue +
-    block * 0.85 * weights.futureDefenseValue +
+    block * 0.85 * weights.futureBlockValue +
     coverage +
     pressure +
     skillBonus(card, weights)
@@ -253,8 +384,8 @@ function setupCardValue(db: CardDb, state: GameState, p: PlayerId, uid: number, 
   const block = pms.block ?? 0;
   const coverage = AREAS.filter((a) => pms[a] !== null && (pms[a] ?? 0) > 0).length * 0.45 * weights.coverageValue;
   const role = serving
-    ? serve * 2.2 * weights.futureServeValue + attack * 1.35 * weights.futureAttackValue + receive * 1.1 * weights.futureDefenseValue + block * 0.8 * weights.futureDefenseValue + toss * 0.75
-    : receive * 2.25 * weights.futureDefenseValue + block * 1.25 * weights.futureDefenseValue + attack * 1.15 * weights.futureAttackValue + toss * 1.0 + serve * 0.65 * weights.futureServeValue;
+    ? serve * 2.2 * weights.futureServeValue + attack * 1.35 * weights.futureAttackValue + receive * 1.1 * weights.futureDefenseValue + block * 0.8 * weights.futureBlockValue + toss * 0.75
+    : receive * 2.25 * weights.futureDefenseValue + block * 1.25 * weights.futureBlockValue + attack * 1.15 * weights.futureAttackValue + toss * 1.0 + serve * 0.65 * weights.futureServeValue;
   return role + coverage + skillBonus(card, weights, serving ? "serve" : "receive");
 }
 
@@ -314,8 +445,8 @@ interface BlockPlan {
 function blockPlanCost(db: CardDb, state: GameState, p: PlayerId, uids: number[], center: number, op: number, weights: HeuristicV2Weights): number {
   const excess = Math.max(0, uids.reduce((sum, uid) => sum + paramOf(db, state, uid, "block"), 0) - op);
   const sideCost = uids.filter((uid) => uid !== center).reduce((sum, uid) => sum + futureCardValue(db, state, p, uid, weights), 0);
-  const centerCost = futureCardValue(db, state, p, center, weights) * 0.15;
-  return sideCost * weights.blockSideCost + centerCost + excess * 0.45 * weights.blockExcessCost + uids.length * 0.35;
+  const centerCost = futureCardValue(db, state, p, center, weights) * 0.15 * weights.blockCenterFutureCost;
+  return sideCost * weights.blockSideCost * weights.blockSideFutureCost + centerCost + excess * 0.45 * weights.blockExcessCost + uids.length * 0.35 * weights.blockDeployCountCost;
 }
 
 function bestBlockPlan(db: CardDb, state: GameState, p: PlayerId, minDp: number, weights: HeuristicV2Weights): BlockPlan | null {
@@ -502,6 +633,49 @@ function costsScore(costs: Cost[] | undefined, weights: HeuristicV2Weights): num
   return (costs ?? []).reduce((sum, cost) => sum + costScore(cost, weights), 0);
 }
 
+function blockActionBonus(action: Action, weights: HeuristicV2Weights): number {
+  if (weights.blockActionValue <= 0) return 0;
+  let bonus = 0;
+  switch (action.op) {
+    case "keyword":
+      if (action.name === "ドシャット") bonus += 2.4 + (action.n ?? 0) * 0.25;
+      if (action.name === "ワンタッチ") bonus += 2.0 + (action.n ?? 0) * 0.2;
+      if (action.name === "ブロックアウト") bonus += 1.2 + (action.n ?? 0) * 0.15;
+      break;
+    case "watch":
+      if (action.trigger.on === "blockSuccess") bonus += 2.4;
+      if (action.trigger.on === "deploy" && action.trigger.area?.includes("block")) bonus += 1.5;
+      bonus += (action.actions ?? []).reduce((sum, child) => sum + blockActionBonus(child, weights) * 0.35, 0);
+      break;
+    case "restrict":
+      if (action.restriction.area === "block" || action.restriction.blockFailIfDpMax || action.restriction.negateCenterBlock || action.restriction.banOneTouch) bonus += 1.8;
+      break;
+    case "deployFromDrop":
+    case "deployFromGuts":
+      if (action.area === "block") bonus += 1.8;
+      break;
+    case "moveSelfToBlockSide":
+      bonus += 1.7;
+      break;
+    case "addParam":
+    case "setParam":
+      if (action.param === "block") bonus += 1.4;
+      break;
+    case "chooseOne":
+      bonus += Math.max(0, ...action.options.map((option) => (option.actions ?? []).reduce((sum, child) => sum + blockActionBonus(child, weights), 0))) * 0.4;
+      break;
+    case "gate":
+      bonus += (action.then ?? []).reduce((sum, child) => sum + blockActionBonus(child, weights), 0) * 0.45;
+      break;
+    case "if":
+      bonus += (action.then ?? []).reduce((sum, child) => sum + blockActionBonus(child, weights), 0) * 0.35;
+      break;
+    default:
+      break;
+  }
+  return bonus * weights.blockActionValue;
+}
+
 function actionScore(db: CardDb, state: GameState, p: PlayerId, action: Action, weights: HeuristicV2Weights): number {
   let base: number;
   switch (action.op) {
@@ -631,7 +805,8 @@ function actionScore(db: CardDb, state: GameState, p: PlayerId, action: Action, 
       base = 0.8;
       break;
   }
-  return base > 0 ? base * weights.actionValue : base;
+  const weightedBase = base > 0 ? base * weights.actionValue : base;
+  return weightedBase + blockActionBonus(action, weights);
 }
 
 function actionsScore(db: CardDb, state: GameState, p: PlayerId, actions: Action[] | undefined, weights: HeuristicV2Weights): number {
@@ -805,7 +980,8 @@ export function heuristicAiDecision(db: CardDb, state: GameState, profile: Heuri
       const receiveUid = chooseDeployUid(db, state, p, "receive", weights);
       const receiveCost = receiveUid === null ? Infinity : futureCardValue(db, state, p, receiveUid, weights) * 0.18 * weights.receiveFutureCost + Math.max(0, paramOf(db, state, receiveUid, "receive") - op) * 0.8;
       const block = canChooseBlock(state) ? bestBlockPlan(db, state, p, op, weights) : null;
-      if (receiveUid !== null && (!block || receiveCost <= block.cost + 1.5)) return { type: "defense-choice", choice: "receive" };
+      const blockCost = block ? block.cost - weights.blockChoiceBias : Infinity;
+      if (receiveUid !== null && (!block || receiveCost <= blockCost + 1.5)) return { type: "defense-choice", choice: "receive" };
       if (block) return { type: "defense-choice", choice: "block" };
       return { type: "defense-choice", choice: "receive" };
     }

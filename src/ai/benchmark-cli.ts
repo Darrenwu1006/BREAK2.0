@@ -42,7 +42,7 @@ function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId
   const raw = argValue(name);
   if (raw === undefined) return fallback;
   if (raw === "random" || raw === "heuristic-v1" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、heuristic-v2、heuristic-v2-safe 或 heuristic-v2-aggressive`);
+  throw new Error(`--${name} 只支援 random、heuristic-v1、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
 }
 
 function matrixModeArg(): MatrixMode | null {

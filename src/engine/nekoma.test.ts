@@ -1,6 +1,7 @@
 // M3 續：音駒預組（HV-D02）技能卡逐張行為測試＋官方判例（Q 編號＝docs/RULINGS.md）
 import { describe, it, expect } from "vitest";
 import { applyDecision, blockDeployMax, createGame, effParam } from "./engine";
+import { drawCards, fireHandAdds } from "./effects";
 import { db, deckWith, drainCp, feed, grab, placeDeckTop, placeOnStack, seedStack, setup, serveWith, receiveTrack } from "./testkit";
 
 describe("音駒：登場被動（gate 系）", () => {
@@ -182,6 +183,42 @@ describe("音駒：事件卡", () => {
       t = feed(t, { type: "effect-cards", uids: [] });
     }
     expect(t.players[0].deck.length).toBe(2);
+  });
+
+  it("HV-PR-027＋Q262：二口PR效果「非抽牌加入手牌」觸發與防免測試", () => {
+    // 設置對局：P0 手手有二口PR，登場攔網註冊下一回合監看
+    let s = setup(deckWith("HV-PR-027", "HV-D02-005", "HV-D02-005"), deckWith("HV-D02-001", "HV-D02-006"), 0);
+    s = serveWith(s, "HV-D02-005");
+    s = receiveTrack(s, "HV-D01-006");
+    s = feed(s, { type: "deploy-toss", uid: grab(s, 1, "HV-D02-001") });
+    while (s.pendingDecision?.type === "effect-confirm") s = feed(s, { type: "effect-confirm", accept: false });
+    s = feed(s, { type: "free", action: "pass" });
+    s = feed(s, { type: "deploy-attack", uid: grab(s, 1, "HV-D02-006") });
+    s = feed(s, { type: "free", action: "pass" });
+    s = feed(s, { type: "defense-choice", choice: "block" });
+    const futakuchi = grab(s, 0, "HV-PR-027");
+    const kai = grab(s, 0, "HV-D02-005");
+    s = feed(s, { type: "deploy-block", uids: [futakuchi, kai], center: futakuchi });
+    
+    expect(s.watchers.some((w) => w.source === futakuchi && w.trigger.on === "handAddByEffect")).toBe(true);
+
+    // 進入自由步驟
+    s = feed(s, { type: "free", action: "pass" });
+
+    // 模擬進入下一個回合，使 watcher 處於生效時間
+    const watcher = s.watchers.find((w) => w.source === futakuchi && w.trigger.on === "handAddByEffect")!;
+    s.turnNo = watcher.turnMin;
+
+    // 1. 正常抽牌（引く）行為 -> 不會觸發磨庫
+    const h1 = s.players[1].hand.length;
+    drawCards(s, 1, 1);
+    expect(s.players[1].hand.length).toBe(h1 + 1);
+    expect(s.pendingQueue.length).toBe(0); // 沒有事件進入 pendingQueue (不觸發)
+
+    // 2. 非抽牌加入手牌（mode = effect，如檢索/回收） -> 觸發磨庫 3 張
+    fireHandAdds(s, 1, 1, "effect");
+    expect(s.pendingQueue.length).toBe(1); // 觸發成功！
+    expect(s.pendingQueue[0]!.actions![0]!).toMatchObject({ op: "millTopAll", count: 3 });
   });
 });
 

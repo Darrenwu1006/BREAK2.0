@@ -114,7 +114,7 @@ describe("M8 benchmark harness", () => {
     hiddenChanged.players[1].deck.reverse();
     hiddenChanged.players[1].setArea.reverse();
 
-    for (const policy of ["heuristic-v1", "heuristic-v2", "heuristic-v2-safe", "heuristic-v2-aggressive"] satisfies BenchmarkPolicyId[]) {
+    for (const policy of ["heuristic-v1", "heuristic-v2", "heuristic-v2-safe", "heuristic-v2-aggressive", "heuristic-v2-personality"] satisfies BenchmarkPolicyId[]) {
       const rndA = [seededRnd(1), seededRnd(2)] as [() => number, () => number];
       const rndB = [seededRnd(1), seededRnd(2)] as [() => number, () => number];
       expect(benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, rndB)).toEqual(
@@ -124,17 +124,33 @@ describe("M8 benchmark harness", () => {
   });
 
   it("heuristic-v2 權重變體可作為 benchmark policy 跑完整場", () => {
-    for (const policy of ["heuristic-v2-safe", "heuristic-v2-aggressive"] satisfies BenchmarkPolicyId[]) {
+    for (const policy of ["heuristic-v2-safe", "heuristic-v2-aggressive", "heuristic-v2-block", "heuristic-v2-personality"] satisfies BenchmarkPolicyId[]) {
       const result = playBenchmarkMatch({
         db: benchmarkDb,
         decks: [findBenchmarkDeck("烏野-預組"), findBenchmarkDeck("音駒-預組")],
         policies: [policy, "random"],
-        seed: policy === "heuristic-v2-safe" ? 180 : 181,
+        seed: policy === "heuristic-v2-safe" ? 180 : policy === "heuristic-v2-aggressive" ? 181 : policy === "heuristic-v2-block" ? 182 : 183,
         maxSteps: 5000,
       });
       expect(result.outcome, policy).toBe("complete");
       expect(result.policies[0]).toBe(policy);
       expect(result.invariants.every((entry) => entry.ok)).toBe(true);
+    }
+  });
+
+  it("personality policy 讓真實攔網軸牌組至少產生攔網登場或攔網 OP 訊號", () => {
+    for (const deckName of ["伊達工業-攔網軸", "烏野-山月攔網軸"]) {
+      const report = runBenchmarkBatch({
+        db: benchmarkDb,
+        decks: [findBenchmarkDeck(deckName), findBenchmarkDeck("烏野-預組")],
+        policies: ["heuristic-v2-personality", "heuristic-v2"],
+        seeds: mirroredSeeds(deckName === "伊達工業-攔網軸" ? 2620 : 2630, 2),
+        maxSteps: 5000,
+      });
+      const targetStats = report.matches.map((match) => match.stats.players[0]);
+      const blockSignals = targetStats.reduce((sum, stats) => sum + stats.deployments.block + stats.opBySource.block.count, 0);
+      expect(report.summary.completed, deckName).toBe(2);
+      expect(blockSignals, deckName).toBeGreaterThan(0);
     }
   });
 

@@ -171,7 +171,7 @@ function allGutsOf(state: GameState, p: PlayerId): number[] {
 }
 
 /** 非抽牌入手 → handAddByEffect 監看觸發（每張一次 Q317；引く以外 Q321） */
-function fireHandAdds(state: GameState, actor: PlayerId, count: number, mode: "draw" | "effect" = "effect"): void {
+export function fireHandAdds(state: GameState, actor: PlayerId, count: number, mode: "draw" | "effect" = "effect"): void {
   if (state.phase === "interval") return;
   for (const w of state.watchers) {
     if ((w.trigger.on !== "handAdd" && (w.trigger.on !== "handAddByEffect" || mode === "draw")) || !watcherActive(state, w)) continue;

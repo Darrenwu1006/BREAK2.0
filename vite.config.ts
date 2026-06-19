@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 // ---- 牌組 API（dev server middleware）----
@@ -155,9 +155,124 @@ function deckApi(root: string): Plugin {
   };
 }
 
+function replayApi(root: string): Plugin {
+  const replaysDir = join(root, "data", "replays");
+  const getReplayList = () => {
+    if (!existsSync(replaysDir)) return [];
+    const files = readdirSync(replaysDir);
+    const list: any[] = [];
+    for (const f of files) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const fullPath = join(replaysDir, f);
+        const content = readFileSync(fullPath, "utf8");
+        const session = JSON.parse(content);
+        const lastEntry = session.entries[session.entries.length - 1];
+        const winner = lastEntry ? lastEntry.after.winner : null;
+        list.push({
+          id: f,
+          startedAt: session.startedAt || new Date().toISOString(),
+          decks: [
+            session.decks?.[0]?.label || "Unknown",
+            session.decks?.[1]?.label || "Unknown"
+          ],
+          winner,
+          entryCount: session.entries?.length || 0,
+        });
+      } catch (e) {
+        console.error(`Failed to parse replay file ${f}:`, e);
+      }
+    }
+    return list.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  };
+
+  return {
+    name: "replay-api",
+    configureServer(server) {
+      server.middlewares.use("/api/replays", (req, res) => {
+        const url = new URL(req.url || "", `http://${req.headers.host}`);
+        const id = url.searchParams.get("id");
+        try {
+          if (req.method === "GET") {
+            if (id) {
+              const filePath = join(replaysDir, id);
+              if (!filePath.startsWith(replaysDir)) {
+                res.statusCode = 403;
+                res.end(JSON.stringify({ error: "Access denied" }));
+                return;
+              }
+              if (!existsSync(filePath)) {
+                res.statusCode = 404;
+                res.end(JSON.stringify({ error: "Replay not found" }));
+                return;
+              }
+              res.setHeader("Content-Type", "application/json");
+              res.end(readFileSync(filePath, "utf8"));
+              return;
+            } else {
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(getReplayList()));
+              return;
+            }
+          }
+          if (req.method === "POST") {
+            let body = "";
+            req.on("data", (c) => (body += c));
+            req.on("end", () => {
+              try {
+                const session = JSON.parse(body);
+                if (!session.startedAt) {
+                  throw new Error("Missing startedAt in session");
+                }
+                const cleanTime = session.startedAt.replace(/[:.]/g, "-");
+                const label0 = (session.decks?.[0]?.label || "Player").replace(/[/\\?%*:|"<>]/g, "_");
+                const label1 = (session.decks?.[1]?.label || "AI").replace(/[/\\?%*:|"<>]/g, "_");
+                const fileName = `replay-${cleanTime}-${label0}-vs-${label1}.json`;
+                mkdirSync(replaysDir, { recursive: true });
+                const filePath = join(replaysDir, fileName);
+                writeFileSync(filePath, JSON.stringify(session, null, 2), "utf8");
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ ok: true, file: fileName }));
+              } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));
+              }
+            });
+            return;
+          }
+          if (req.method === "DELETE") {
+            if (!id) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: "Missing id parameter" }));
+              return;
+            }
+            const filePath = join(replaysDir, id);
+            if (!filePath.startsWith(replaysDir)) {
+              res.statusCode = 403;
+              res.end(JSON.stringify({ error: "Access denied" }));
+              return;
+            }
+            if (existsSync(filePath)) {
+              unlinkSync(filePath);
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true }));
+            return;
+          }
+          res.statusCode = 405;
+          res.end();
+        } catch (e) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig({
   base: "/BREAK2.0/",
-  plugins: [react(), deckApi(__dirname)],
+  plugins: [react(), deckApi(__dirname), replayApi(__dirname)],
   test: {
     include: ["src/**/*.test.ts"],
   },

@@ -1,6 +1,6 @@
 import { applyDecision, createGame } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { heuristicAiDecision, isHeuristicV2ProfileId } from "./heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileId } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { heuristicV1AiDecision } from "./heuristic-v1";
 import { randomAiDecision } from "./random";
@@ -219,10 +219,12 @@ export function benchmarkPolicyDecision(
   db: CardDb,
   state: GameState,
   randomByPlayer: [() => number, () => number],
+  deckAxesByPlayer: readonly [readonly DeckAxis[], readonly DeckAxis[]] = [[], []],
 ): Decision {
   const pending = state.pendingDecision;
   if (!pending) throw new Error("目前沒有待決策，benchmark 無法推進");
   const player = pending.player as PlayerId;
+  if (policy === "heuristic-v2-personality") return heuristicAiDecision(db, state, heuristicProfileForDeckAxes(deckAxesByPlayer[player]));
   if (isHeuristicV2ProfileId(policy)) return heuristicAiDecision(db, state, policy);
   if (policy === "heuristic-v1") return heuristicV1AiDecision(db, state);
   return randomAiDecision(db, state, randomByPlayer[player]);
@@ -512,7 +514,7 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
 
     try {
       const player = pending.player as PlayerId;
-      const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer);
+      const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer, [config.decks[0].axes ?? [], config.decks[1].axes ?? []]);
       state = applyDecision(config.db, state, decision);
     } catch (error) {
       return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error));

@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { createGame, applyDecision } from "../engine/engine";
 import type { CardDb, GameState, PlayerId } from "../engine/types";
 import type { Card } from "../data/types";
-import { heuristicAiDecision } from "./heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckAxes } from "./heuristic";
 import { randomAiDecision } from "./random";
 import cardsJson from "../../data/cards.json";
 import deckAoba2 from "../../data/decks/青葉城西-二彈改.json";
@@ -239,6 +239,42 @@ describe("M5 Heuristic v2 決策品質", () => {
     if (d.type !== "deploy-block") throw new Error(`expected deploy-block, got ${d.type}`);
     expect(d.uids).not.toBeNull();
     if (d.uids) expect(d.center).toBe(yamaguchi);
+  });
+
+  it("攔網軸 profile 會在接球可行時仍優先考慮可過判定的攔網", () => {
+    const s = bareState(["HV-P02-045", "HV-P02-039", "HV-P02-044", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
+    s.turnPlayer = 0;
+    s.op = { owner: 1, value: 5, source: "attack" };
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "defense-choice", choice: "receive" });
+    expect(heuristicAiDecision(db, s, heuristicProfileForDeckAxes(["block", "defense"]))).toEqual({ type: "defense-choice", choice: "block" });
+  });
+
+  it("攔網軸 profile 會提高攔網相關效果的使用意願", () => {
+    const s = bareState(["HV-D01-006"]);
+    const source = s.players[0].hand[0]!;
+    s.pendingDecision = { player: 0, type: "effect-confirm" };
+    s.effectCtx = {
+      player: 0,
+      source,
+      frames: [],
+      lastTarget: null,
+      triggerUid: null,
+      turn1: false,
+      anyExecuted: false,
+      awaiting: {
+        kind: "confirm",
+        what: "gate",
+        costs: [{ type: "placeEventFromHand" }],
+        then: [{ op: "moveSelfToBlockSide" }],
+        prompt: "block side",
+      },
+      desc: "test",
+    };
+
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "effect-confirm", accept: false });
+    expect(heuristicAiDecision(db, s, "heuristic-v2-block")).toEqual({ type: "effect-confirm", accept: true });
   });
 
   it("14 副牌組皆可用 heuristic v2 跑完整場且維持 40 張不變量", () => {
