@@ -6,6 +6,7 @@ import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
 import { pickDeployName } from "./util";
+import { evaluateGameplanState, evaluateGameplanTransition, resolveGameplanProfile, type GameplanStateReport, type GameplanTransitionReport } from "./gameplan";
 
 type ZoneName = keyof PlayerState;
 type DeployArea = "serve" | "receive" | "toss" | "attack";
@@ -19,6 +20,7 @@ export interface PimcCoachOptions {
   timeLimitMs?: number;
   candidateLimit?: number;
   rolloutPolicy?: HeuristicV2ProfileId;
+  gameplanDeckLabels?: readonly [string, string];
 }
 
 export interface CoachActionEstimate {
@@ -32,6 +34,7 @@ export interface CoachActionEstimate {
   maxSteps: number;
   principalLine: string[];
   explanation: string;
+  gameplan?: GameplanTransitionReport;
 }
 
 export interface CoachReport {
@@ -46,6 +49,7 @@ export interface CoachReport {
   fallbackDecision: Decision;
   bestAction: CoachActionEstimate;
   recommendations: CoachActionEstimate[];
+  gameplan?: GameplanStateReport;
 }
 
 interface MutableStats {
@@ -56,6 +60,7 @@ interface MutableStats {
   errors: number;
   maxSteps: number;
   principalLine: string[];
+  gameplan?: GameplanTransitionReport;
 }
 
 interface RolloutResult {
@@ -458,6 +463,7 @@ function estimateFromStats(stats: MutableStats): CoachActionEstimate {
     maxSteps: stats.maxSteps,
     principalLine: stats.principalLine,
     explanation: explanationFor(stats.decision, winRate, confidence),
+    gameplan: stats.gameplan,
   };
 }
 
@@ -487,6 +493,18 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     maxSteps: 0,
     principalLine: [],
   }));
+  const gameplanProfile = resolveGameplanProfile(options.gameplanDeckLabels?.[perspective] ?? "", knownDecks[perspective] ?? []);
+  const gameplan = gameplanProfile ? evaluateGameplanState(db, state, perspective, gameplanProfile) : undefined;
+  if (gameplanProfile) {
+    for (const item of stats) {
+      try {
+        const after = applyDecision(db, state, item.decision);
+        item.gameplan = evaluateGameplanTransition(db, state, after, perspective, gameplanProfile);
+      } catch {
+        // Candidate gameplan is supplemental; PIMC scoring remains the source for win-rate.
+      }
+    }
+  }
 
   let timedOut = false;
   for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
@@ -525,6 +543,15 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     errors: 0,
     maxSteps: 0,
     principalLine: [],
+    gameplan: gameplanProfile
+      ? (() => {
+          try {
+            return evaluateGameplanTransition(db, state, applyDecision(db, state, fallbackDecision), perspective, gameplanProfile);
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined,
   });
 
   return {
@@ -539,6 +566,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     fallbackDecision,
     bestAction,
     recommendations,
+    gameplan,
   };
 }
 

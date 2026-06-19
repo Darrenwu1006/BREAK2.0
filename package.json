@@ -16,7 +16,8 @@
     "data:rebuild": "node tools/import-csv.mjs && node tools/merge-official.mjs && node tools/apply-effects.mjs",
     "benchmark:m8": "vite-node src/ai/benchmark-cli.ts",
     "analyze:m8": "vite-node src/ai/deck-analyzer-cli.ts",
-    "optimize:m8": "vite-node src/ai/deck-optimizer-cli.ts"
+    "optimize:m8": "vite-node src/ai/deck-optimizer-cli.ts",
+    "analyze:replay": "vite-node tools/analyze-saved-replay.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",

@@ -112,6 +112,13 @@ function critiqueTone(delta: number, actual: CoachActionEstimate | null): { labe
   return { label: "可接受", className: "is-neutral" };
 }
 
+function gameplanTone(tone: NonNullable<CoachActionEstimate["gameplan"]>["tone"] | undefined): { label: string; className: string } {
+  if (tone === "progress") return { label: "主軸推進", className: "is-good" };
+  if (tone === "risk") return { label: "主軸風險", className: "is-warning" };
+  if (tone === "drift") return { label: "主軸偏離", className: "is-warning" };
+  return { label: "主軸持平", className: "is-neutral" };
+}
+
 function critiqueToneForEntry(entry: ReplayEntry, result: ReplayCritiqueResult | undefined): { label: string; className: string } | null {
   if (!result) return null;
   if (result.status === "error") return { label: "錯誤", className: "is-neutral" };
@@ -381,6 +388,9 @@ function ReplayStepSummary(props: {
   const actual = report && entry ? findActualEstimate(report, entry.decision) : null;
   const delta = report && actual ? report.bestAction.winRate - actual.winRate : 0;
   const tone = report ? critiqueTone(delta, actual) : null;
+  const actualGameplan = actual?.gameplan;
+  const gameplan = gameplanTone(actualGameplan?.tone);
+  const mixedSignal = !!actualGameplan && actualGameplan.tone === "progress" && delta >= 0.15;
   return (
     <div className="replay-panel">
       <div className="panel-heading">
@@ -481,17 +491,23 @@ function ReplayStepSummary(props: {
           ) : report ? (
             <div className="critique-result">
               <span className={`critique-badge ${tone?.className ?? ""}`}>{tone?.label}</span>
+              {actualGameplan && <span className={`critique-badge ${gameplan.className}`}>{gameplan.label}</span>}
               <div className="critique-row">
                 <small>最佳建議</small>
                 <b>{report.bestAction.label}</b>
                 <span>{percent(report.bestAction.winRate)} 勝率・信心 {percent(report.bestAction.confidence)}</span>
+                {report.bestAction.gameplan && <span>主軸：{report.bestAction.gameplan.stage}・{report.bestAction.gameplan.progressScore} 分・Δ {report.bestAction.gameplan.delta >= 0 ? "+" : ""}{report.bestAction.gameplan.delta}</span>}
               </div>
               <div className="critique-row">
                 <small>實際選擇</small>
                 <b>{actual?.label ?? decisionLabel(entry.decision)}</b>
                 <span>{actual ? `${percent(actual.winRate)} 勝率・差距 ${percent(Math.max(0, delta))}` : "此決策不在本次候選評估內"}</span>
+                {actualGameplan && <span>主軸：{actualGameplan.stage}・{actualGameplan.progressScore} 分・Δ {actualGameplan.delta >= 0 ? "+" : ""}{actualGameplan.delta}</span>}
               </div>
-              <p>{actual ? (delta >= 0.15 ? "這一步可能有更高期望值的選擇，值得回看當時資源與後續防守壓力。" : "這一步和 Coach 推薦差距不大，可先視為合理路線。") : "Coach v1 的候選列舉沒有覆蓋這個實際決策；後續需擴充候選生成再評分。"}</p>
+              {actualGameplan && (actualGameplan.badges.length > 0 || actualGameplan.risks.length > 0) && (
+                <p>{[...actualGameplan.badges.slice(0, 2), ...actualGameplan.risks.slice(0, 2)].join("；")}</p>
+              )}
+              <p>{actual ? (mixedSignal ? "這一步短期勝率較低，但有推進牌組主軸；先不要直接判成單純失誤，值得回看它是否是在啟動引擎。" : delta >= 0.15 ? "這一步可能有更高期望值的選擇，值得回看當時資源與後續防守壓力。" : "這一步和 Coach 推薦差距不大，可先視為合理路線。") : "Coach v1 的候選列舉沒有覆蓋這個實際決策；後續需擴充候選生成再評分。"}</p>
             </div>
           ) : (
             <small className="summary-idle">按下評估後，會用 Coach / PIMC 從此步決策前狀態估算推薦選擇。</small>
@@ -707,6 +723,7 @@ export function Game(props: {
         options: {
           perspectivePlayer: entry.player,
           knownDecks: props.decks,
+          gameplanDeckLabels: [replay.decks[0].label, replay.decks[1].label],
           seed: entry.before.rngState + step * 97,
           sampleCount: 4,
           candidateLimit: 6,
@@ -856,6 +873,7 @@ export function Game(props: {
         options: {
           perspectivePlayer: HUMAN,
           knownDecks: props.decks,
+          gameplanDeckLabels: [`${props.deckMeta[0].school}-${props.deckMeta[0].name}`, `${props.deckMeta[1].school}-${props.deckMeta[1].name}`],
           seed: state.rngState,
           sampleCount: 4,
           candidateLimit: 6,

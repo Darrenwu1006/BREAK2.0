@@ -95,4 +95,27 @@ describe("M8 Phase A PIMC coach", () => {
     expect(report.bestAction.decision).toEqual(report.fallbackDecision);
     expect(report.bestAction.sampleCount).toBe(0);
   });
+
+  it("會在命中的牌組上附加 gameplan 主軸評估", () => {
+    const deckA = findBenchmarkDeck("稲荷崎-稲荷崎_堆墓改角名");
+    const deckB = findBenchmarkDeck("音駒-音駒-二口干擾");
+    let state = createGame(benchmarkDb, { seed: 1919, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+
+    const report = createPimcCoachReport(benchmarkDb, state, {
+      perspectivePlayer: 0,
+      knownDecks: [deckA.ids, deckB.ids],
+      gameplanDeckLabels: [deckA.name, deckB.name],
+      seed: 1920,
+      sampleCount: 1,
+      candidateLimit: 3,
+      rolloutMaxSteps: 400,
+    });
+
+    expect(report.gameplan?.profileId).toBe("inarizaki-dump-suna-v1");
+    expect(report.bestAction.gameplan?.profileId).toBe("inarizaki-dump-suna-v1");
+    expect(report.recommendations.some((item) => item.gameplan)).toBe(true);
+  });
 });

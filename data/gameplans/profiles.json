@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "m8-gameplan-profiles-v1",
+  "profiles": [
+    {
+      "id": "inarizaki-dump-suna-v1",
+      "enabled": true,
+      "displayName": "稻荷崎堆墓角名",
+      "deckMatchers": [
+        { "labelIncludes": ["稲荷崎", "堆墓", "角名"] }
+      ],
+      "stageLabels": [
+        { "minScore": 0, "label": "早期：堆墓啟動" },
+        { "minScore": 34, "label": "中期：接近 6 種" },
+        { "minScore": 67, "label": "後期：循環準備" },
+        { "minScore": 90, "label": "已解鎖" }
+      ],
+      "keyCards": [
+        { "id": "HV-P02-017", "label": "宮侑回收引擎" },
+        { "id": "HV-P02-027", "label": "角名突破" },
+        { "id": "HV-P02-024", "label": "北信介事件回收" },
+        { "id": "HV-P02-085", "label": "大見抽濾堆墓" },
+        { "id": "HV-P02-035", "label": "小作手牌自棄" },
+        { "id": "HV-P02-089", "label": "どや回收循環" }
+      ],
+      "objectives": [
+        {
+          "id": "inarizaki-six-names",
+          "type": "uniqueDropNames",
+          "label": "棄牌區 6 種稻荷崎角色",
+          "affiliation": "稲荷崎",
+          "threshold": 6,
+          "weight": 60
+        },
+        {
+          "id": "miya-guts-ready",
+          "type": "resourceReady",
+          "label": "宮侑/北信介 Guts 3 準備",
+          "threshold": 3,
+          "weight": 16
+        },
+        {
+          "id": "suna-attack-online",
+          "type": "keyCardZone",
+          "label": "角名攻擊線",
+          "cardIds": ["HV-P02-027"],
+          "zones": ["attack"],
+          "weight": 12
+        },
+        {
+          "id": "kita-receive-online",
+          "type": "keyCardZone",
+          "label": "北信介接球回收線",
+          "cardIds": ["HV-P02-024"],
+          "zones": ["receive"],
+          "weight": 12
+        }
+      ]
+    },
+    {
+      "id": "aoba-johsai-p02-control-v1",
+      "enabled": true,
+      "displayName": "青葉城西二彈改",
+      "deckMatchers": [
+        { "labelIncludes": ["青葉城西", "二彈改"] }
+      ],
+      "stageLabels": [
+        { "minScore": 0, "label": "早期：及川站場" },
+        { "minScore": 34, "label": "中期：手牌壓制" },
+        { "minScore": 67, "label": "後期：鎖補牌/吊球" },
+        { "minScore": 90, "label": "收割狀態" }
+      ],
+      "keyCards": [
+        { "id": "HV-P01-033", "label": "及川手牌壓制" },
+        { "id": "HV-P02-056", "label": "及川托球回收" },
+        { "id": "HV-P01-087", "label": "俺も思った☆" },
+        { "id": "HV-P01-035", "label": "岩泉鎖補牌" },
+        { "id": "HV-P01-041", "label": "國見吊球" },
+        { "id": "HV-PR-025", "label": "京谷奇襲" }
+      ],
+      "objectives": [
+        {
+          "id": "oikawa-online",
+          "type": "keyCardZone",
+          "label": "及川在發球/托球",
+          "cardIds": ["HV-P01-033", "HV-P02-056"],
+          "zones": ["serve", "toss"],
+          "weight": 28
+        },
+        {
+          "id": "opponent-hand-four",
+          "type": "opponentHandPressure",
+          "label": "對手手牌壓到 4 以下",
+          "threshold": 4,
+          "weight": 22
+        },
+        {
+          "id": "opponent-hand-three",
+          "type": "opponentHandPressure",
+          "label": "對手手牌壓到 3 以下",
+          "threshold": 3,
+          "weight": 22
+        },
+        {
+          "id": "omotta-watcher",
+          "type": "activeWatcher",
+          "label": "俺も思った☆ 非抽牌補牌懲罰",
+          "cardIds": ["HV-P01-087"],
+          "trigger": "handAddByEffect",
+          "weight": 28
+        }
+      ]
+    },
+    {
+      "id": "shiratorizawa-strong-v1",
+      "enabled": false,
+      "displayName": "白鳥沢最強",
+      "deckMatchers": [{ "labelIncludes": ["白鳥沢", "最強"] }],
+      "stageLabels": [],
+      "keyCards": [],
+      "objectives": []
+    },
+    {
+      "id": "fukurodani-tournament-v1",
+      "enabled": false,
+      "displayName": "梟谷參賽",
+      "deckMatchers": [{ "labelIncludes": ["梟谷", "參賽"] }],
+      "stageLabels": [],
+      "keyCards": [],
+      "objectives": []
+    },
+    {
+      "id": "nekoma-futakuchi-control-v1",
+      "enabled": false,
+      "displayName": "音駒二口干擾",
+      "deckMatchers": [{ "labelIncludes": ["音駒", "二口"] }],
+      "stageLabels": [],
+      "keyCards": [],
+      "objectives": []
+    },
+    {
+      "id": "dateko-block-v1",
+      "enabled": false,
+      "displayName": "伊達工業攔網",
+      "deckMatchers": [{ "labelIncludes": ["伊達工業", "攔網"] }],
+      "stageLabels": [],
+      "keyCards": [],
+      "objectives": []
+    }
+  ]
+}

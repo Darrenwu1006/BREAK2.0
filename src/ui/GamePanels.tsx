@@ -463,6 +463,13 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function gameplanToneLabel(tone: NonNullable<CoachReport["bestAction"]["gameplan"]>["tone"] | undefined): string {
+  if (tone === "progress") return "主軸推進";
+  if (tone === "risk") return "主軸風險";
+  if (tone === "drift") return "主軸偏離";
+  return "主軸持平";
+}
+
 function cardLabel(db: CardDb, state: GameState, uid: number): string {
   const id = state.cards[uid];
   const card = id ? db.get(id) : null;
@@ -583,6 +590,19 @@ export function CoachPanel(props: {
           <span><b>{percent(report.bestAction.winRate)}</b> 勝率</span>
           <span><b>{percent(report.bestAction.confidence)}</b> 信心</span>
         </div>
+        {report.gameplan && (
+          <div className="coach-gameplan">
+            <small>{report.gameplan.displayName}</small>
+            <b>{report.gameplan.stage}・{report.gameplan.progressScore} 分</b>
+          </div>
+        )}
+        {report.bestAction.gameplan && (
+          <div className="coach-gameplan">
+            <small>{gameplanToneLabel(report.bestAction.gameplan.tone)}</small>
+            <b>Δ {report.bestAction.gameplan.delta >= 0 ? "+" : ""}{report.bestAction.gameplan.delta}</b>
+            <span>{[...report.bestAction.gameplan.badges.slice(0, 1), ...report.bestAction.gameplan.risks.slice(0, 1)].join("；")}</span>
+          </div>
+        )}
         <p>{report.bestAction.explanation}</p>
         <button onClick={() => props.onApply(report.bestAction.decision)}>採用建議</button>
       </div>

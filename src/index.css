@@ -1332,6 +1332,16 @@ input {
   font-size: 12px;
 }
 .coach-metrics b { color: var(--cream); font-family: var(--font-num); font-size: 18px; }
+.coach-gameplan {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--gold) 7%, transparent);
+}
+.coach-gameplan b { color: var(--cream); font-size: 13px; line-height: 1.35; }
+.coach-gameplan span { color: var(--text-dim); font-size: 12px; line-height: 1.45; }
 .coach-list {
   display: grid;
   gap: var(--sp-2);
