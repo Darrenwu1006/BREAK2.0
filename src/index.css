@@ -1020,6 +1020,16 @@ input {
  
 /* Right panel tool tabs + summary + counter */
 .right-panel { display: flex; flex-direction: column; }
+.tool-actions {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) 0;
+}
+.tool-actions button { flex: 1; min-height: 32px; }
+.undo-button:not(:disabled) {
+  border-color: color-mix(in srgb, var(--gold) 62%, transparent);
+  color: var(--cream);
+}
 .tool-tabs { display: flex; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-bottom: 1.5px solid var(--line-dim); }
 .tool-tabs button { flex: 1; min-height: 30px; padding: 3px; border-color: var(--line-dim); background: transparent; color: var(--text-dim); font-size: 14px; font-weight: 500; }
 .tool-tabs button.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--cream); }

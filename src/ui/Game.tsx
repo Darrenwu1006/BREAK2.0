@@ -13,6 +13,7 @@ import type { CoachPanelState } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "./selection";
+import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory } from "./undoHistory";
 import type { CardPointerDragInfo } from "./CardView";
 
 const HUMAN: PlayerId = 0;
@@ -75,6 +76,7 @@ export function Game(props: {
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
+  const [undoHistory, setUndoHistory] = useState<UndoHistory>([]);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
@@ -97,6 +99,7 @@ export function Game(props: {
   const { motions, recentUids, settledUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
 
   const visibleInspection = hovered ?? inspected;
+  const canUndo = undoHistory.length > 0;
 
   function cardOf(uid: number): Card {
     return db.get(state.cards[uid]!)!;
@@ -112,11 +115,28 @@ export function Game(props: {
     setMobilePanel("detail");
   }
 
-  function decide(decision: Decision) {
+  function clearTransientUi() {
     setMultiSel([]);
     setNameAsk(null);
     setActiveGutsKey(null);
+    setDragging(null);
+    setScoreBanner(null);
+    setSfx(null);
+  }
+
+  function decide(decision: Decision) {
+    clearTransientUi();
+    setUndoHistory((history) => pushPlayerUndoSnapshot(history, state, HUMAN));
     setState((current) => applyDecision(db, current, decision));
+  }
+
+  function undoLastDecision() {
+    const popped = popUndoSnapshot(undoHistory);
+    if (!popped.snapshot) return;
+    clearTransientUi();
+    seenLogCount.current = popped.snapshot.log.length;
+    setUndoHistory(popped.stack);
+    setState(popped.snapshot);
   }
 
   function changeSpeed(next: AiSpeed) {
@@ -591,6 +611,9 @@ export function Game(props: {
         <div className="mobile-panel-heading">
           <b>面板</b>
           <button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button>
+        </div>
+        <div className="tool-actions">
+          <button className="btn-quiet undo-button" disabled={!canUndo} title="回到上一個我方決策前" onClick={undoLastDecision}>返回上一步</button>
         </div>
         <div className="tool-tabs" role="tablist" aria-label="右欄工具">
           <button role="tab" aria-selected={toolMode.type === "detail"} className={toolMode.type === "detail" ? "is-active" : ""} onClick={() => setToolMode({ type: "detail" })}>詳情</button>
