@@ -125,7 +125,8 @@ try {
     const zh = clean(translation?.text);
     const status = translation?.status === "human" ? "human" : "machine";
     if (!zh) { warnings.push(`translations.json: ${id} 缺少譯文`); continue; }
-    if (!card.skillZh) card.skillZh = zh;
+    const shouldOverwrite = status === "human" || !card.skillZh || card.skillZhStatus === "machine";
+    if (shouldOverwrite) card.skillZh = zh;
     if (card.skillZh === zh) {
       card.skillZhStatus = status;
       synced[status]++;

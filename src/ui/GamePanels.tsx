@@ -207,6 +207,18 @@ function translateKeyword(kw: string): string {
     .replace(/ブロックアウト/g, "打手出界");
 }
 
+export function extractLeadingSkillMarkers(text: string): { markers: string[]; body: string } {
+  const markers: string[] = [];
+  let body = text.trimStart();
+  while (true) {
+    const match = body.match(/^\[=([^\]]+)\]\s*/);
+    if (!match) break;
+    markers.push(match[1]!);
+    body = body.slice(match[0].length).trimStart();
+  }
+  return { markers, body };
+}
+
 /** 把技能文裡的 [=關鍵字] 標記轉成可讀的小 chip，而不是裸露的 [=ターン1]。 */
 function renderSkillText(text: string) {
   return text.split(/(\[=[^\]]+\])/g).map((part, index) => {
@@ -225,19 +237,28 @@ export function CardSkillInfo({ card }: { card: Card }) {
   const oncePerTurn = card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
   const timingLabel = card.type === "EVENT" ? "可使用時機" : "發動時機";
   const skillText = card.skillZh ?? card.skillJa;
-  if (timingList.length === 0 && !oncePerTurn && !skillText) return null;
+  const normalizedSkill = skillText ? extractLeadingSkillMarkers(skillText) : { markers: [], body: "" };
+  const timingBadges = [...timingList];
+  for (const marker of normalizedSkill.markers) {
+    const translated = translateKeyword(marker);
+    if (marker === "ターン1" || translated === "一回合一次") continue;
+    if (!timingBadges.includes(translated)) timingBadges.push(translated);
+  }
+  const hasOncePerTurn = oncePerTurn || normalizedSkill.markers.some((marker) => marker === "ターン1");
+  const displaySkillText = normalizedSkill.body || skillText;
+  if (timingBadges.length === 0 && !hasOncePerTurn && !displaySkillText) return null;
   return (
     <>
-      {(timingList.length > 0 || oncePerTurn) && (
+      {(timingBadges.length > 0 || hasOncePerTurn) && (
         <div className="timing-row">
           <span className="timing-label">{timingLabel}</span>
-          {timingList.map((t) => <span key={t} className="timing-badge">{t}</span>)}
-          {oncePerTurn && <span className="restrict-badge">一回合一次</span>}
+          {timingBadges.map((t) => <span key={t} className="timing-badge">{t}</span>)}
+          {hasOncePerTurn && <span className="restrict-badge">一回合一次</span>}
         </div>
       )}
-      {skillText && (
+      {displaySkillText && (
         <div className="skill-text">
-          {renderSkillText(skillText)}
+          {renderSkillText(displaySkillText)}
           {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
         </div>
       )}
