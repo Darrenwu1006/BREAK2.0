@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { Card } from "../data/types";
 
 const publicAsset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
@@ -46,25 +46,43 @@ export function cardBackImage(school?: string): string {
   return publicAsset(`backs/thumb/${encodeURIComponent(name)}.png`);
 }
 
+export interface CardPointerDragInfo {
+  uid?: number;
+  card: Card;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  rect: DOMRect;
+}
+
 export function CardView(props: {
   card: Card;
   uid?: number;
   width?: number;
   selected?: boolean;
   dimmed?: boolean;
+  selectable?: boolean;
+  candidate?: boolean;
+  candidateHovered?: boolean;
   badge?: string;
   secondaryBadge?: string;
   className?: string;
   draggable?: boolean;
-  onDragStart?: (event: DragEvent<HTMLDivElement>) => void;
+  onPointerDragStart?: (info: CardPointerDragInfo) => void;
+  onPointerDragMove?: (info: CardPointerDragInfo) => void;
+  onPointerDragEnd?: (info: CardPointerDragInfo) => void;
+  onPointerDragCancel?: () => void;
   onClick?: () => void;
   onLongPress?: () => void;
   onHover?: (card: Card | null) => void;
 }) {
   const { card, width = 80 } = props;
   const img = cardImage(card);
+  const rootRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<number | null>(null);
   const longPressFired = useRef(false);
+  const press = useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
+  const suppressNextClick = useRef(false);
 
   const clearLongPress = () => {
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
@@ -73,12 +91,23 @@ export function CardView(props: {
 
   useEffect(() => clearLongPress, []);
 
-  const activate = () => {
-    if (longPressFired.current) {
-      longPressFired.current = false;
-      return;
-    }
-    props.onClick?.();
+  const dragInfo = (event: ReactPointerEvent<HTMLDivElement>): CardPointerDragInfo => {
+    const el = rootRef.current ?? event.currentTarget;
+    return {
+      uid: props.uid,
+      card,
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect: el.getBoundingClientRect(),
+    };
+  };
+
+  const cancelPress = () => {
+    clearLongPress();
+    if (press.current?.dragging) props.onPointerDragCancel?.();
+    press.current = null;
+    longPressFired.current = false;
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -91,6 +120,9 @@ export function CardView(props: {
     "card",
     props.selected && "card-selected",
     props.dimmed && "card-dimmed",
+    props.selectable && "card-selectable",
+    props.candidate && "card-candidate",
+    props.candidateHovered && "card-candidate-hover",
     props.onClick && "card-clickable",
     props.draggable && "card-draggable",
     props.className,
@@ -98,27 +130,77 @@ export function CardView(props: {
 
   return (
     <div
+      ref={rootRef}
       className={classes}
       style={{ width }}
       data-card-uid={props.uid}
       role={props.onClick ? "button" : undefined}
       tabIndex={props.onClick ? 0 : undefined}
       aria-label={props.onClick ? displayName(card) : undefined}
-      draggable={props.draggable}
-      onDragStart={props.onDragStart}
-      onClick={activate}
-      onKeyDown={onKeyDown}
-      onPointerDown={() => {
-        if (!props.onLongPress) return;
-        longPressFired.current = false;
-        longPressTimer.current = window.setTimeout(() => {
-          longPressFired.current = true;
-          props.onLongPress?.();
-        }, 480);
+      draggable={false}
+      onClick={(event) => {
+        if (!suppressNextClick.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextClick.current = false;
       }}
-      onPointerUp={clearLongPress}
-      onPointerCancel={clearLongPress}
-      onPointerLeave={clearLongPress}
+      onKeyDown={onKeyDown}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        press.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, dragging: false };
+        longPressFired.current = false;
+        if (props.draggable || props.onLongPress) event.currentTarget.setPointerCapture(event.pointerId);
+        if (props.onLongPress) {
+          longPressTimer.current = window.setTimeout(() => {
+            longPressFired.current = true;
+            suppressNextClick.current = true;
+            props.onLongPress?.();
+          }, 480);
+        }
+      }}
+      onPointerMove={(event) => {
+        const current = press.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        if (longPressFired.current) return;
+        const dx = event.clientX - current.startX;
+        const dy = event.clientY - current.startY;
+        const moved = Math.hypot(dx, dy);
+        if (!current.dragging && moved > 8) {
+          clearLongPress();
+          if (props.draggable) {
+            current.dragging = true;
+            suppressNextClick.current = true;
+            props.onPointerDragStart?.(dragInfo(event));
+          }
+        }
+        if (current.dragging) {
+          event.preventDefault();
+          props.onPointerDragMove?.(dragInfo(event));
+        }
+      }}
+      onPointerUp={(event) => {
+        const current = press.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        clearLongPress();
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {
+          // Pointer capture may already be gone on some browser cancellation paths.
+        }
+        press.current = null;
+        if (current.dragging) {
+          event.preventDefault();
+          suppressNextClick.current = true;
+          props.onPointerDragEnd?.(dragInfo(event));
+          return;
+        }
+        if (longPressFired.current) {
+          longPressFired.current = false;
+          return;
+        }
+        props.onClick?.();
+      }}
+      onPointerCancel={cancelPress}
       onMouseEnter={() => props.onHover?.(card)}
       onMouseLeave={() => props.onHover?.(null)}
     >

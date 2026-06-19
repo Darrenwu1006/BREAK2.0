@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { Card } from "../data/types";
 import type { CourtArea } from "../engine/dsl";
 import { applyDecision, canChooseBlock, createGame, deployableUids, freeOptions } from "../engine/engine";
@@ -12,6 +12,8 @@ import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog,
 import type { CoachPanelState } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
+import { canUseInPlaceEffectSelection } from "./selection";
+import type { CardPointerDragInfo } from "./CardView";
 
 const HUMAN: PlayerId = 0;
 const AI: PlayerId = 1;
@@ -32,6 +34,7 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
 };
 
 type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
+type DragState = { uid: number; x: number; y: number; width: number; overArea: CourtArea | null; valid: boolean };
 
 function initialSpeed(): AiSpeed {
   const stored = localStorage.getItem("breaktcg-ai-speed");
@@ -71,6 +74,7 @@ export function Game(props: {
   const [scoreBanner, setScoreBanner] = useState<SplashBanner | null>(null);
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
+  const [dragging, setDragging] = useState<DragState | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
@@ -84,12 +88,12 @@ export function Game(props: {
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
   const deployable = isMyDecision && deployArea ? deployableUids(db, state, HUMAN, deployArea) : [];
   const free = isMyDecision && pd?.type === "free" ? freeOptions(db, state) : { skills: [], events: [] };
-  // effect-cards：候選若都在我方手牌 → 就地在手牌選取（不另開卡列）
+  // effect-cards：候選若都在可見的手牌/場上 → 就地選取（不另開卡列）
   const effectCards = pd && pd.type === "effect-cards" ? pd : null;
   const effectCandidates = effectCards?.candidates ?? [];
   const effectMax = effectCards?.max ?? 1;
-  const effectCardsInHand = isMyDecision && !!effectCards && effectCandidates.length > 0
-    && effectCandidates.every((uid) => state.players[HUMAN].hand.includes(uid));
+  const effectCardsInPlace = isMyDecision && !!effectCards
+    && canUseInPlaceEffectSelection(state, HUMAN, effectCandidates);
   const { motions, recentUids, settledUids } = useGameMotion({ state, db, deckMeta: props.deckMeta, disabled: speed === "instant" });
 
   const visibleInspection = hovered ?? inspected;
@@ -238,6 +242,7 @@ export function Game(props: {
         setMultiSel([]);
         setNameAsk(null);
         setActiveGutsKey(null);
+        setDragging(null);
         setMobilePanel(null);
         if (toolMode.type === "drop") setToolMode({ type: "detail" });
         return;
@@ -270,6 +275,39 @@ export function Game(props: {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  function toggleSelection(uid: number, max: number) {
+    setMultiSel((selected) => selected.includes(uid)
+      ? selected.filter((item) => item !== uid)
+      : selected.length < max ? [...selected, uid] : selected);
+  }
+
+  function dropAreaAt(clientX: number, clientY: number): CourtArea | null {
+    const el = document.elementFromPoint(clientX, clientY);
+    const area = el instanceof HTMLElement ? el.closest<HTMLElement>("[data-drop-area]")?.dataset.dropArea : undefined;
+    return area === "serve" || area === "block" || area === "receive" || area === "toss" || area === "attack" ? area : null;
+  }
+
+  function dragStateFrom(info: CardPointerDragInfo, uid: number): DragState {
+    const overArea = dropAreaAt(info.clientX, info.clientY);
+    const valid = !!overArea && overArea === deployArea && deployable.includes(uid);
+    return { uid, x: info.clientX, y: info.clientY, width: info.rect.width, overArea, valid };
+  }
+
+  function startHandDrag(uid: number, info: CardPointerDragInfo) {
+    if (!deployArea || !deployable.includes(uid)) return;
+    setDragging(dragStateFrom(info, uid));
+  }
+
+  function moveHandDrag(uid: number, info: CardPointerDragInfo) {
+    setDragging((current) => current?.uid === uid ? dragStateFrom(info, uid) : current);
+  }
+
+  function finishHandDrag(uid: number, info: CardPointerDragInfo) {
+    const next = dragStateFrom(info, uid);
+    setDragging(null);
+    if (next.valid && next.overArea) onDropCard(uid, next.overArea);
+  }
+
   function onHandClick(uid: number) {
     if (!isMyDecision || !pd) {
       inspectUid(uid);
@@ -281,16 +319,12 @@ export function Game(props: {
     }
     if (pd.type === "deploy-block") {
       if (!deployable.includes(uid)) return;
-      setMultiSel((selected) => selected.includes(uid)
-        ? selected.filter((item) => item !== uid)
-        : selected.length < 3 ? [...selected, uid] : selected);
+      toggleSelection(uid, 3);
       return;
     }
     if (pd.type === "effect-cards") {
-      if (!effectCardsInHand || !effectCandidates.includes(uid)) { inspectUid(uid); return; }
-      setMultiSel((selected) => selected.includes(uid)
-        ? selected.filter((item) => item !== uid)
-        : selected.length < effectMax ? [...selected, uid] : selected);
+      if (!effectCardsInPlace || !effectCandidates.includes(uid)) { inspectUid(uid); return; }
+      toggleSelection(uid, effectMax);
       return;
     }
     if (!deployArea || !deployable.includes(uid)) {
@@ -319,11 +353,6 @@ export function Game(props: {
   function onDropCard(uid: number, area: CourtArea) {
     if (area !== deployArea || !deployable.includes(uid)) return;
     onHandClick(uid);
-  }
-
-  function onDragStart(event: DragEvent<HTMLDivElement>, uid: number) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/card-uid", String(uid));
   }
 
   function bar(hint: string, buttons: React.ReactNode) {
@@ -384,8 +413,8 @@ export function Game(props: {
       case "effect-cards": {
         const min = pd.min ?? 0;
         const max = pd.max ?? 1;
-        if (effectCardsInHand) {
-          return bar(`${pd.prompt}：在手牌點選 ${min === max ? min : `${min}～${max}`} 張（已選 ${multiSel.length}）`, (
+        if (effectCardsInPlace) {
+          return bar(`${pd.prompt}：點選場上或手牌候選 ${min === max ? min : `${min}～${max}`} 張（已選 ${multiSel.length}）`, (
             <button data-primary="true" disabled={multiSel.length < min || multiSel.length > max} onClick={() => decide({ type: "effect-cards", uids: multiSel })}>確定</button>
           ));
         }
@@ -398,13 +427,11 @@ export function Game(props: {
                   key={uid}
                   card={cardOf(uid)}
                   uid={uid}
-                  width={52}
+                  width={64}
                   selected={multiSel.includes(uid)}
                   onHover={(card) => setHoverUid(card ? uid : null)}
                   onLongPress={() => inspectUid(uid)}
-                  onClick={() => setMultiSel((selected) => selected.includes(uid)
-                    ? selected.filter((item) => item !== uid)
-                    : selected.length < max ? [...selected, uid] : selected)}
+                  onClick={() => toggleSelection(uid, max)}
                 />
               ))}
             </div>
@@ -501,6 +528,11 @@ export function Game(props: {
           activeGutsKey={activeGutsKey}
           recentUids={recentUids}
           settledUids={settledUids}
+          candidateUids={isMyDecision && effectCardsInPlace ? effectCandidates : []}
+          selectableUids={isMyDecision && effectCardsInPlace ? effectCandidates : []}
+          selectedUids={effectCardsInPlace ? multiSel : []}
+          hoveredUid={hovered?.uid ?? null}
+          dragOverArea={dragging?.valid ? dragging.overArea : null}
           onPickSet={(index) => decide({ type: "pick-set-card", index })}
           onOpenDrop={(player) => {
             setToolMode({ type: "drop", player });
@@ -512,6 +544,7 @@ export function Game(props: {
           }}
           onToggleGuts={setActiveGutsKey}
           onDropCard={onDropCard}
+          onSelectUid={(uid) => toggleSelection(uid, effectMax)}
           onHover={setHoverUid}
           onInspect={inspectUid}
         />
@@ -533,11 +566,17 @@ export function Game(props: {
                   width={84}
                   className={[recentUids.has(uid) ? "card-entering" : "", settledUids.has(uid) ? "card-settle" : ""].filter(Boolean).join(" ") || undefined}
                   selected={selectedIndex >= 0}
-                  dimmed={(!!deployArea && !deployable.includes(uid)) || (effectCardsInHand && !effectCandidates.includes(uid))}
-                  badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : effectCardsInHand && selectedIndex === 0 ? "1" : undefined}
+                  selectable={effectCardsInPlace && effectCandidates.includes(uid)}
+                  candidate={effectCardsInPlace && effectCandidates.includes(uid)}
+                  candidateHovered={effectCardsInPlace && effectCandidates.includes(uid) && hovered?.uid === uid}
+                  dimmed={(!!deployArea && !deployable.includes(uid)) || (effectCardsInPlace && !effectCandidates.includes(uid))}
+                  badge={pd?.type === "deploy-block" && selectedIndex === 0 ? "中央" : selectedIndex > 0 ? String(selectedIndex + 1) : effectCardsInPlace && selectedIndex === 0 ? "1" : undefined}
                   secondaryBadge={cardOf(uid).effectStatus === "todo" ? "未實作" : undefined}
                   draggable={canDrag}
-                  onDragStart={canDrag ? (event) => onDragStart(event, uid) : undefined}
+                  onPointerDragStart={canDrag ? (info) => startHandDrag(uid, info) : undefined}
+                  onPointerDragMove={canDrag ? (info) => moveHandDrag(uid, info) : undefined}
+                  onPointerDragEnd={canDrag ? (info) => finishHandDrag(uid, info) : undefined}
+                  onPointerDragCancel={canDrag ? () => setDragging(null) : undefined}
                   onHover={(card) => setHoverUid(card ? uid : null)}
                   onLongPress={() => inspectUid(uid)}
                   onClick={() => onHandClick(uid)}
@@ -597,6 +636,15 @@ export function Game(props: {
     {scoreBanner && <div className="focus-lines" aria-hidden="true" />}
     {sfx && <div key={sfx.key} className="sfx-burst" aria-hidden="true">{sfx.text}</div>}
     {scoreBanner && <div className={`score-banner score-banner-${scoreBanner.kind}`} role="status">{scoreBanner.text}</div>}
+    {dragging && (
+      <div
+        className={`drag-ghost-wrap${dragging.valid ? " is-valid" : ""}`}
+        style={{ left: dragging.x, top: dragging.y, width: dragging.width } as CSSProperties}
+        aria-hidden="true"
+      >
+        <CardView card={cardOf(dragging.uid)} width={dragging.width} className="drag-ghost" />
+      </div>
+    )}
     <MotionLayer motions={motions} deckMeta={props.deckMeta} />
 
     <div className="rotate-overlay" role="alertdialog" aria-label="請將裝置轉為橫向">

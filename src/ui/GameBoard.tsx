@@ -42,11 +42,17 @@ interface GameBoardProps extends InspectHandlers {
   activeGutsKey: string | null;
   recentUids: Set<number>;
   settledUids: Set<number>;
+  candidateUids: number[];
+  selectableUids: number[];
+  selectedUids: number[];
+  hoveredUid: number | null;
+  dragOverArea: CourtArea | null;
   onPickSet: (index: number) => void;
   onOpenDrop: (player: PlayerId) => void;
   onOpenEvent: (player: PlayerId) => void;
   onToggleGuts: (key: string | null) => void;
   onDropCard: (uid: number, area: CourtArea) => void;
+  onSelectUid: (uid: number) => void;
 }
 
 function cardOf(db: CardDb, state: GameState, uid: number): Card {
@@ -66,8 +72,14 @@ function StackZone(props: {
   activeGutsKey: string | null;
   recentUids: Set<number>;
   settledUids: Set<number>;
+  candidateUids: number[];
+  selectableUids: number[];
+  selectedUids: number[];
+  hoveredUid: number | null;
+  dragOverArea: CourtArea | null;
   onToggleGuts: (key: string | null) => void;
   onDropCard: (uid: number, area: CourtArea) => void;
+  onSelectUid: (uid: number) => void;
 } & InspectHandlers) {
   const { db, state, player, area, stack } = props;
   const top = stack.length ? stack[stack.length - 1]! : null;
@@ -77,15 +89,26 @@ function StackZone(props: {
   const topName = top === null ? "空" : displayName(cardOf(db, state, top));
   const aria = `${owner}${AREA_LABEL[area]}區：${topName}${guts.length ? `，Guts ${guts.length}` : ""}`;
 
+  const isCandidate = (uid: number) => props.candidateUids.includes(uid);
+  const isSelectable = (uid: number) => props.selectableUids.includes(uid);
+  const selectionBadge = (uid: number, fallback?: string) => {
+    const index = props.selectedUids.indexOf(uid);
+    return index >= 0 ? String(index + 1) : fallback;
+  };
+
   const renderCard = (uid: number, badge?: string) => (
     <CardView
       key={uid}
       card={cardOf(db, state, uid)}
       uid={uid}
-      badge={badge}
+      badge={selectionBadge(uid, badge)}
+      selected={props.selectedUids.includes(uid)}
+      selectable={isSelectable(uid)}
+      candidate={isCandidate(uid) || isSelectable(uid)}
+      candidateHovered={(isCandidate(uid) || isSelectable(uid)) && props.hoveredUid === uid}
       className={[props.recentUids.has(uid) ? "card-entering" : "", props.settledUids.has(uid) ? "card-settle" : ""].filter(Boolean).join(" ") || undefined}
       onHover={(card) => props.onHover(card ? uid : null)}
-      onClick={() => props.onInspect(uid)}
+      onClick={() => isSelectable(uid) ? props.onSelectUid(uid) : props.onInspect(uid)}
       onLongPress={() => props.onInspect(uid)}
     />
   );
@@ -93,9 +116,10 @@ function StackZone(props: {
   const isBlock = area === "block";
   return (
     <section
-      className={`court-zone zone-${area} player-${player}${props.active ? " zone-active" : ""}${props.canDrop ? " zone-droppable" : ""}${props.activeGutsKey === key ? " zone-guts-open" : ""}`}
+      className={`court-zone zone-${area} player-${player}${props.active ? " zone-active" : ""}${props.canDrop ? " zone-droppable" : ""}${props.dragOverArea === area && props.canDrop ? " zone-drag-over" : ""}${props.activeGutsKey === key ? " zone-guts-open" : ""}`}
       aria-label={aria}
       data-zone-anchor={`p${player}-${area}`}
+      data-drop-area={props.canDrop ? area : undefined}
       onDragOver={(event) => {
         if (props.canDrop) event.preventDefault();
       }}
@@ -269,8 +293,14 @@ export function GameBoard(props: GameBoardProps) {
       activeGutsKey={props.activeGutsKey}
       recentUids={props.recentUids}
       settledUids={props.settledUids}
+      candidateUids={props.candidateUids}
+      selectableUids={props.selectableUids}
+      selectedUids={props.selectedUids}
+      hoveredUid={props.hoveredUid}
+      dragOverArea={props.dragOverArea}
       onToggleGuts={props.onToggleGuts}
       onDropCard={props.onDropCard}
+      onSelectUid={props.onSelectUid}
       onHover={props.onHover}
       onInspect={inspect}
     />
