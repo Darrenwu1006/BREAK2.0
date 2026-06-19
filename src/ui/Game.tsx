@@ -120,6 +120,173 @@ function critiqueToneForEntry(entry: ReplayEntry, result: ReplayCritiqueResult |
   return critiqueTone(delta, actual);
 }
 
+function statAverage(stats: ReplayAnalytics["op"][number]): string {
+  return stats.count === 0 ? "-" : stats.average.toFixed(1);
+}
+
+function winRateBand(rate: number): "low" | "mid" | "good" | "high" {
+  if (rate < 0.4) return "low";
+  if (rate < 0.55) return "mid";
+  if (rate < 0.7) return "good";
+  return "high";
+}
+
+function critiqueSummary(entries: ReplayEntry[], cache: ReplayCritiqueCache) {
+  const summary = {
+    totalPlayerSteps: entries.filter((entry) => entry.source === "player").length,
+    evaluated: 0,
+    mistakes: 0,
+    acceptable: 0,
+    brilliants: 0,
+    uncovered: 0,
+    errors: 0,
+    actualWinRateTotal: 0,
+    bestWinRateTotal: 0,
+    bands: { low: 0, mid: 0, good: 0, high: 0 },
+    largestSwing: null as null | { step: number; delta: number; label: string },
+  };
+  for (const entry of entries) {
+    if (entry.source !== "player") continue;
+    const step = entry.index + 1;
+    const result = cache[step];
+    if (!result) continue;
+    if (result.status === "error") {
+      summary.errors++;
+      continue;
+    }
+    summary.evaluated++;
+    const actual = findActualEstimate(result.report, entry.decision);
+    if (!actual) {
+      summary.uncovered++;
+      continue;
+    }
+    const delta = result.report.bestAction.winRate - actual.winRate;
+    summary.actualWinRateTotal += actual.winRate;
+    summary.bestWinRateTotal += result.report.bestAction.winRate;
+    summary.bands[winRateBand(actual.winRate)]++;
+    if (delta >= 0.15) summary.mistakes++;
+    else if (delta <= -0.03) summary.brilliants++;
+    else summary.acceptable++;
+    if (!summary.largestSwing || delta > summary.largestSwing.delta) {
+      summary.largestSwing = { step, delta, label: decisionLabel(entry.decision) };
+    }
+  }
+  return summary;
+}
+
+function PostMatchReport(props: {
+  analytics: ReplayAnalytics;
+  keyEntries: ReplayEntry[];
+  critiqueCache: ReplayCritiqueCache;
+  scan: ReplayScanState;
+  onScan: () => void;
+  onStopScan: () => void;
+  onReplay: () => void;
+}) {
+  const { analytics, keyEntries, critiqueCache, scan } = props;
+  const quality = critiqueSummary(keyEntries, critiqueCache);
+  const evaluatedWithWinRate = quality.mistakes + quality.acceptable + quality.brilliants;
+  const avgActual = evaluatedWithWinRate ? quality.actualWinRateTotal / evaluatedWithWinRate : 0;
+  const avgBest = evaluatedWithWinRate ? quality.bestWinRateTotal / evaluatedWithWinRate : 0;
+  const bandTotal = Math.max(1, evaluatedWithWinRate);
+  const humanOp = analytics.op[HUMAN];
+  const aiOp = analytics.op[AI];
+  const humanDp = analytics.dp[HUMAN];
+  const aiDp = analytics.dp[AI];
+  return (
+    <div className="postmatch-report">
+      <div className="panel-heading">
+        <div>
+          <b>賽後戰報</b>
+          <span>{analytics.matchWinner === HUMAN ? "你贏了這場比賽" : analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}</span>
+        </div>
+      </div>
+      <div className="postmatch-body">
+        <section className="report-hero">
+          <span className="replay-pill">Set {analytics.setWins[0]}:{analytics.setWins[1]}</span>
+          <b>{analytics.matchWinner === HUMAN ? "這場可以回看哪些選擇拉開勝負。" : "先看資源與決策分布，再回放關鍵步。"}</b>
+          <small>{analytics.totalDecisions} 個決策點・玩家 {analytics.playerDecisions}・AI {analytics.aiDecisions}</small>
+        </section>
+
+        <section className="report-section">
+          <div className="replay-overview-heading">
+            <b>勝率分布</b>
+            {scan.status === "running" ? (
+              <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
+            ) : (
+              <button className="btn-quiet" disabled={quality.totalPlayerSteps === 0} onClick={props.onScan}>掃描玩家決策</button>
+            )}
+          </div>
+          <div className="report-stat-grid">
+            <span><small>已評估</small><b>{quality.evaluated}/{quality.totalPlayerSteps}</b></span>
+            <span><small>失誤</small><b>{quality.mistakes}</b></span>
+            <span><small>可接受</small><b>{quality.acceptable}</b></span>
+            <span><small>妙手</small><b>{quality.brilliants}</b></span>
+          </div>
+          {scan.status === "running" && <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>}
+          {scan.status === "done" && <small className="summary-idle">玩家決策掃描完成。</small>}
+          {quality.evaluated > 0 ? (
+            <>
+              <div className="winrate-bars" aria-label="實際選擇勝率分布">
+                {([
+                  ["low", "<40%", quality.bands.low],
+                  ["mid", "40-55%", quality.bands.mid],
+                  ["good", "55-70%", quality.bands.good],
+                  ["high", "70%+", quality.bands.high],
+                ] as const).map(([key, label, count]) => (
+                  <div key={key} className={`winrate-bar is-${key}`}>
+                    <span style={{ width: `${Math.max(6, (count / bandTotal) * 100)}%` }} />
+                    <b>{label}</b>
+                    <small>{count}</small>
+                  </div>
+                ))}
+              </div>
+              <p className="report-note">
+                實際選擇平均勝率 {percent(avgActual)}，Coach 最佳候選平均 {percent(avgBest)}
+                {quality.largestSwing && quality.largestSwing.delta > 0
+                  ? `；最大可回看差距在 Step ${quality.largestSwing.step}（約 ${percent(quality.largestSwing.delta)}）。`
+                  : "。"}
+              </p>
+            </>
+          ) : (
+            <small className="summary-idle">尚未掃描玩家決策；掃描後這裡會出現勝率區間與失誤分布。</small>
+          )}
+          {quality.uncovered > 0 && <small className="summary-idle">有 {quality.uncovered} 步未被 Coach 候選列舉覆蓋，先不要把它當成錯誤。</small>}
+        </section>
+
+        <section className="report-section">
+          <b>攻防平均</b>
+          <div className="report-compare">
+            <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>最高 {humanOp.max || "-"}</em></span>
+            <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>最高 {aiOp.max || "-"}</em></span>
+            <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count} 次</em></span>
+            <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count} 次</em></span>
+          </div>
+        </section>
+
+        <section className="report-section">
+          <b>Guts 使用</b>
+          <div className="report-compare">
+            <span><small>你 總支付</small><b>{analytics.payGuts[HUMAN]}</b><em>每場</em></span>
+            <span><small>AI 總支付</small><b>{analytics.payGuts[AI]}</b><em>每場</em></span>
+          </div>
+          <div className="replay-source-row">
+            <span>你：發球 {analytics.payGutsBySource[HUMAN].serve}</span>
+            <span>接球 {analytics.payGutsBySource[HUMAN].receive}</span>
+            <span>托球 {analytics.payGutsBySource[HUMAN].toss}</span>
+            <span>攻擊 {analytics.payGutsBySource[HUMAN].attack}</span>
+            <span>攔網 {analytics.payGutsBySource[HUMAN].blockCenter}</span>
+          </div>
+        </section>
+
+        <div className="report-actions">
+          <button data-primary="true" disabled={analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReplayStepSummary(props: {
   state: GameState;
   entry: ReplayEntry | null;
@@ -483,7 +650,7 @@ export function Game(props: {
   }
 
   async function scanReplayDecisions() {
-    if (!replayMode) return;
+    if (!replayMode && state.phase !== "gameOver") return;
     const targets = replayKeyEntries
       .filter((entry) => entry.source === "player")
       .filter((entry) => replayCritiquesRef.current[entry.index + 1]?.status !== "ready");
@@ -1077,6 +1244,16 @@ export function Game(props: {
             <CoachPanel db={db} state={state} coach={coach} onApply={decide} />
           ) : toolMode.type === "counter" ? (
             <CardCounter db={db} state={state} />
+          ) : state.phase === "gameOver" && !visibleInspection ? (
+            <PostMatchReport
+              analytics={replayAnalytics}
+              keyEntries={replayKeyEntries}
+              critiqueCache={replayCritiques}
+              scan={replayScan}
+              onScan={scanReplayDecisions}
+              onStopScan={stopReplayScan}
+              onReplay={enterReplayMode}
+            />
           ) : visibleInspection ? (
             <CardDetails db={db} state={state} inspected={visibleInspection} />
           ) : (

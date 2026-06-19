@@ -31,12 +31,25 @@ export interface ReplaySession {
   entries: ReplayEntry[];
 }
 
+export type ReplayGutsSource = "serve" | "receive" | "toss" | "attack" | "blockCenter";
+
+export interface ReplayPointStats {
+  count: number;
+  total: number;
+  average: number;
+  max: number;
+  highCount: number;
+}
+
 export interface ReplayAnalytics {
   totalDecisions: number;
   playerDecisions: number;
   aiDecisions: number;
   setWins: [number, number];
   payGuts: [number, number];
+  payGutsBySource: [Record<ReplayGutsSource, number>, Record<ReplayGutsSource, number>];
+  op: [ReplayPointStats, ReplayPointStats];
+  dp: [ReplayPointStats, ReplayPointStats];
   opSources: Record<"serve" | "block" | "attack", number>;
   matchWinner: PlayerId | null;
 }
@@ -122,6 +135,27 @@ export function keyReplayEntries(session: ReplaySession): ReplayEntry[] {
   return session.entries.filter(isKeyReplayEntry);
 }
 
+function blankPointStats(): ReplayPointStats {
+  return { count: 0, total: 0, average: 0, max: 0, highCount: 0 };
+}
+
+function blankGutsSourceStats(): Record<ReplayGutsSource, number> {
+  return { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 };
+}
+
+function addPoint(stats: ReplayPointStats, value: number): void {
+  stats.count++;
+  stats.total += value;
+  stats.average = stats.total / stats.count;
+  stats.max = Math.max(stats.max, value);
+  if (value >= 6) stats.highCount++;
+}
+
+function pointValue(text: string, label: "OP" | "DP"): number | null {
+  const match = text.match(new RegExp(`${label} 算出\\s*[=＝]\\s*(-?\\d+)`));
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
 export function summarizeReplaySession(session: ReplaySession): ReplayAnalytics {
   const analytics: ReplayAnalytics = {
     totalDecisions: session.entries.length,
@@ -129,6 +163,9 @@ export function summarizeReplaySession(session: ReplaySession): ReplayAnalytics 
     aiDecisions: 0,
     setWins: [0, 0],
     payGuts: [0, 0],
+    payGutsBySource: [blankGutsSourceStats(), blankGutsSourceStats()],
+    op: [blankPointStats(), blankPointStats()],
+    dp: [blankPointStats(), blankPointStats()],
     opSources: { serve: 0, block: 0, attack: 0 },
     matchWinner: null,
   };
@@ -137,12 +174,24 @@ export function summarizeReplaySession(session: ReplaySession): ReplayAnalytics 
     else analytics.playerDecisions++;
     for (const log of replayEntryLogs(entry)) {
       const event = log.event;
-      if (!event) continue;
-      if (event.kind === "set-won") analytics.setWins[event.winner]++;
-      else if (event.kind === "match-won") analytics.matchWinner = event.winner;
-      else if (event.kind === "pay-guts") analytics.payGuts[event.player] += event.count;
-      else if (event.kind === "op-calc") analytics.opSources[event.source]++;
-      else if (event.kind === "attack-op") analytics.opSources.attack++;
+      if (event) {
+        if (event.kind === "set-won") analytics.setWins[event.winner]++;
+        else if (event.kind === "match-won") analytics.matchWinner = event.winner;
+        else if (event.kind === "pay-guts") {
+          analytics.payGuts[event.player] += event.count;
+          for (const [source, count] of Object.entries(event.sources) as [ReplayGutsSource, number][]) {
+            analytics.payGutsBySource[event.player][source] += count;
+          }
+        } else if (event.kind === "op-calc") {
+          analytics.opSources[event.source]++;
+          addPoint(analytics.op[event.player], event.value);
+        } else if (event.kind === "attack-op") {
+          analytics.opSources.attack++;
+          addPoint(analytics.op[event.player], event.value);
+        }
+      }
+      const dp = pointValue(log.text, "DP");
+      if (dp !== null && log.player !== null) addPoint(analytics.dp[log.player], dp);
     }
   }
   return analytics;

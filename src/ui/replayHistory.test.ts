@@ -118,6 +118,12 @@ describe("replay history helpers", () => {
       text: "支付 Guts",
       event: { kind: "pay-guts", player: 1, count: 2, sources: { receive: 2 } },
     });
+    const dpAfter = withLog(state("after-dp"), "DP 算出 = 5", {
+      player: 0,
+      setNo: 1,
+      turnNo: 1,
+      text: "DP 算出 = 5",
+    });
     const setAfter = withLog(state("after-set"), "宣告 Lost", {
       player: 0,
       setNo: 1,
@@ -128,15 +134,21 @@ describe("replay history helpers", () => {
 
     const one = appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, humanAfter, "player");
     const two = appendReplayEntry(one, state("ai-before", 1), pass, aiAfter, "ai");
-    const three = appendReplayEntry(two, state("set-before", 1), pass, setAfter, "ai");
-    const summary = summarizeReplaySession(three);
+    const three = appendReplayEntry(two, state("dp-before"), pass, dpAfter, "player");
+    const four = appendReplayEntry(three, state("set-before", 1), pass, setAfter, "ai");
+    const summary = summarizeReplaySession(four);
 
-    expect(summary.totalDecisions).toBe(3);
-    expect(summary.playerDecisions).toBe(1);
+    expect(summary.totalDecisions).toBe(4);
+    expect(summary.playerDecisions).toBe(2);
     expect(summary.aiDecisions).toBe(2);
     expect(summary.opSources.serve).toBe(1);
+    expect(summary.op[0].count).toBe(1);
+    expect(summary.op[0].average).toBe(3);
+    expect(summary.dp[0].count).toBe(1);
+    expect(summary.dp[0].average).toBe(5);
     expect(summary.payGuts[1]).toBe(2);
+    expect(summary.payGutsBySource[1].receive).toBe(2);
     expect(summary.setWins[1]).toBe(1);
-    expect(keyReplayEntries(three).map((entry) => entry.index)).toEqual([0, 2]);
+    expect(keyReplayEntries(four).map((entry) => entry.index)).toEqual([0, 2, 3]);
   });
 });
