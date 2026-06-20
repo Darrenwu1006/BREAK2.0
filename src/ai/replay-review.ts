@@ -64,6 +64,27 @@ export interface ReplayGameplanReview {
   checkpoints: ReplayGameplanCheckpoint[];
 }
 
+export type LostSetCause = "no-deploy" | "judge-fail" | "voluntary" | "unknown";
+
+/** 玩家失去一個 Set（含敗北）的歸因：哪一步、什麼原因、當下 OP/DP。 */
+export interface LostSetAttribution {
+  setNo: number;
+  entryIndex: number;
+  turnNo: number;
+  phase: ReplayEntry["phase"];
+  matchPoint: boolean;
+  cause: LostSetCause;
+  detail: string;
+  opAtLoss?: number;
+  dpAtLoss?: number;
+}
+
+export interface LostSetSummary {
+  total: number;
+  byCause: Record<LostSetCause, number>;
+  attributions: LostSetAttribution[];
+}
+
 export interface ReplayReviewReport {
   startedAt: string;
   seed: number;
@@ -71,7 +92,62 @@ export interface ReplayReviewReport {
   player: PlayerId;
   analytics: ReplayAnalytics;
   setReviews: ReplaySetReview[];
+  lostSets: LostSetSummary;
   gameplan?: ReplayGameplanReview;
+}
+
+const LOST_SET_CAUSE_LABEL: Record<LostSetCause, string> = {
+  "no-deploy": "未能登場",
+  "judge-fail": "判定失敗",
+  voluntary: "主動放棄",
+  unknown: "原因不明",
+};
+
+export function lostSetCauseLabel(cause: LostSetCause): string {
+  return LOST_SET_CAUSE_LABEL[cause];
+}
+
+/** 從失球該 entry 的 log 文字判讀失 Set 原因；judge 行可解析出 OP/DP。 */
+function classifyLostSet(logTexts: readonly string[]): { cause: LostSetCause; detail: string; opAtLoss?: number; dpAtLoss?: number } {
+  let judge: { op: number; dp: number } | undefined;
+  let hasNoDeploy = false;
+  let hasVoluntary = false;
+  for (const text of logTexts) {
+    if (text.includes("未登場角色")) hasNoDeploy = true;
+    if (text.includes("主動宣告 Lost")) hasVoluntary = true;
+    const m = /判定：DP\s*(\d+)\s*vs\s*OP\s*(\d+)\s*→\s*失敗/.exec(text);
+    if (m) judge = { dp: Number(m[1]), op: Number(m[2]) }; // 取最後一次失敗判定
+  }
+  if (hasNoDeploy) return { cause: "no-deploy", detail: "未能登場角色，被迫宣告 Lost（該區無法防守）" };
+  if (judge) return { cause: "judge-fail", detail: `判定失敗：DP ${judge.dp} 擋不住 OP ${judge.op}`, opAtLoss: judge.op, dpAtLoss: judge.dp };
+  if (hasVoluntary) return { cause: "voluntary", detail: "主動宣告 Lost（放棄此球）" };
+  return { cause: "unknown", detail: "失球原因無法從紀錄判讀" };
+}
+
+function buildLostSetSummary(session: ReplaySession, player: PlayerId): LostSetSummary {
+  const byCause: Record<LostSetCause, number> = { "no-deploy": 0, "judge-fail": 0, voluntary: 0, unknown: 0 };
+  const attributions: LostSetAttribution[] = [];
+  for (const entry of session.entries) {
+    const logs = replayEntryLogs(entry);
+    const lossEvent = logs.find(
+      (log) => (log.event?.kind === "set-won" || log.event?.kind === "match-won") && log.event.loser === player,
+    )?.event;
+    if (!lossEvent || (lossEvent.kind !== "set-won" && lossEvent.kind !== "match-won")) continue;
+    const classification = classifyLostSet(logs.map((log) => log.text));
+    byCause[classification.cause]++;
+    attributions.push({
+      setNo: lossEvent.setNo,
+      entryIndex: entry.index,
+      turnNo: entry.turnNo,
+      phase: entry.phase,
+      matchPoint: lossEvent.kind === "match-won",
+      cause: classification.cause,
+      detail: classification.detail,
+      opAtLoss: classification.opAtLoss,
+      dpAtLoss: classification.dpAtLoss,
+    });
+  }
+  return { total: attributions.length, byCause, attributions };
 }
 
 export interface ReplayReviewOptions {
@@ -201,6 +277,7 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     player,
     analytics,
     setReviews,
+    lostSets: buildLostSetSummary(session, player),
     gameplan:
       profile && finalGameplan
         ? {

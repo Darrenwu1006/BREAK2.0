@@ -4,7 +4,7 @@ import cardsJson from "../data/cards.json";
 import type { Card } from "../src/data/types";
 import type { CardDb, Decision, PlayerId } from "../src/engine/types";
 import { createPimcCoachReport } from "../src/ai/coach";
-import { createReplayReviewReport, type ReplayGameplanCheckpoint } from "../src/ai/replay-review";
+import { createReplayReviewReport, lostSetCauseLabel, type LostSetCause, type ReplayGameplanCheckpoint } from "../src/ai/replay-review";
 import type { ReplaySession } from "../src/ui/replayHistory";
 
 interface CliOptions {
@@ -175,6 +175,22 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
   console.log(`  ${playerName(0)} OP 平均 ${fixed(analytics.op[0].average)} / 最高 ${analytics.op[0].max}；DP 平均 ${fixed(analytics.dp[0].average)} / 最高 ${analytics.dp[0].max}`);
   console.log(`  ${playerName(1)} OP 平均 ${fixed(analytics.op[1].average)} / 最高 ${analytics.op[1].max}；DP 平均 ${fixed(analytics.dp[1].average)} / 最高 ${analytics.dp[1].max}`);
   console.log(`  Guts 支付: ${playerName(0)} ${analytics.payGuts[0]} / ${playerName(1)} ${analytics.payGuts[1]}`);
+
+  console.log("");
+  console.log(`失 Set 歸因（${playerName(report.player)}）`);
+  if (report.lostSets.total === 0) {
+    console.log("  本場沒有失 Set 紀錄。");
+  } else {
+    const byCause = Object.entries(report.lostSets.byCause)
+      .filter(([, count]) => count > 0)
+      .map(([cause, count]) => `${lostSetCauseLabel(cause as LostSetCause)} ${count}`)
+      .join("、");
+    console.log(`  共失 ${report.lostSets.total} Set：${byCause}`);
+    for (const attribution of report.lostSets.attributions) {
+      const mark = attribution.matchPoint ? "（敗北）" : "";
+      console.log(`  - Set ${attribution.setNo}${mark}｜Step ${attribution.entryIndex + 1}｜${attribution.detail}`);
+    }
+  }
 
   if (report.gameplan) {
     console.log("");

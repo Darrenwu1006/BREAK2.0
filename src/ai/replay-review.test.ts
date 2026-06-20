@@ -115,5 +115,68 @@ describe("replay review", () => {
     expect(report.gameplan?.final.progressScore).toBeGreaterThan(0);
     expect(report.gameplan?.checkpoints).toHaveLength(1);
     expect(report.gameplan?.checkpoints[0]?.badges.join(" ")).toContain("棄牌區 6 種稻荷崎角色達成");
+    expect(report.lostSets.total).toBe(0); // player 0 贏，沒有失 Set
+  });
+
+  it("[失 Set 歸因] 依 log 判讀無登場 / 判定失敗 / 主動放棄三種失 Set 原因", () => {
+    const cardIds = ["HV-P02-022", "HV-P02-024"];
+    const base = state(cardIds, [{}, {}]);
+    const lossEntry = (
+      index: number,
+      setNo: number,
+      logs: GameState["log"],
+      matchPoint: boolean,
+    ) => ({
+      index,
+      player: 0 as const,
+      source: "player" as const,
+      phase: "receive" as const,
+      setNo,
+      turnNo: setNo,
+      pendingType: "free" as const,
+      decision: { type: "free", action: "lost" } as never,
+      before: base,
+      after: state(cardIds, [{}, {}], { log: logs }),
+      logStart: 0,
+      logEnd: logs.length,
+    });
+
+    const session: ReplaySession = {
+      startedAt: "2026-06-20T00:00:00.000Z",
+      seed: 7,
+      decks: [
+        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "音駒-音駒-二口干擾", cardIds: [] },
+      ],
+      initialState: base,
+      entries: [
+        lossEntry(0, 1, [
+          { setNo: 1, turnNo: 1, player: 1, text: "未登場角色（attack）" },
+          { setNo: 1, turnNo: 1, player: 1, text: "宣告 Lost（Set 1）", event: { kind: "set-won", winner: 0, loser: 1, setNo: 1, loserSetRemaining: 2 } },
+        ], false),
+        lossEntry(1, 2, [
+          { setNo: 2, turnNo: 2, player: 0, text: "判定：DP 5 vs OP 7 → 失敗" },
+          { setNo: 2, turnNo: 2, player: 1, text: "宣告 Lost（Set 2）", event: { kind: "set-won", winner: 0, loser: 1, setNo: 2, loserSetRemaining: 1 } },
+        ], false),
+        lossEntry(2, 3, [
+          { setNo: 3, turnNo: 3, player: 1, text: "主動宣告 Lost" },
+          { setNo: 3, turnNo: 3, player: 0, text: "獲勝！", event: { kind: "match-won", winner: 0, loser: 1, setNo: 3 } },
+        ], true),
+      ],
+    };
+
+    const report = createReplayReviewReport(db, session, { player: 1 });
+    expect(report.lostSets.total).toBe(3);
+    expect(report.lostSets.byCause["no-deploy"]).toBe(1);
+    expect(report.lostSets.byCause["judge-fail"]).toBe(1);
+    expect(report.lostSets.byCause.voluntary).toBe(1);
+
+    const judge = report.lostSets.attributions.find((item) => item.cause === "judge-fail");
+    expect(judge?.opAtLoss).toBe(7);
+    expect(judge?.dpAtLoss).toBe(5);
+
+    const matchLoss = report.lostSets.attributions.find((item) => item.matchPoint);
+    expect(matchLoss?.cause).toBe("voluntary");
+    expect(matchLoss?.setNo).toBe(3);
   });
 });

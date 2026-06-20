@@ -7,6 +7,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
+import { createReplayReviewReport, lostSetCauseLabel, type LostSetSummary } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
@@ -181,15 +182,50 @@ function critiqueSummary(entries: ReplayEntry[], cache: ReplayCritiqueCache) {
   return summary;
 }
 
+function LostSetSection(props: { lostSets: LostSetSummary }) {
+  const { lostSets } = props;
+  if (lostSets.total === 0) {
+    return (
+      <section className="report-section">
+        <b>失 Set 歸因</b>
+        <small className="summary-idle">本場沒有失 Set。</small>
+      </section>
+    );
+  }
+  const causes = (Object.entries(lostSets.byCause) as [keyof LostSetSummary["byCause"], number][])
+    .filter(([, count]) => count > 0);
+  return (
+    <section className="report-section">
+      <b>失 Set 歸因</b>
+      <div className="report-stat-grid">
+        <span><small>失 Set</small><b>{lostSets.total}</b></span>
+        {causes.map(([cause, count]) => (
+          <span key={cause}><small>{lostSetCauseLabel(cause)}</small><b>{count}</b></span>
+        ))}
+      </div>
+      <ul className="lostset-list">
+        {lostSets.attributions.map((item) => (
+          <li key={item.entryIndex}>
+            <b>Set {item.setNo}{item.matchPoint ? "（敗北）" : ""}</b>
+            <span>{item.detail}</span>
+            <small>Step {item.entryIndex + 1}・Turn {item.turnNo}</small>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
+  lostSets: LostSetSummary;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
   onScan: () => void;
   onStopScan: () => void;
 }) {
-  const { analytics, keyEntries, critiqueCache, scan } = props;
+  const { analytics, lostSets, keyEntries, critiqueCache, scan } = props;
   const quality = critiqueSummary(keyEntries, critiqueCache);
   const evaluatedWithWinRate = quality.mistakes + quality.acceptable + quality.brilliants;
   const avgActual = evaluatedWithWinRate ? quality.actualWinRateTotal / evaluatedWithWinRate : 0;
@@ -277,12 +313,15 @@ function PostMatchReportBody(props: {
           <span>攔網 {analytics.payGutsBySource[HUMAN].blockCenter}</span>
         </div>
       </section>
+
+      <LostSetSection lostSets={lostSets} />
     </div>
   );
 }
 
 function PostMatchReport(props: {
   analytics: ReplayAnalytics;
+  lostSets: LostSetSummary;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -300,6 +339,7 @@ function PostMatchReport(props: {
       </div>
       <PostMatchReportBody
         analytics={props.analytics}
+        lostSets={props.lostSets}
         keyEntries={props.keyEntries}
         critiqueCache={props.critiqueCache}
         scan={props.scan}
@@ -315,6 +355,7 @@ function PostMatchReport(props: {
 
 function PostMatchModal(props: {
   analytics: ReplayAnalytics;
+  lostSets: LostSetSummary;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -343,6 +384,7 @@ function PostMatchModal(props: {
         <div className="postmatch-modal-body">
           <PostMatchReportBody
             analytics={props.analytics}
+            lostSets={props.lostSets}
             keyEntries={props.keyEntries}
             critiqueCache={props.critiqueCache}
             scan={props.scan}
@@ -588,6 +630,7 @@ export function Game(props: {
   const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
   const replayEntry = replayStep > 0 ? replay.entries[replayStep - 1] ?? null : null;
   const replayAnalytics = useMemo(() => summarizeReplaySession(replay), [replay]);
+  const replayReview = useMemo(() => createReplayReviewReport(db, replay, { player: HUMAN }), [db, replay]);
   const replayKeyEntries = useMemo(() => keyReplayEntries(replay), [replay]);
   const isMyDecision = pd?.player === HUMAN && state.phase !== "gameOver";
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
@@ -1382,6 +1425,7 @@ export function Game(props: {
           ) : state.phase === "gameOver" && !visibleInspection ? (
             <PostMatchReport
               analytics={replayAnalytics}
+              lostSets={replayReview.lostSets}
               keyEntries={replayKeyEntries}
               critiqueCache={replayCritiques}
               scan={replayScan}
@@ -1412,6 +1456,7 @@ export function Game(props: {
     {showPostMatchModal && (
       <PostMatchModal
         analytics={replayAnalytics}
+        lostSets={replayReview.lostSets}
         keyEntries={replayKeyEntries}
         critiqueCache={replayCritiques}
         scan={replayScan}

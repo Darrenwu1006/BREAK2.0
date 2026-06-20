@@ -1169,6 +1169,25 @@ input {
 .report-actions { display: flex; gap: var(--sp-2); }
 .report-actions button { flex: 1; min-height: 34px; }
 
+.lostset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+.lostset-list li {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-2);
+  border: 1.5px solid var(--line-dim);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--cream) 4%, var(--bg-panel));
+}
+.lostset-list li b { font-size: 13px; }
+.lostset-list li span { font-size: 13px; color: var(--text); }
+.lostset-list li small { color: var(--text-dim); }
+
 /* Post-match Modal Overlay */
 .postmatch-modal-overlay {
   position: fixed;
