@@ -226,5 +226,62 @@ describe("replay review", () => {
     expect(report.actionEffectiveness.skill.uses).toBe(1);
     expect(report.actionEffectiveness.skill.effectiveUses).toBe(0);
     expect(report.actionEffectiveness.skill.rate).toBe(0);
+
+    // 逐張命中：與 aggregate 一致（交叉驗證，避免 benchmark 規則改動造成漂移）
+    const eventCards = report.actionCardDetails.filter((d) => d.kind === "event");
+    const skillCards = report.actionCardDetails.filter((d) => d.kind === "skill");
+    const sum = (list: typeof report.actionCardDetails, key: "uses" | "effectiveUses") => list.reduce((s, d) => s + d[key], 0);
+    expect(sum(eventCards, "uses")).toBe(report.actionEffectiveness.event.uses);
+    expect(sum(eventCards, "effectiveUses")).toBe(report.actionEffectiveness.event.effectiveUses);
+    expect(sum(skillCards, "uses")).toBe(report.actionEffectiveness.skill.uses);
+    expect(sum(skillCards, "effectiveUses")).toBe(report.actionEffectiveness.skill.effectiveUses);
+    expect(report.actionCardDetails.find((d) => d.cardName === "テスト事件")?.effectiveUses).toBe(1);
+    expect(report.actionCardDetails.find((d) => d.cardName === "テスト")?.effectiveUses).toBe(0);
+  });
+
+  it("[檢討文案] 失球根因歸到資源 / 構築層，並綜合結果與效率", () => {
+    const cardIds = ["HV-P02-022", "HV-P02-024"];
+    const before = state(cardIds, [{}, {}]);
+    const after = state(cardIds, [{}, {}], {
+      log: [
+        { setNo: 1, turnNo: 1, player: 0, text: "判定：DP 4 vs OP 8 → 失敗" },
+        { setNo: 1, turnNo: 1, player: 0, text: "宣告 Lost（Set 1）", event: { kind: "set-won", winner: 1, loser: 0, setNo: 1, loserSetRemaining: 2 } },
+      ],
+    });
+    const session: ReplaySession = {
+      startedAt: "2026-06-20T00:00:00.000Z",
+      seed: 1,
+      decks: [
+        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "音駒-音駒-二口干擾", cardIds: [] },
+      ],
+      initialState: before,
+      entries: [
+        {
+          index: 0,
+          player: 0,
+          source: "player",
+          phase: "receive",
+          setNo: 1,
+          turnNo: 1,
+          pendingType: "free" as const,
+          decision: { type: "free", action: "pass" } as never,
+          before,
+          after,
+          logStart: 0,
+          logEnd: 2,
+        },
+      ],
+    };
+
+    const report = createReplayReviewReport(db, session, { player: 0 });
+    expect(report.narrative.length).toBeGreaterThan(0);
+    // 第一條為結果摘要
+    expect(report.narrative[0]).toContain("Set");
+    // 失球根因應指向防守點數 / RCV / Guts（構築與資源層），且帶平均 OP/DP
+    const rootCause = report.narrative.find((line) => line.includes("判定失敗"));
+    expect(rootCause).toBeTruthy();
+    expect(rootCause).toMatch(/RCV|DP|Guts/);
+    expect(rootCause).toContain("OP 8.0");
   });
 });

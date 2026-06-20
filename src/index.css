@@ -1188,6 +1188,52 @@ input {
 .lostset-list li span { font-size: 13px; color: var(--text); }
 .lostset-list li small { color: var(--text-dim); }
 
+.action-card-list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.action-card-list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--cream) 3%, var(--bg-panel));
+}
+.action-card-list li.is-partial { background: color-mix(in srgb, var(--danger, #c0392b) 8%, var(--bg-panel)); }
+.action-card-list .action-card-kind {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.action-card-list li b { font-size: 13px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.action-card-list li small { color: var(--text-dim); flex: 0 0 auto; }
+
+.report-narrative .narrative-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+.report-narrative .narrative-list li {
+  position: relative;
+  padding-left: var(--sp-3);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.report-narrative .narrative-list li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--text-dim);
+}
+
 /* Post-match Modal Overlay */
 .postmatch-modal-overlay {
   position: fixed;

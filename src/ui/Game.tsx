@@ -7,7 +7,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
-import { createReplayReviewReport, lostSetCauseLabel, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
+import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
@@ -216,7 +216,7 @@ function LostSetSection(props: { lostSets: LostSetSummary }) {
   );
 }
 
-function ActionEffectivenessSection(props: { effectiveness: ReplayActionEffectiveness }) {
+function ActionEffectivenessSection(props: { effectiveness: ReplayActionEffectiveness; cardDetails: ActionCardDetail[] }) {
   const lines = [props.effectiveness.event, props.effectiveness.skill];
   if (lines.every((line) => line.uses === 0)) {
     return (
@@ -239,6 +239,29 @@ function ActionEffectivenessSection(props: { effectiveness: ReplayActionEffectiv
           </span>
         ))}
       </div>
+      {props.cardDetails.length > 0 && (
+        <ul className="action-card-list">
+          {props.cardDetails.map((detail) => (
+            <li key={`${detail.kind}:${detail.cardName}`} className={detail.effectiveUses < detail.uses ? "is-partial" : ""}>
+              <span className="action-card-kind">{detail.kind === "event" ? "事件" : "技能"}</span>
+              <b>{detail.cardName}</b>
+              <small>{detail.effectiveUses}/{detail.uses} 有效</small>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function NarrativeSection(props: { narrative: string[] }) {
+  if (props.narrative.length === 0) return null;
+  return (
+    <section className="report-section report-narrative">
+      <b>檢討重點</b>
+      <ul className="narrative-list">
+        {props.narrative.map((line, index) => <li key={index}>{line}</li>)}
+      </ul>
     </section>
   );
 }
@@ -247,6 +270,8 @@ function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
+  cardDetails: ActionCardDetail[];
+  narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -270,6 +295,8 @@ function PostMatchReportBody(props: {
         <b>{analytics.matchWinner === HUMAN ? "這場可以回看哪些選擇拉開勝負。" : "先看資源與決策分布，再回放關鍵步。"}</b>
         <small>{analytics.totalDecisions} 個決策點・玩家 {analytics.playerDecisions}・AI {analytics.aiDecisions}</small>
       </section>
+
+      <NarrativeSection narrative={props.narrative} />
 
       <section className="report-section">
         <div className="replay-overview-heading">
@@ -344,7 +371,7 @@ function PostMatchReportBody(props: {
 
       <LostSetSection lostSets={lostSets} />
 
-      <ActionEffectivenessSection effectiveness={effectiveness} />
+      <ActionEffectivenessSection effectiveness={effectiveness} cardDetails={props.cardDetails} />
     </div>
   );
 }
@@ -353,6 +380,8 @@ function PostMatchReport(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
+  cardDetails: ActionCardDetail[];
+  narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -372,6 +401,8 @@ function PostMatchReport(props: {
         analytics={props.analytics}
         lostSets={props.lostSets}
         effectiveness={props.effectiveness}
+        cardDetails={props.cardDetails}
+        narrative={props.narrative}
         keyEntries={props.keyEntries}
         critiqueCache={props.critiqueCache}
         scan={props.scan}
@@ -389,6 +420,8 @@ function PostMatchModal(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
+  cardDetails: ActionCardDetail[];
+  narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -419,6 +452,8 @@ function PostMatchModal(props: {
             analytics={props.analytics}
             lostSets={props.lostSets}
             effectiveness={props.effectiveness}
+            cardDetails={props.cardDetails}
+            narrative={props.narrative}
             keyEntries={props.keyEntries}
             critiqueCache={props.critiqueCache}
             scan={props.scan}
@@ -1461,6 +1496,8 @@ export function Game(props: {
               analytics={replayAnalytics}
               lostSets={replayReview.lostSets}
               effectiveness={replayReview.actionEffectiveness}
+              cardDetails={replayReview.actionCardDetails}
+              narrative={replayReview.narrative}
               keyEntries={replayKeyEntries}
               critiqueCache={replayCritiques}
               scan={replayScan}
@@ -1493,6 +1530,8 @@ export function Game(props: {
         analytics={replayAnalytics}
         lostSets={replayReview.lostSets}
         effectiveness={replayReview.actionEffectiveness}
+        cardDetails={replayReview.actionCardDetails}
+        narrative={replayReview.narrative}
         keyEntries={replayKeyEntries}
         critiqueCache={replayCritiques}
         scan={replayScan}

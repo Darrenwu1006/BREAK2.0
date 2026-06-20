@@ -113,6 +113,8 @@ export interface ReplayReviewReport {
   setReviews: ReplaySetReview[];
   lostSets: LostSetSummary;
   actionEffectiveness: ReplayActionEffectiveness;
+  actionCardDetails: ActionCardDetail[];
+  narrative: string[];
   gameplan?: ReplayGameplanReview;
 }
 
@@ -136,6 +138,152 @@ function buildActionEffectiveness(finalState: GameState, player: PlayerId): Repl
     event: effectivenessLine("event", impact.event),
     skill: effectivenessLine("skill", impact.skill),
   };
+}
+
+/** 逐張事件 / 技能命中明細：哪張卡打了幾次、其中幾次有效。 */
+export interface ActionCardDetail {
+  kind: "event" | "skill";
+  cardName: string;
+  uses: number;
+  effectiveUses: number;
+}
+
+function firstNumber(text: string): number {
+  const m = /-?\d+/.exec(text);
+  return m ? Number(m[0]) : 0;
+}
+
+/**
+ * 逐張統計事件 / 技能命中。這裡刻意鏡像 benchmark `collectMatchStats` 的「有效使用」判讀規則
+ * （打出後窗口內出現抽牌 / 入手 / 登場 / 點數修正即視為 effective），但 keyed by 卡名。
+ * `buildActionCardDetails` 的彙總必須等於 `buildActionEffectiveness`（aggregate）——由測試交叉驗證，
+ * 一旦 benchmark 規則改動造成漂移，consistency test 會失敗。
+ */
+function buildActionCardDetails(finalState: GameState, player: PlayerId): ActionCardDetail[] {
+  type Active = { kind: "event" | "skill"; name: string; impacted: boolean } | null;
+  const active: [Active, Active] = [null, null];
+  const order: string[] = [];
+  const map = new Map<string, ActionCardDetail>();
+
+  const ensure = (kind: "event" | "skill", name: string): ActionCardDetail => {
+    const key = `${kind}:${name}`;
+    let detail = map.get(key);
+    if (!detail) {
+      detail = { kind, cardName: name, uses: 0, effectiveUses: 0 };
+      map.set(key, detail);
+      order.push(key);
+    }
+    return detail;
+  };
+
+  const markImpact = (p: PlayerId) => {
+    const a = active[p];
+    if (!a || a.impacted) return;
+    a.impacted = true;
+    if (p === player) ensure(a.kind, a.name).effectiveUses++;
+  };
+
+  for (const entry of finalState.log) {
+    if (entry.player === null) continue;
+    const p = entry.player;
+    const text = entry.text;
+
+    if (text.startsWith("── ")) active[p] = null;
+    if (text.startsWith("打出事件卡 ")) {
+      const name = text.slice("打出事件卡 ".length).trim();
+      active[p] = { kind: "event", name, impacted: false };
+      if (p === player) ensure("event", name).uses++;
+    }
+    if (text.startsWith("使用 ") && text.includes(" 的技能")) {
+      const name = text.slice("使用 ".length, text.indexOf(" 的技能")).trim();
+      active[p] = { kind: "skill", name, impacted: false };
+      if (p === player) ensure("skill", name).uses++;
+    }
+    if (text.includes("牌組已空，無法抽牌")) {
+      // 無效抽牌，不算命中
+    } else if (text.includes("抽") && !text.startsWith("接球抽牌")) {
+      markImpact(p);
+    }
+    if (text.includes("加入手牌") || text.includes("回到手牌") || text.includes("回收")) markImpact(p);
+    const deployMatch = text.match(/→ (serve|receive|toss|attack)$/);
+    if (deployMatch) {
+      if (text.includes("從") || text.includes("移動") || text.includes("登場 →")) markImpact(p);
+      else active[p] = null;
+    }
+    if (text.match(/^攔網登場 (.+)（中央=/)) active[p] = null;
+    if (text.includes(" 的") && (text.includes("+") || text.includes("變為"))) markImpact(p);
+  }
+
+  return order.map((key) => map.get(key)!);
+}
+
+const OTHER: Record<PlayerId, PlayerId> = { 0: 1, 1: 0 };
+
+/**
+ * 中文檢討文案：把結果、失 Set 根因（資源 / 構築層解讀）、事件/技能效率、主軸推進綜合成幾條重點。
+ * 失 Set 不只報直接原因（未登場 / 判定失敗 / 主動），而是往上歸因到「為何資源不足以登場或判定」。
+ */
+function buildReplayNarrative(input: {
+  player: PlayerId;
+  analytics: ReplayAnalytics;
+  lostSets: LostSetSummary;
+  effectiveness: ReplayActionEffectiveness;
+  gameplan?: ReplayGameplanReview;
+}): string[] {
+  const { player, analytics, lostSets, effectiveness, gameplan } = input;
+  const opp = OTHER[player];
+  const lines: string[] = [];
+
+  if (analytics.matchWinner === null) {
+    lines.push(`本場未分勝負，Set ${analytics.setWins[player]}:${analytics.setWins[opp]}。`);
+  } else {
+    const won = analytics.matchWinner === player;
+    lines.push(`本場${won ? "獲勝" : "落敗"}，Set ${analytics.setWins[player]}:${analytics.setWins[opp]}。`);
+  }
+
+  if (lostSets.total > 0) {
+    const byCause = lostSets.byCause;
+    const dominant = (Object.entries(byCause) as [LostSetCause, number][])
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1])[0];
+    if (dominant) {
+      const [cause, count] = dominant;
+      if (cause === "no-deploy") {
+        lines.push(`失 ${lostSets.total} Set 主要因「未能登場」（${count} 次）——關鍵時刻該區沒有可登場角色，屬登場資源不足。檢查手牌續航與低成本登場角色比例，或防守區的角色厚度。`);
+      } else if (cause === "judge-fail") {
+        const judges = lostSets.attributions.filter((a) => a.cause === "judge-fail" && a.opAtLoss !== undefined);
+        const avgOp = judges.length ? judges.reduce((s, a) => s + (a.opAtLoss ?? 0), 0) / judges.length : 0;
+        const avgDp = judges.length ? judges.reduce((s, a) => s + (a.dpAtLoss ?? 0), 0) / judges.length : 0;
+        lines.push(`失 ${lostSets.total} Set 主要因「判定失敗」（${count} 次，平均被 OP ${avgOp.toFixed(1)} 壓過 DP ${avgDp.toFixed(1)}）——防守點數線偏低，考慮提高 RCV/DP 構築、保留 Guts 應對高 OP，或調整接球 / 攔網選擇。`);
+      } else if (cause === "voluntary") {
+        lines.push(`失 ${lostSets.total} Set 含 ${count} 次「主動放棄」——通常是保資源的取捨，回看是否棄得太早、有沒有更值得守的球。`);
+      } else {
+        lines.push(`失 ${lostSets.total} Set，部分原因無法從紀錄判讀。`);
+      }
+    }
+  } else if (analytics.matchWinner === player) {
+    lines.push("本場沒有失 Set，防守線穩定。");
+  }
+
+  const event = effectiveness.event;
+  if (event.uses > 0) {
+    if (event.rate < 0.5) lines.push(`事件打出 ${event.uses} 次但只有 ${Math.round(event.rate * 100)}% 轉成實質效果，檢查打出時機與成本是否划算。`);
+    else lines.push(`事件 ${event.uses} 次中 ${event.effectiveUses} 次打出效果（抽 ${event.draws}、入手 ${event.handAdds}、登場 ${event.deploys}、點數 ${event.pointMods}），運用順暢。`);
+  }
+  const skill = effectiveness.skill;
+  if (skill.uses > 0 && skill.rate < 0.5) {
+    lines.push(`技能宣告 ${skill.uses} 次但有效率僅 ${Math.round(skill.rate * 100)}%，部分技能可能在沒收益的時機發動。`);
+  }
+
+  if (gameplan) {
+    const score = gameplan.final.progressScore;
+    if (score >= 70) lines.push(`牌組主軸推進到「${gameplan.final.stage}」（${score}/100），引擎有跑起來。`);
+    else if (score < 40) lines.push(`牌組主軸只推進到 ${score}/100（${gameplan.final.stage}），核心引擎沒運轉起來，回看是哪一步斷了節奏。`);
+    else lines.push(`牌組主軸推進到 ${score}/100（${gameplan.final.stage}），中段卡住，可找關鍵轉折補強。`);
+    if (gameplan.final.risks.length) lines.push(`主軸風險：${gameplan.final.risks.join("、")}。`);
+  }
+
+  return lines;
 }
 
 const LOST_SET_CAUSE_LABEL: Record<LostSetCause, string> = {
@@ -312,6 +460,12 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     }
   }
 
+  const lostSets = buildLostSetSummary(session, player);
+  const actionEffectiveness = buildActionEffectiveness(finalState, player);
+  const gameplan = profile && finalGameplan
+    ? { profileId: profile.id, displayName: profile.displayName, final: finalGameplan, checkpoints }
+    : undefined;
+
   return {
     startedAt: session.startedAt,
     seed: session.seed,
@@ -319,16 +473,10 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     player,
     analytics,
     setReviews,
-    lostSets: buildLostSetSummary(session, player),
-    actionEffectiveness: buildActionEffectiveness(finalState, player),
-    gameplan:
-      profile && finalGameplan
-        ? {
-            profileId: profile.id,
-            displayName: profile.displayName,
-            final: finalGameplan,
-            checkpoints,
-          }
-        : undefined,
+    lostSets,
+    actionEffectiveness,
+    actionCardDetails: buildActionCardDetails(finalState, player),
+    narrative: buildReplayNarrative({ player, analytics, lostSets, effectiveness: actionEffectiveness, gameplan }),
+    gameplan,
   };
 }

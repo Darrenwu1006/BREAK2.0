@@ -205,6 +205,19 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
       `｜抽 ${line.draws} / 入手 ${line.handAdds} / 登場 ${line.deploys} / 點數 ${line.pointMods}｜支付 Guts ${line.paidGuts}`,
     );
   }
+  if (report.actionCardDetails.length > 0) {
+    console.log("  逐張命中:");
+    for (const detail of report.actionCardDetails) {
+      const label = detail.kind === "event" ? "事件" : "技能";
+      console.log(`    - [${label}] ${detail.cardName}: ${detail.effectiveUses}/${detail.uses} 有效`);
+    }
+  }
+
+  if (report.narrative.length > 0) {
+    console.log("");
+    console.log("檢討重點");
+    for (const line of report.narrative) console.log(`  • ${line}`);
+  }
 
   if (report.gameplan) {
     console.log("");
