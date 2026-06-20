@@ -405,6 +405,41 @@ input {
   overflow-wrap: anywhere;
 }
 
+.optimizer-history-filter {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.optimizer-history-filter button {
+  flex: 1;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--radius-card);
+  border: 1.5px solid var(--line-dim);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.optimizer-history-filter button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.optimizer-history-filter .btn-toggle-on {
+  background: var(--bg-panel-raised);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.optimizer-history-list {
+  display: grid;
+  gap: var(--sp-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .optimizer-change,
 .optimizer-run {
   display: grid;

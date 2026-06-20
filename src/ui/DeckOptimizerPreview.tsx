@@ -150,6 +150,7 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
   const [saving, setSaving] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
   const [adoptions, setAdoptions] = useState<AdoptionRecord[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<"all" | "override">("all");
   const parsed = useMemo(() => parseProposal(raw), [raw]);
   const proposal = parsed.proposal;
   const sourceTotal = proposal ? cardTotal(proposal.sourceDeckCards) : 0;
@@ -164,6 +165,10 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
   const needsOverride = requiresManualOverride(proposal);
   const overrideReady = !needsOverride || reviewNote.trim().length > 0;
   const canSave = !!proposal && candidateLegal && overrideReady && !!school.trim() && !!name.trim() && !existingDeck && !saving;
+  const overrideCount = adoptions.filter((record) => record.optimizerAdoption?.manualOverride).length;
+  const visibleAdoptions = historyFilter === "override"
+    ? adoptions.filter((record) => record.optimizerAdoption?.manualOverride)
+    : adoptions;
 
   useEffect(() => {
     if (!proposal) return;
@@ -433,21 +438,52 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
           ) : <p className="dim small">等待 proposal。</p>}
           {adoptions.length > 0 && (
             <div className="optimizer-note-block optimizer-history">
-              <b>最近採納</b>
-              {adoptions.slice(0, 5).map((record) => (
-                <div key={`${record.savedAt}:${record.targetDeck}`} className="optimizer-history-row">
-                  <span>
-                    {record.targetDeck}
-                    {record.optimizerAdoption?.manualOverride && <StatusPill tone="bad">手動覆核</StatusPill>}
-                  </span>
-                  <small className="dim">
-                    {formatDate(record.savedAt)}
-                    {record.optimizerAdoption?.sourceDeck ? `・${record.optimizerAdoption.sourceDeck}` : ""}
-                    {typeof record.optimizerAdoption?.score === "number" ? `・Score ${formatScore(record.optimizerAdoption.score)}` : ""}
-                  </small>
-                  {record.optimizerAdoption?.reviewNote && <small className="dim">覆核理由：{record.optimizerAdoption.reviewNote}</small>}
-                </div>
-              ))}
+              <div className="optimizer-section-title">
+                <b>採納紀錄</b>
+                <span className="dim small">共 {adoptions.length}・手動覆核 {overrideCount}</span>
+              </div>
+              <div className="optimizer-history-filter">
+                <button
+                  className={historyFilter === "all" ? "btn-toggle-on" : "btn-toggle"}
+                  onClick={() => setHistoryFilter("all")}
+                >全部</button>
+                <button
+                  className={historyFilter === "override" ? "btn-toggle-on" : "btn-toggle"}
+                  disabled={overrideCount === 0}
+                  onClick={() => setHistoryFilter("override")}
+                >只看手動覆核</button>
+              </div>
+              <div className="optimizer-history-list">
+                {visibleAdoptions.length === 0 ? (
+                  <p className="dim small">沒有符合條件的紀錄。</p>
+                ) : visibleAdoptions.map((record) => {
+                  const adoption = record.optimizerAdoption;
+                  const override = adoption?.manualOverride;
+                  const changeCount = adoption?.changes?.length ?? 0;
+                  return (
+                    <div key={`${record.savedAt}:${record.targetDeck}`} className="optimizer-history-row">
+                      <span>
+                        {record.targetDeck}
+                        {override
+                          ? <StatusPill tone="bad">手動覆核</StatusPill>
+                          : adoption?.validationVerdict === "validated"
+                            ? <StatusPill tone="ok">已驗證</StatusPill>
+                            : null}
+                      </span>
+                      <small className="dim">
+                        {formatDate(record.savedAt)}
+                        {adoption?.sourceDeck ? `・${adoption.sourceDeck}` : ""}
+                        {typeof adoption?.score === "number" ? `・Score ${formatScore(adoption.score)}` : ""}
+                        {changeCount > 0 ? `・換 ${changeCount} 項` : ""}
+                      </small>
+                      {override && adoption?.status && (
+                        <small className="dim">覆核狀態：{statusLabel(adoption.status as DeckOptimizerProposal["status"])}</small>
+                      )}
+                      {adoption?.reviewNote && <small className="dim">覆核理由：{adoption.reviewNote}</small>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
