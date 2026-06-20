@@ -10,6 +10,7 @@ import {
   attachDeckOptimizerEvaluation,
   attachDeckOptimizerValidationMatrix,
   autoLockCoreCards,
+  CARD_POOL_HEURISTIC_NOTE,
   createDeckOptimizerCandidateProposal,
   createDeckOptimizerProposalScaffold,
   deckOptimizerIdsFromCards,
@@ -111,6 +112,29 @@ function assertKnownCardIds(label: string, ids: readonly string[]): void {
   if (unknown.length > 0) throw new Error(`${label} 引用了不存在的卡片: ${unknown.join(", ")}`);
 }
 
+const KNOWN_SCHOOLS: ReadonlySet<string> = (() => {
+  const set = new Set<string>();
+  for (const [, card] of benchmarkDb) for (const affiliation of card.affiliations ?? []) set.add(affiliation);
+  return set;
+})();
+
+/**
+ * --allow 同時接受單卡（CARD_ID）與整校（所屬名稱）。混校構築常見，整校允許讓使用者不必逐張列卡。
+ * 回傳分開的 cards / schools，未知 token 直接報錯。
+ */
+function partitionAllowTokens(tokens: readonly string[]): { cards: string[]; schools: string[] } {
+  const cards: string[] = [];
+  const schools: string[] = [];
+  const unknown: string[] = [];
+  for (const token of tokens) {
+    if (benchmarkDb.has(token)) cards.push(token);
+    else if (KNOWN_SCHOOLS.has(token)) schools.push(token);
+    else unknown.push(token);
+  }
+  if (unknown.length > 0) throw new Error(`allow 引用了不存在的卡片或所屬: ${unknown.join(", ")}`);
+  return { cards, schools };
+}
+
 function resolveOpponents(excluded: Set<string>): BenchmarkDeck[] {
   const raw = argValue("opponents") ?? "all";
   if (raw === "all") return benchmarkDecks.filter((deck) => !excluded.has(deck.name));
@@ -197,11 +221,10 @@ function run(): void {
   const maxReplacements = integerArg("max-replacements", DEFAULTS.maxReplacements);
   const explicitLocked = parseLockedCards(argValue("locked"));
   const bannedCards = splitList(argValue("banned"));
-  const allowCards = splitList(argValue("allow"));
+  const { cards: allowCards, schools: allowSchools } = partitionAllowTokens(splitList(argValue("allow")));
   const unlockCards = splitList(argValue("unlock"));
   assertKnownCardIds("locked", explicitLocked.map((entry) => entry.id));
   assertKnownCardIds("banned", bannedCards);
-  assertKnownCardIds("allow", allowCards);
   assertKnownCardIds("unlock", unlockCards);
 
   const autoLockEnabled = !hasFlag("no-auto-lock");
@@ -211,6 +234,7 @@ function run(): void {
   const schoolsArg = splitList(argValue("schools"));
   const cardPool = resolveOptimizerCardPool(benchmarkDb, deck.ids, {
     allow: allowCards,
+    allowSchools,
     banned: bannedCards,
     schools: schoolsArg.length > 0 ? schoolsArg : undefined,
   });
@@ -227,6 +251,7 @@ function run(): void {
       strategy: "none",
       autoLock: autoLockEnabled,
       allow: allowCards,
+      allowSchools,
       unlock: unlockCards,
     },
     objectiveProfile: objectiveArg(),
@@ -241,6 +266,7 @@ function run(): void {
     },
     extraRationale: [
       `候選卡池：同校 ${cardPool.schools.join("/") || "未標記"}，共 ${cardPool.poolIds.length} 張可考慮（含跨校允許 ${cardPool.crossSchoolAllowed.length} 張）。`,
+      CARD_POOL_HEURISTIC_NOTE,
       `核心卡保護：${autoLockEnabled ? `自動鎖定（可用 --unlock 解除、--locked 覆蓋）共 ${lockedCards.length} 張` : "已用 --no-auto-lock 關閉自動鎖定"}。`,
     ],
   }) : createDeckOptimizerCandidateProposal({
@@ -254,6 +280,7 @@ function run(): void {
       maxReplacements,
       autoLock: autoLockEnabled,
       allow: allowCards,
+      allowSchools,
       unlock: unlockCards,
     },
     objectiveProfile: objectiveArg(),
@@ -268,6 +295,7 @@ function run(): void {
     },
     extraRationale: [
       `候選卡池：同校 ${cardPool.schools.join("/") || "未標記"}，共 ${cardPool.poolIds.length} 張可考慮（含跨校允許 ${cardPool.crossSchoolAllowed.length} 張）。`,
+      CARD_POOL_HEURISTIC_NOTE,
       `核心卡保護：${autoLockEnabled ? `自動鎖定（可用 --unlock 解除、--locked 覆蓋）共 ${lockedCards.length} 張` : "已用 --no-auto-lock 關閉自動鎖定"}。`,
     ],
   });

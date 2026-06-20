@@ -373,6 +373,23 @@ input {
 .optimizer-adopt input { width: 100%; }
 .optimizer-adopt button { width: 100%; }
 
+.optimizer-adopt-override {
+  border-color: color-mix(in srgb, var(--danger, #c0392b) 60%, var(--line-dim));
+  background: color-mix(in srgb, var(--danger, #c0392b) 8%, var(--bg-panel-raised));
+}
+
+.optimizer-review-note {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font: inherit;
+  padding: var(--sp-2);
+  border: 1.5px solid var(--line-dim);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
 .optimizer-history-row {
   display: grid;
   gap: 2px;

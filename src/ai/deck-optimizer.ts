@@ -111,6 +111,7 @@ export interface DeckOptimizerGenerationConfig {
   maxReplacements?: number;
   autoLock?: boolean;
   allow?: readonly string[];
+  allowSchools?: readonly string[];
   unlock?: readonly string[];
 }
 
@@ -228,9 +229,19 @@ export interface OptimizerCardPool {
 
 export interface ResolveCardPoolOptions {
   allow?: readonly string[];
+  /** 整校納入候選：列出的所屬（學校）名稱，其全部卡片都進候選卡池。混校構築常見，故開放整校允許。 */
+  allowSchools?: readonly string[];
   banned?: readonly string[];
   schools?: readonly string[];
 }
+
+/**
+ * [Codex 2026-06-20] C3d 卡池標註：同校卡池只是 optimizer 的「預設搜尋啟發」，用來縮小候選空間，
+ * 不是遊戲合法性限制。本作組卡自由、混校構築常見；除非技能文字明確綁定所屬，否則跨校候選完全合法，
+ * 可用 --allow（單卡或整校）納入。
+ */
+export const CARD_POOL_HEURISTIC_NOTE =
+  "同校卡池僅為預設搜尋啟發，非合法性限制；混校構築合法，跨校候選請用 --allow（可指定單卡或整校）。";
 
 export interface AutoLockOptions {
   minCount?: number;
@@ -334,15 +345,19 @@ export function resolveOptimizerCardPool(
   const schoolSet = new Set(schools);
   const inDeck = new Set(deckIds);
   const allow = new Set(options.allow ?? []);
+  const allowSchools = new Set(options.allowSchools ?? []);
   const banned = new Set(options.banned ?? []);
   const poolIds: string[] = [];
   const crossSchoolAllowed: string[] = [];
 
   for (const [id, card] of db) {
     if (banned.has(id)) continue;
-    const sameSchool = (card.affiliations ?? []).some((affiliation) => schoolSet.has(affiliation));
-    if (inDeck.has(id) || sameSchool || allow.has(id)) poolIds.push(id);
-    if (allow.has(id) && !sameSchool && !inDeck.has(id)) crossSchoolAllowed.push(id);
+    const affiliations = card.affiliations ?? [];
+    const sameSchool = affiliations.some((affiliation) => schoolSet.has(affiliation));
+    const allowedBySchool = affiliations.some((affiliation) => allowSchools.has(affiliation));
+    const allowed = allow.has(id) || allowedBySchool;
+    if (inDeck.has(id) || sameSchool || allowed) poolIds.push(id);
+    if (allowed && !sameSchool && !inDeck.has(id)) crossSchoolAllowed.push(id);
   }
 
   return {

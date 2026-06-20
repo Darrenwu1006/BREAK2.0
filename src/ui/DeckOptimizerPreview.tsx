@@ -99,6 +99,11 @@ function isValidatedProposal(proposal: DeckOptimizerProposal | null): boolean {
   return proposal?.status === "validated" && proposal.validation?.verdict === "validated";
 }
 
+/** 未通過 C2 驗證、但資料合法的 proposal 可走「手動覆核」採納，前提是填寫覆核理由。 */
+function requiresManualOverride(proposal: DeckOptimizerProposal | null): boolean {
+  return !!proposal && !isValidatedProposal(proposal);
+}
+
 interface AdoptionRecord {
   savedAt: string;
   targetDeck: string;
@@ -111,6 +116,8 @@ interface AdoptionRecord {
     status?: string;
     validationVerdict?: string;
     score?: number | null;
+    manualOverride?: boolean;
+    reviewNote?: string;
     changes?: { cardId: string; before: number; after: number; delta: number }[];
   };
 }
@@ -141,6 +148,7 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
   const [name, setName] = useState("");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [reviewNote, setReviewNote] = useState("");
   const [adoptions, setAdoptions] = useState<AdoptionRecord[]>([]);
   const parsed = useMemo(() => parseProposal(raw), [raw]);
   const proposal = parsed.proposal;
@@ -153,13 +161,16 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
     && candidateTotal === 40
     && candidateEvents <= 8
     && hasOnlyKnownCards(db, proposal.candidateDeckCards);
-  const canSave = isValidatedProposal(proposal) && candidateLegal && !!school.trim() && !!name.trim() && !existingDeck && !saving;
+  const needsOverride = requiresManualOverride(proposal);
+  const overrideReady = !needsOverride || reviewNote.trim().length > 0;
+  const canSave = !!proposal && candidateLegal && overrideReady && !!school.trim() && !!name.trim() && !existingDeck && !saving;
 
   useEffect(() => {
     if (!proposal) return;
     const target = deriveDeckTarget(proposal.sourceDeck);
     setSchool(target.school);
     setName(target.name);
+    setReviewNote("");
     setSaveMessage(null);
   }, [proposal]);
 
@@ -187,12 +198,12 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
       setSaveMessage("線上模式無法寫入牌組。");
       return;
     }
-    if (!isValidatedProposal(proposal)) {
-      setSaveMessage("只有通過 C2 驗證的 proposal 可以另存。");
-      return;
-    }
     if (!candidateLegal) {
       setSaveMessage("候選牌組未通過 40 張、事件上限或卡片資料檢查。");
+      return;
+    }
+    if (requiresManualOverride(proposal) && reviewNote.trim().length === 0) {
+      setSaveMessage("未通過 C2 驗證的 proposal 需填寫手動覆核理由才可另存。");
       return;
     }
     if (!school.trim() || !name.trim()) {
@@ -227,6 +238,8 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
             validationStrategy: proposal.validation?.strategy,
             score: proposal.score?.value ?? null,
             matchWinRateDelta: proposal.deltas.matchWinRateDelta,
+            manualOverride: requiresManualOverride(proposal),
+            ...(requiresManualOverride(proposal) ? { reviewNote: reviewNote.trim() } : {}),
             changes: proposal.changes.map((change) => ({
               cardId: change.cardId,
               before: change.before,
@@ -240,7 +253,7 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
       if (!res.ok) throw new Error(json.error ?? "儲存失敗");
       await props.onSaved();
       await refreshAdoptions();
-      setSaveMessage(`已另存：${json.source ?? `${school}/${name}.csv`}`);
+      setSaveMessage(`已另存${requiresManualOverride(proposal) ? "（手動覆核）" : ""}：${json.source ?? `${school}/${name}.csv`}`);
     } catch (error) {
       setSaveMessage(`儲存失敗：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -357,19 +370,35 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
           <h2>判讀</h2>
           {proposal ? (
             <>
-              <div className="optimizer-note-block optimizer-adopt">
+              <div className={`optimizer-note-block optimizer-adopt${needsOverride ? " optimizer-adopt-override" : ""}`}>
                 <b>另存候選牌組</b>
+                {needsOverride && (
+                  <p className="danger small">
+                    ⚠ 這份 proposal {proposal.validation ? "未通過 C2 驗證" : "尚未跑 C2 驗證"}（{statusLabel(proposal.status)}）。
+                    手動覆核採納前請確認你了解風險，並寫下覆核理由。
+                  </p>
+                )}
                 <label>學校
                   <input value={school} onChange={(event) => setSchool(event.target.value)} />
                 </label>
                 <label>牌組名稱
                   <input value={name} onChange={(event) => setName(event.target.value)} />
                 </label>
+                {needsOverride && (
+                  <label>手動覆核理由（必填）
+                    <textarea
+                      className="optimizer-review-note"
+                      value={reviewNote}
+                      placeholder="例：smoke 樣本不足但方向正確，先採納試打觀察"
+                      onChange={(event) => setReviewNote(event.target.value)}
+                    />
+                  </label>
+                )}
                 <button className="btn-start-sm" disabled={!canSave} onClick={() => { void saveCandidateDeck(); }}>
-                  {saving ? "儲存中" : "另存"}
+                  {saving ? "儲存中" : needsOverride ? "手動覆核另存" : "另存"}
                 </button>
-                {!isValidatedProposal(proposal) && <p className="dim small">需通過 C2 驗證才可另存。</p>}
-                {isValidatedProposal(proposal) && !candidateLegal && <p className="danger small">候選牌組未通過資料檢查。</p>}
+                {needsOverride && !reviewNote.trim() && <p className="dim small">填寫覆核理由後才可另存。</p>}
+                {!candidateLegal && <p className="danger small">候選牌組未通過資料檢查（40 張／事件上限／卡片）。</p>}
                 {existingDeck && <p className="danger small">這個名稱已存在。</p>}
                 {saveMessage && <p className={saveMessage.startsWith("已另存") ? "win small" : "danger small"}>{saveMessage}</p>}
               </div>
@@ -385,6 +414,13 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
                   ? proposal.risks.map((entry, index) => <p key={index} className="small">{entry}</p>)
                   : <p className="dim small">沒有附加風險。</p>}
               </div>
+              {proposal.cardPool && (
+                <div className="optimizer-note-block">
+                  <b>候選卡池</b>
+                  <p className="small">同校 {proposal.cardPool.schools.join("/") || "未標記"}・共 {proposal.cardPool.poolIds.length} 張可考慮（含跨校允許 {proposal.cardPool.crossSchoolAllowed.length} 張）</p>
+                  <p className="dim small">同校卡池僅為預設搜尋啟發，非合法性限制；混校構築合法，跨校候選請用 --allow（可指定單卡或整校）。</p>
+                </div>
+              )}
               {proposal.lockedCards.length > 0 && (
                 <div className="optimizer-note-block">
                   <b>保護核心卡</b>
@@ -400,12 +436,16 @@ export function DeckOptimizerPreview(props: { db: CardDb; decks: ApiDeck[]; onEx
               <b>最近採納</b>
               {adoptions.slice(0, 5).map((record) => (
                 <div key={`${record.savedAt}:${record.targetDeck}`} className="optimizer-history-row">
-                  <span>{record.targetDeck}</span>
+                  <span>
+                    {record.targetDeck}
+                    {record.optimizerAdoption?.manualOverride && <StatusPill tone="bad">手動覆核</StatusPill>}
+                  </span>
                   <small className="dim">
                     {formatDate(record.savedAt)}
                     {record.optimizerAdoption?.sourceDeck ? `・${record.optimizerAdoption.sourceDeck}` : ""}
                     {typeof record.optimizerAdoption?.score === "number" ? `・Score ${formatScore(record.optimizerAdoption.score)}` : ""}
                   </small>
+                  {record.optimizerAdoption?.reviewNote && <small className="dim">覆核理由：{record.optimizerAdoption.reviewNote}</small>}
                 </div>
               ))}
             </div>

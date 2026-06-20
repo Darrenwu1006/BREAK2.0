@@ -10,6 +10,7 @@ import {
   autoLockCoreCards,
   buildDeckOptimizerValidationMatrix,
   buildDeckOptimizerChanges,
+  CARD_POOL_HEURISTIC_NOTE,
   createDeckOptimizerCandidateProposal,
   createDeckOptimizerProposalScaffold,
   deckOptimizerCardCounts,
@@ -242,6 +243,36 @@ describe("M8 deck optimizer C1-3a card pool", () => {
     const allowed = resolveOptimizerCardPool(benchmarkDb, aobaDeck.ids, { allow: ["HV-D01-001"] });
     expect(new Set(allowed.poolIds).has("HV-D01-001")).toBe(true);
     expect(allowed.crossSchoolAllowed).toEqual(["HV-D01-001"]);
+  });
+
+  it("[C3d] --allow 整校會把該校全部卡納入跨校候選並標記", () => {
+    const allowed = resolveOptimizerCardPool(benchmarkDb, aobaDeck.ids, { allowSchools: ["音駒"] });
+    const poolSet = new Set(allowed.poolIds);
+    const nekomaIds = [...benchmarkDb]
+      .filter(([, card]) => (card.affiliations ?? []).includes("音駒"))
+      .map(([id]) => id);
+
+    expect(nekomaIds.length).toBeGreaterThan(0);
+    for (const id of nekomaIds) expect(poolSet.has(id)).toBe(true);
+    // 整校允許的跨校卡都應標記，且不含青葉城西本校卡。
+    expect(allowed.crossSchoolAllowed.length).toBeGreaterThan(0);
+    expect(new Set(allowed.crossSchoolAllowed)).toEqual(new Set(nekomaIds));
+  });
+
+  it("[C3d] banned 優先於 allowSchools", () => {
+    const nekomaId = [...benchmarkDb].find(([, card]) => (card.affiliations ?? []).includes("音駒"))?.[0];
+    expect(nekomaId).toBeDefined();
+    const allowed = resolveOptimizerCardPool(benchmarkDb, aobaDeck.ids, {
+      allowSchools: ["音駒"],
+      banned: [nekomaId!],
+    });
+    expect(new Set(allowed.poolIds).has(nekomaId!)).toBe(false);
+    expect(allowed.crossSchoolAllowed).not.toContain(nekomaId!);
+  });
+
+  it("[C3d] 卡池標註說明同校只是預設啟發、非合法性限制", () => {
+    expect(CARD_POOL_HEURISTIC_NOTE).toContain("非合法性限制");
+    expect(CARD_POOL_HEURISTIC_NOTE).toContain("--allow");
   });
 });
 
