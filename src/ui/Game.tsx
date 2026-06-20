@@ -7,7 +7,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
-import { createReplayReviewReport, lostSetCauseLabel, type LostSetSummary } from "../ai/replay-review";
+import { createReplayReviewReport, lostSetCauseLabel, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
@@ -216,16 +216,44 @@ function LostSetSection(props: { lostSets: LostSetSummary }) {
   );
 }
 
+function ActionEffectivenessSection(props: { effectiveness: ReplayActionEffectiveness }) {
+  const lines = [props.effectiveness.event, props.effectiveness.skill];
+  if (lines.every((line) => line.uses === 0)) {
+    return (
+      <section className="report-section">
+        <b>事件 / 技能效率</b>
+        <small className="summary-idle">本場沒有打出事件或宣告技能。</small>
+      </section>
+    );
+  }
+  return (
+    <section className="report-section">
+      <b>事件 / 技能效率</b>
+      <small className="report-note">「有效」＝打出後有抽牌、入手、登場或點數修正等可觀察效果。</small>
+      <div className="report-compare">
+        {lines.map((line) => (
+          <span key={line.kind}>
+            <small>{line.kind === "event" ? "事件" : "技能"}</small>
+            <b>{line.uses === 0 ? "未使用" : `${line.effectiveUses}/${line.uses}・${percent(line.rate)}`}</b>
+            <em>抽{line.draws}・入手{line.handAdds}・登場{line.deploys}・點數{line.pointMods}</em>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
+  effectiveness: ReplayActionEffectiveness;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
   onScan: () => void;
   onStopScan: () => void;
 }) {
-  const { analytics, lostSets, keyEntries, critiqueCache, scan } = props;
+  const { analytics, lostSets, effectiveness, keyEntries, critiqueCache, scan } = props;
   const quality = critiqueSummary(keyEntries, critiqueCache);
   const evaluatedWithWinRate = quality.mistakes + quality.acceptable + quality.brilliants;
   const avgActual = evaluatedWithWinRate ? quality.actualWinRateTotal / evaluatedWithWinRate : 0;
@@ -315,6 +343,8 @@ function PostMatchReportBody(props: {
       </section>
 
       <LostSetSection lostSets={lostSets} />
+
+      <ActionEffectivenessSection effectiveness={effectiveness} />
     </div>
   );
 }
@@ -322,6 +352,7 @@ function PostMatchReportBody(props: {
 function PostMatchReport(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
+  effectiveness: ReplayActionEffectiveness;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -340,6 +371,7 @@ function PostMatchReport(props: {
       <PostMatchReportBody
         analytics={props.analytics}
         lostSets={props.lostSets}
+        effectiveness={props.effectiveness}
         keyEntries={props.keyEntries}
         critiqueCache={props.critiqueCache}
         scan={props.scan}
@@ -356,6 +388,7 @@ function PostMatchReport(props: {
 function PostMatchModal(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
+  effectiveness: ReplayActionEffectiveness;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
@@ -385,6 +418,7 @@ function PostMatchModal(props: {
           <PostMatchReportBody
             analytics={props.analytics}
             lostSets={props.lostSets}
+            effectiveness={props.effectiveness}
             keyEntries={props.keyEntries}
             critiqueCache={props.critiqueCache}
             scan={props.scan}
@@ -1426,6 +1460,7 @@ export function Game(props: {
             <PostMatchReport
               analytics={replayAnalytics}
               lostSets={replayReview.lostSets}
+              effectiveness={replayReview.actionEffectiveness}
               keyEntries={replayKeyEntries}
               critiqueCache={replayCritiques}
               scan={replayScan}
@@ -1457,6 +1492,7 @@ export function Game(props: {
       <PostMatchModal
         analytics={replayAnalytics}
         lostSets={replayReview.lostSets}
+        effectiveness={replayReview.actionEffectiveness}
         keyEntries={replayKeyEntries}
         critiqueCache={replayCritiques}
         scan={replayScan}

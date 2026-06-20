@@ -192,6 +192,20 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
     }
   }
 
+  console.log("");
+  console.log(`事件 / 技能效率（${playerName(report.player)}）`);
+  for (const line of [report.actionEffectiveness.event, report.actionEffectiveness.skill]) {
+    const label = line.kind === "event" ? "事件" : "技能";
+    if (line.uses === 0) {
+      console.log(`  ${label}: 本場未使用`);
+      continue;
+    }
+    console.log(
+      `  ${label}: 使用 ${line.uses}、有效 ${line.effectiveUses}（${pct(line.rate)}）` +
+      `｜抽 ${line.draws} / 入手 ${line.handAdds} / 登場 ${line.deploys} / 點數 ${line.pointMods}｜支付 Guts ${line.paidGuts}`,
+    );
+  }
+
   if (report.gameplan) {
     console.log("");
     console.log(`主軸覆盤: ${report.gameplan.displayName}`);

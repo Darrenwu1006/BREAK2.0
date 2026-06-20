@@ -1,5 +1,6 @@
 import type { CardDb, GameState, PlayerId } from "../engine/types";
 import { replayEntryLogs, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "../ui/replayHistory";
+import { collectMatchStats, type ActionImpactStats } from "./benchmark";
 import {
   evaluateGameplanState,
   evaluateGameplanTransition,
@@ -85,6 +86,24 @@ export interface LostSetSummary {
   attributions: LostSetAttribution[];
 }
 
+/** 事件 / 技能效率：沿用 benchmark 的「打出後是否有可觀察效果」定義（抽牌 / 入手 / 登場 / 點數修正）。 */
+export interface ActionEffectivenessLine {
+  kind: "event" | "skill";
+  uses: number;
+  effectiveUses: number;
+  rate: number;
+  draws: number;
+  handAdds: number;
+  deploys: number;
+  pointMods: number;
+  paidGuts: number;
+}
+
+export interface ReplayActionEffectiveness {
+  event: ActionEffectivenessLine;
+  skill: ActionEffectivenessLine;
+}
+
 export interface ReplayReviewReport {
   startedAt: string;
   seed: number;
@@ -93,7 +112,30 @@ export interface ReplayReviewReport {
   analytics: ReplayAnalytics;
   setReviews: ReplaySetReview[];
   lostSets: LostSetSummary;
+  actionEffectiveness: ReplayActionEffectiveness;
   gameplan?: ReplayGameplanReview;
+}
+
+function effectivenessLine(kind: "event" | "skill", impact: ActionImpactStats): ActionEffectivenessLine {
+  return {
+    kind,
+    uses: impact.uses,
+    effectiveUses: impact.effectiveUses,
+    rate: impact.uses > 0 ? impact.effectiveUses / impact.uses : 0,
+    draws: impact.draws,
+    handAdds: impact.handAdds,
+    deploys: impact.deploys,
+    pointMods: impact.pointMods,
+    paidGuts: impact.paidGuts,
+  };
+}
+
+function buildActionEffectiveness(finalState: GameState, player: PlayerId): ReplayActionEffectiveness {
+  const impact = collectMatchStats(finalState).players[player].actionImpact;
+  return {
+    event: effectivenessLine("event", impact.event),
+    skill: effectivenessLine("skill", impact.skill),
+  };
 }
 
 const LOST_SET_CAUSE_LABEL: Record<LostSetCause, string> = {
@@ -278,6 +320,7 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     analytics,
     setReviews,
     lostSets: buildLostSetSummary(session, player),
+    actionEffectiveness: buildActionEffectiveness(finalState, player),
     gameplan:
       profile && finalGameplan
         ? {

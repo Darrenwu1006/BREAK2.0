@@ -179,4 +179,52 @@ describe("replay review", () => {
     expect(matchLoss?.cause).toBe("voluntary");
     expect(matchLoss?.setNo).toBe(3);
   });
+
+  it("[事件/技能效率] 沿用 benchmark 定義統計有效使用", () => {
+    const cardIds = ["HV-P02-022", "HV-P02-024"];
+    const before = state(cardIds, [{}, {}]);
+    const after = state(cardIds, [{}, {}], {
+      log: [
+        { setNo: 1, turnNo: 1, player: 0, text: "打出事件卡 テスト事件" },
+        { setNo: 1, turnNo: 1, player: 0, text: "抽 2 張" },
+        { setNo: 1, turnNo: 1, player: 0, text: "── 區隔 ──" },
+        { setNo: 1, turnNo: 1, player: 0, text: "使用 テスト 的技能" },
+        // 技能宣告後沒有任何可觀察效果 → 計入 uses 但非 effective
+      ],
+    });
+    const session: ReplaySession = {
+      startedAt: "2026-06-20T00:00:00.000Z",
+      seed: 1,
+      decks: [
+        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "音駒-音駒-二口干擾", cardIds: [] },
+      ],
+      initialState: before,
+      entries: [
+        {
+          index: 0,
+          player: 0,
+          source: "player",
+          phase: "toss",
+          setNo: 1,
+          turnNo: 1,
+          pendingType: "free" as const,
+          decision: { type: "free", action: "pass" } as never,
+          before,
+          after,
+          logStart: 0,
+          logEnd: 4,
+        },
+      ],
+    };
+
+    const report = createReplayReviewReport(db, session, { player: 0 });
+    expect(report.actionEffectiveness.event.uses).toBe(1);
+    expect(report.actionEffectiveness.event.effectiveUses).toBe(1);
+    expect(report.actionEffectiveness.event.draws).toBe(2);
+    expect(report.actionEffectiveness.event.rate).toBe(1);
+    expect(report.actionEffectiveness.skill.uses).toBe(1);
+    expect(report.actionEffectiveness.skill.effectiveUses).toBe(0);
+    expect(report.actionEffectiveness.skill.rate).toBe(0);
+  });
 });

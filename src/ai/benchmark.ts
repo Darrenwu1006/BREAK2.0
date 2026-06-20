@@ -371,7 +371,7 @@ function markActionImpact(stats: MatchPlayerStats, active: ActiveAction, field: 
   return active;
 }
 
-function collectMatchStats(state: GameState): MatchStats {
+export function collectMatchStats(state: GameState): MatchStats {
   const players: [MatchPlayerStats, MatchPlayerStats] = [blankPlayerStats(), blankPlayerStats()];
   const currentRoute: [DefenseRoute, DefenseRoute] = ["unknown", "unknown"];
   const activeAction: [ActiveAction, ActiveAction] = [null, null];
