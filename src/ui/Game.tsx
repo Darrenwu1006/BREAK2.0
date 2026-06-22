@@ -7,6 +7,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
+import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
@@ -681,6 +682,10 @@ export function Game(props: {
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
   const coachWorkerRef = useRef<Worker | null>(null);
+  // [Claude 2026-06-22] Phase F 塊2：強敵 PIMC 思考用的 worker / 請求序號 / 思考提示狀態。
+  const aiRequestRef = useRef(0);
+  const aiWorkerRef = useRef<Worker | null>(null);
+  const [aiThinking, setAiThinking] = useState<{ budgetMs: number } | null>(null);
   const replayCoachRequestRef = useRef(0);
   const replayScanTokenRef = useRef(0);
   const replayCoachWorkerRef = useRef<Worker | null>(null);
@@ -924,25 +929,84 @@ export function Game(props: {
     });
   }
 
+  // [Claude 2026-06-22] Phase F 塊2：把 PIMC 接成電腦對手的「腦」。
+  // 預設＝強敵：用 coach-worker 跑 PIMC 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
+  // 依盤面自適應 3–10 秒；瑣碎盤面想得短、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
+  // speed === "instant" 保留為快速測試模式：直接走 heuristic、不啟動 PIMC、不顯思考提示。
   useEffect(() => {
-    if (replayMode) return;
-    if (pd?.player !== AI || state.phase === "gameOver") return;
-    const numeric = speed === "instant" ? Infinity : Number(speed);
-    const delay = speed === "instant" ? 0 : 650 / numeric;
+    aiWorkerRef.current?.terminate();
+    aiWorkerRef.current = null;
+    if (replayMode || pd?.player !== AI || state.phase === "gameOver") {
+      setAiThinking(null);
+      return;
+    }
+
+    function applyAiDecision(decision: Decision) {
+      setAiThinking(null);
+      setGame((current) => {
+        if (current.state.pendingDecision?.player !== AI || current.state.phase === "gameOver") return current;
+        const nextState = applyDecision(db, current.state, decision);
+        return {
+          state: nextState,
+          replay: appendReplayEntry(current.replay, current.state, decision, nextState, "ai"),
+        };
+      });
+    }
+
+    if (speed === "instant") {
+      setAiThinking(null);
+      const timer = window.setTimeout(() => applyAiDecision(heuristicAiDecision(db, state, aiProfile)), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const requestId = String(++aiRequestRef.current);
+    const budgetMs = estimateThinkBudgetMs(state);
+    // 0.5x/1x/2x 速度＝思考預算的乘除旋鈕（仍夾在 3–10 秒之間），讓速度設定對強敵有實際意義。
+    const speedFactor = Number(speed) || 1;
+    const timeLimitMs = Math.round(budgetMs / speedFactor);
     const timer = window.setTimeout(() => {
-      setGame((current) => current.state.pendingDecision?.player === AI && current.state.phase !== "gameOver"
-        ? (() => {
-            const decision = heuristicAiDecision(db, current.state, aiProfile);
-            const nextState = applyDecision(db, current.state, decision);
-            return {
-              state: nextState,
-              replay: appendReplayEntry(current.replay, current.state, decision, nextState, "ai"),
-            };
-          })()
-        : current);
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [aiProfile, db, pd, replayMode, speed, state.phase]);
+      setAiThinking({ budgetMs: timeLimitMs });
+      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
+      aiWorkerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
+        if (event.data.requestId !== requestId || aiRequestRef.current !== Number(requestId)) return;
+        worker.terminate();
+        if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
+        if (event.data.ok) applyAiDecision(event.data.report.bestAction.decision);
+        else applyAiDecision(heuristicAiDecision(db, state, aiProfile));
+      };
+      worker.onerror = () => {
+        if (aiRequestRef.current !== Number(requestId)) return;
+        worker.terminate();
+        if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
+        applyAiDecision(heuristicAiDecision(db, state, aiProfile));
+      };
+      worker.postMessage({
+        requestId,
+        state,
+        options: {
+          perspectivePlayer: AI,
+          knownDecks: props.decks,
+          gameplanDeckLabels: [`${props.deckMeta[0].school}-${props.deckMeta[0].name}`, `${props.deckMeta[1].school}-${props.deckMeta[1].name}`],
+          seed: state.rngState,
+          sampleCount: 32,
+          candidateLimit: 8,
+          rolloutMaxSteps: 1400,
+          timeLimitMs,
+          rolloutPolicy: aiProfile,
+          // [Claude 2026-06-22] S1 終局 EV cut（A/B 同預算 68.8%、CI 61.2%-75.4% 顯著贏現況，且 rollout ~3x 快
+          // → 同時間預算內想更多手）。horizon 30 為驗證值。
+          valueCutHorizon: 30,
+        },
+      });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      aiWorkerRef.current?.terminate();
+      aiWorkerRef.current = null;
+    };
+  }, [aiProfile, db, pd, props.decks, props.deckMeta, replayMode, speed, state]);
 
   useEffect(() => {
     coachWorkerRef.current?.terminate();
@@ -1012,6 +1076,8 @@ export function Game(props: {
   useEffect(() => () => {
     replayCoachRejectRef.current?.(new Error("__cancelled__"));
     replayCoachWorkerRef.current?.terminate();
+    aiWorkerRef.current?.terminate();
+    coachWorkerRef.current?.terminate();
   }, []);
 
   // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
@@ -1218,7 +1284,17 @@ export function Game(props: {
       </>);
     }
     if (!pd) return <div className="decision-bar decision-idle"><span>規則引擎正在推進對局</span></div>;
-    if (!isMyDecision) return <div className="decision-bar decision-idle"><span>電腦思考中</span><small>{PHASE_NAME[state.phase]}</small></div>;
+    if (!isMyDecision) {
+      const thinkingLabel = aiThinking
+        ? `強敵推演中…（最多想 ${(aiThinking.budgetMs / 1000).toFixed(1)} 秒）`
+        : "電腦思考中";
+      return (
+        <div className={`decision-bar decision-idle${aiThinking ? " decision-thinking" : ""}`}>
+          <span>{aiThinking && <span className="thinking-dots" aria-hidden="true" />}{thinkingLabel}</span>
+          <small>{PHASE_NAME[state.phase]}</small>
+        </div>
+      );
+    }
 
     switch (pd.type) {
       case "serve-rights":

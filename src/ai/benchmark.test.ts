@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyDecision, createGame } from "../engine/engine";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
-import { benchmarkPolicyDecision, mirroredSeeds, playBenchmarkMatch, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
+import { benchmarkPolicyDecision, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
 import type { BenchmarkPolicyId } from "./benchmark";
 import { BENCHMARK_REPORT_SCHEMA_VERSION, createBenchmarkReportEnvelope } from "./benchmark-report";
 
@@ -172,5 +172,36 @@ describe("M8 benchmark harness", () => {
     if (!("deckCards" in envelope.report.config)) throw new Error("expected batch report config");
     expect(envelope.report.config.deckCards[0]).toHaveLength(40);
     expect(envelope.report.summary.averageRalliesPerSet).toBeGreaterThan(0);
+  });
+
+  // [Claude 2026-06-22] Phase F：PIMC 接成 benchmark policy。此處只驗單一決策點（接上＋合法＋不洩漏）；
+  // 全場強度量測由 CLI 小規模實跑承擔，因為全場逐點搜尋的成本正是 sample budget gate 要決定的事。
+  it("pimc policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
+    configurePimcBenchmark({ sampleCount: 4, rolloutMaxSteps: 150, candidateLimit: 4 });
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 170, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    expect(state.pendingDecision?.type).toBe("deploy-serve");
+
+    const axes = [deckA.axes, deckB.axes] as const;
+    const known = [deckA.ids, deckB.ids] as const;
+    const acting = state.pendingDecision!.player;
+    const oppo = acting === 0 ? 1 : 0;
+
+    const decision = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+    expect(decision.type).toBeTruthy();
+    expect(() => applyDecision(benchmarkDb, state, decision)).not.toThrow();
+
+    // 翻轉「對手」隱藏區（手牌/牌庫/Set），PIMC 應靠抽樣得到相同決策，不偷看真實隱藏資訊。
+    const hiddenChanged = structuredClone(state);
+    hiddenChanged.players[oppo].hand.reverse();
+    hiddenChanged.players[oppo].deck.reverse();
+    hiddenChanged.players[oppo].setArea.reverse();
+    const fromHidden = benchmarkPolicyDecision("pimc", benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], axes, known);
+    const fromClean = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+    expect(fromHidden).toEqual(fromClean);
   });
 });

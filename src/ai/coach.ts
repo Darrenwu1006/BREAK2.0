@@ -5,6 +5,7 @@ import type { CourtArea } from "../engine/dsl";
 import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
+import { evaluateStateValue } from "./rollout-value";
 import { pickDeployName } from "./util";
 import { evaluateGameplanState, evaluateGameplanTransition, resolveGameplanProfile, type GameplanStateReport, type GameplanTransitionReport } from "./gameplan";
 
@@ -21,6 +22,19 @@ export interface PimcCoachOptions {
   candidateLimit?: number;
   rolloutPolicy?: HeuristicV2ProfileId;
   gameplanDeckLabels?: readonly [string, string];
+  /**
+   * [Claude 2026-06-22] Phase F 第二槓桿 S2：樣本配置策略。
+   * "uniform"＝現況均勻 round-robin（預設，行為不變）；
+   * "sequential-halving"＝把同等總預算（sampleCount × 候選數）集中到競爭候選，逐輪淘汰底部一半。
+   * 只改「我方搜尋的計算分配」，不碰 determinize 抽樣來源 → leakage 不受影響。
+   */
+  allocation?: "uniform" | "sequential-halving";
+  /**
+   * [Claude 2026-06-22] Phase F 第二槓桿 S1：rollout 終局 EV cut horizon（步數）。
+   * 未設＝關閉（rollout 打到終局，行為同現況）；設正整數＝打到該步仍未終局就以價值函數估值截斷。
+   * 效果＝rollout 更短（更多樣本）＋連續低方差訊號＋把長期資源控管注入評估。
+   */
+  valueCutHorizon?: number;
 }
 
 export interface CoachActionEstimate {
@@ -56,6 +70,9 @@ interface MutableStats {
   decision: Decision;
   label: string;
   wins: number;
+  /** [Claude 2026-06-22] S1b：勝率分子改累加「樣本價值」∈[0,1]（終局＝1/0、EV cut＝V）。
+   *  valueCut 關閉時 value 恆為 0/1 → valueSum === wins → winRate 與現況完全一致。 */
+  valueSum: number;
   samples: number;
   errors: number;
   maxSteps: number;
@@ -64,8 +81,11 @@ interface MutableStats {
 }
 
 interface RolloutResult {
-  outcome: "complete" | "error" | "max-steps";
+  // [Claude 2026-06-22] S1b：新增 "value-cut"＝打到 horizon 仍未終局，以價值函數估值截斷。
+  outcome: "complete" | "error" | "max-steps" | "value-cut";
   winner: PlayerId | null;
+  /** 終局＝winner===perspective?1:0；value-cut＝V(state,perspective)。其餘 outcome 無值。 */
+  value?: number;
   line: string[];
 }
 
@@ -422,6 +442,8 @@ function rollout(
   perspective: PlayerId,
   policy: HeuristicV2ProfileId,
   maxSteps: number,
+  // [Claude 2026-06-22] S1b：EV cut horizon（rollout 步數）。Infinity＝關閉（打到終局，行為同現況）。
+  valueCutHorizon: number = Infinity,
 ): RolloutResult {
   let current: GameState;
   const baseLogLength = state.log.length;
@@ -436,10 +458,20 @@ function rollout(
       return {
         outcome: "complete",
         winner: current.winner,
+        value: current.winner === perspective ? 1 : 0,
         line: current.log.slice(baseLogLength, baseLogLength + 6).map(logLine),
       };
     }
     if (!current.pendingDecision) return { outcome: "error", winner: null, line: ["遊戲未結束但沒有 pendingDecision"] };
+    // 打到 horizon 仍未終局 → 以價值函數估值截斷（省 rollout 時間＋連續低方差訊號）。
+    if (step >= valueCutHorizon) {
+      return {
+        outcome: "value-cut",
+        winner: null,
+        value: evaluateStateValue(current, perspective),
+        line: current.log.slice(-6).map(logLine),
+      };
+    }
     try {
       current = applyDecision(db, current, heuristicAiDecision(db, current, policy));
     } catch (error) {
@@ -450,7 +482,8 @@ function rollout(
 }
 
 function estimateFromStats(stats: MutableStats): CoachActionEstimate {
-  const winRate = stats.samples === 0 ? 0 : stats.wins / stats.samples;
+  // [Claude 2026-06-22] S1b：winRate＝樣本價值平均（valueCut 關閉時 valueSum===wins → 與現況一致）。
+  const winRate = stats.samples === 0 ? 0 : stats.valueSum / stats.samples;
   const confidence = confidenceFrom(stats.samples, stats.wins);
   return {
     decision: stats.decision,
@@ -467,6 +500,83 @@ function estimateFromStats(stats: MutableStats): CoachActionEstimate {
   };
 }
 
+/**
+ * [Claude 2026-06-22] Phase F 第二槓桿 S2：Sequential Halving 樣本配置。
+ * 總預算＝`perCandidateBudget × 候選數`（與 uniform 同），分 ceil(log2 n) 輪；每輪把該輪預算平均分給「當前存活候選」，
+ * 抽完依「當前勝率信賴下界」淘汰底部一半，直到剩 1；剩餘預算（flooring 殘額）再灑在最終存活者。
+ * 效果＝同預算下，競爭候選（含最終 chosen）拿到的有效樣本數遠多於 uniform → 選擇更穩。
+ * 回傳 `chosen`＝SH 收斂到的那個 arm（**權威 bestAction**；不可改用「對全候選 raw winRate argmax」，
+ * 因為 SH 下各候選樣本數差異極大，被早淘汰的低樣本候選可能因雜訊有虛高 winRate）。
+ * `timedOut` 僅 deadline 觸發時為 true（耗盡預算屬正常結束）。不碰 determinize → leakage 不受影響。
+ */
+function runSequentialHalving(
+  stats: MutableStats[],
+  perCandidateBudget: number,
+  deadline: number,
+  runOneSample: (item: MutableStats, index: number) => void,
+): { timedOut: boolean; chosen: MutableStats } {
+  const n = stats.length;
+  const totalBudget = perCandidateBudget * n;
+  let used = 0;
+  let timedOut = false;
+
+  const spend = (item: MutableStats, index: number): boolean => {
+    if (Date.now() >= deadline) {
+      timedOut = true;
+      return false;
+    }
+    if (used >= totalBudget) return false;
+    runOneSample(item, index);
+    used++;
+    return true;
+  };
+
+  // 淘汰排序鍵＝Wilson 勝率信賴下界（樣本少→下界低），避免「4 樣本幸運高勝率」把真正好棋擠掉、
+  // 也避免低樣本雜訊主導淘汰。confidenceFrom 在此不適用（它是區間寬度分），故直接算 Wilson lower bound。
+  const lowerBoundOf = (item: MutableStats): number => {
+    if (item.samples === 0) return 0;
+    const p = item.wins / item.samples;
+    const z = 1.96;
+    const nn = item.samples;
+    const denom = 1 + (z * z) / nn;
+    const center = p + (z * z) / (2 * nn);
+    const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * nn)) / nn);
+    return Math.max(0, (center - margin) / denom);
+  };
+
+  let survivors = stats.map((item, index) => ({ item, index }));
+  const rounds = Math.max(1, Math.ceil(Math.log2(n)));
+  for (let r = 0; r < rounds && survivors.length > 1 && !timedOut && used < totalBudget; r++) {
+    const perCand = Math.max(1, Math.floor(totalBudget / (rounds * survivors.length)));
+    for (let s = 0; s < perCand && !timedOut && used < totalBudget; s++) {
+      for (const { item, index } of survivors) {
+        if (!spend(item, index)) break;
+      }
+    }
+    survivors = survivors
+      .slice()
+      .sort((a, b) => lowerBoundOf(b.item) - lowerBoundOf(a.item) || b.item.samples - a.item.samples)
+      .slice(0, Math.max(1, Math.ceil(survivors.length / 2)));
+  }
+
+  // 殘額預算 → 灑在最終存活者，把總抽樣數補到 totalBudget。
+  while (!timedOut && used < totalBudget) {
+    let progressed = false;
+    for (const { item, index } of survivors) {
+      if (!spend(item, index)) break;
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+
+  // chosen＝最終存活者中信賴下界最高者（一般情況下 survivors 已收斂到 1）。
+  const chosen = survivors
+    .slice()
+    .sort((a, b) => lowerBoundOf(b.item) - lowerBoundOf(a.item) || b.item.samples - a.item.samples)[0]?.item ?? stats[0]!;
+
+  return { timedOut, chosen };
+}
+
 export function createPimcCoachReport(db: CardDb, state: GameState, options: PimcCoachOptions = {}): CoachReport {
   const pd = state.pendingDecision;
   if (!pd) throw new Error("沒有待決策，無法產生 Coach 建議");
@@ -480,6 +590,8 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
   const rolloutPolicy = options.rolloutPolicy ?? "heuristic-v2";
   const rolloutMaxSteps = options.rolloutMaxSteps ?? DEFAULT_ROLLOUT_MAX_STEPS;
   const candidateLimit = options.candidateLimit ?? DEFAULT_CANDIDATE_LIMIT;
+  // [Claude 2026-06-22] S1b：未設＝Infinity（EV cut 關閉，行為同現況）。
+  const valueCutHorizon = options.valueCutHorizon === undefined ? Infinity : Math.max(1, Math.floor(options.valueCutHorizon));
   const seed = options.seed ?? state.rngState ?? 1;
   const deadline = options.timeLimitMs === undefined ? Infinity : Date.now() + Math.max(0, options.timeLimitMs);
   const fallbackDecision = heuristicAiDecision(db, state, rolloutPolicy);
@@ -488,6 +600,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     decision,
     label: decisionLabel(db, state, decision),
     wins: 0,
+    valueSum: 0,
     samples: 0,
     errors: 0,
     maxSteps: 0,
@@ -506,39 +619,65 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     }
   }
 
-  let timedOut = false;
-  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-    for (let candidateIndex = 0; candidateIndex < stats.length; candidateIndex++) {
-      if (Date.now() >= deadline) {
-        timedOut = true;
-        break;
-      }
-      const item = stats[candidateIndex]!;
-      const sampleSeed = seed + sampleIndex * 1009 + candidateIndex * 7919 + 23;
-      const sampledState = determinizeHiddenState(state, perspective, knownDecks, sampleSeed);
-      const result = rollout(db, sampledState, item.decision, perspective, rolloutPolicy, rolloutMaxSteps);
-      if (result.outcome === "complete") {
-        item.samples++;
-        if (result.winner === perspective) item.wins++;
-        if (item.principalLine.length === 0) item.principalLine = result.line;
-      } else if (result.outcome === "max-steps") {
-        item.maxSteps++;
-        if (item.principalLine.length === 0) item.principalLine = result.line;
-      } else {
-        item.errors++;
-        if (item.principalLine.length === 0) item.principalLine = result.line;
-      }
+  // [Claude 2026-06-22] S2：把單一抽樣抽成共享閉包。seed 由「候選原始 index + 該候選已抽次數」推導，
+  // 與原均勻公式（candidateIndex*7919 + sampleIndex*1009）等價 → uniform 路徑 seed 完全不變、determinism 測試仍綠；
+  // 不同配置策略只改「誰被抽幾次」，每一抽的 determinize 來源與既往一致。
+  const runOneSample = (item: MutableStats, index: number): void => {
+    const sampleSeed = seed + (item.samples + item.maxSteps + item.errors) * 1009 + index * 7919 + 23;
+    const sampledState = determinizeHiddenState(state, perspective, knownDecks, sampleSeed);
+    const result = rollout(db, sampledState, item.decision, perspective, rolloutPolicy, rolloutMaxSteps, valueCutHorizon);
+    if (result.outcome === "complete") {
+      item.samples++;
+      item.valueSum += result.value ?? (result.winner === perspective ? 1 : 0);
+      if (result.winner === perspective) item.wins++;
+      if (item.principalLine.length === 0) item.principalLine = result.line;
+    } else if (result.outcome === "value-cut") {
+      // EV cut＝有效樣本：累加連續價值；wins 取 value>=0.5（僅供 confidence 顯示，不影響 winRate）。
+      item.samples++;
+      item.valueSum += result.value ?? 0.5;
+      if ((result.value ?? 0) >= 0.5) item.wins++;
+      if (item.principalLine.length === 0) item.principalLine = result.line;
+    } else if (result.outcome === "max-steps") {
+      item.maxSteps++;
+      if (item.principalLine.length === 0) item.principalLine = result.line;
+    } else {
+      item.errors++;
+      if (item.principalLine.length === 0) item.principalLine = result.line;
     }
-    if (timedOut) break;
+  };
+
+  let timedOut = false;
+  let shChosen: MutableStats | null = null;
+  if ((options.allocation ?? "uniform") === "sequential-halving" && stats.length > 1) {
+    const sh = runSequentialHalving(stats, sampleCount, deadline, runOneSample);
+    timedOut = sh.timedOut;
+    shChosen = sh.chosen;
+  } else {
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+      for (let candidateIndex = 0; candidateIndex < stats.length; candidateIndex++) {
+        if (Date.now() >= deadline) {
+          timedOut = true;
+          break;
+        }
+        runOneSample(stats[candidateIndex]!, candidateIndex);
+      }
+      if (timedOut) break;
+    }
   }
 
   const recommendations = stats
     .map(estimateFromStats)
     .sort((a, b) => b.winRate - a.winRate || b.confidence - a.confidence || b.sampleCount - a.sampleCount);
-  const bestAction = recommendations[0] ?? estimateFromStats({
+  // [Claude 2026-06-22] S2：SH 路徑的 bestAction＝SH 收斂到的 arm（estimateFromStats 的 decision 與 stats 同參考可直接匹配），
+  // 不可沿用 recommendations[0]（對全候選 raw winRate argmax），否則低樣本幸運候選會被誤選。uniform 路徑維持原邏輯。
+  const bestAction =
+    (shChosen ? recommendations.find((item) => item.decision === shChosen!.decision) : undefined)
+    ?? recommendations[0]
+    ?? estimateFromStats({
     decision: fallbackDecision,
     label: decisionLabel(db, state, fallbackDecision),
     wins: 0,
+    valueSum: 0,
     samples: 0,
     errors: 0,
     maxSteps: 0,

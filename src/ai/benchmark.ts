@@ -4,9 +4,41 @@ import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileI
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { heuristicV1AiDecision } from "./heuristic-v1";
 import { randomAiDecision } from "./random";
+import { createPimcCoachReport } from "./coach";
 import type { DeckAxis } from "./benchmark-fixtures";
 
-export type BenchmarkPolicyId = "random" | "heuristic-v1" | HeuristicV2ProfileId;
+// [Claude 2026-06-22] "pimc-v2"＝Phase F 第二槓桿目前在測的改良版；與 "pimc" 共用同一 sample budget，
+// 方便同預算 A/B（成功標準＝pimc-v2 對 pimc CI 下界 > 50%）。目前載 S1（終局 EV cut，valueCutHorizon）；
+// S2（Sequential Halving）經 A/B 未達標已 park（仍可由 coach `allocation` option 取用，待 S1 後重測）。
+export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | HeuristicV2ProfileId;
+
+// [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
+// sample budget 是強度/速度的旋鈕（屬「模型能力」gate），先給保守可跑的初探預設，CLI 可覆寫。
+export interface PimcBenchmarkConfig {
+  sampleCount: number;
+  rolloutMaxSteps: number;
+  candidateLimit: number;
+  timeLimitMs?: number;
+  /** [Claude 2026-06-22] S1：pimc-v2 的 EV cut horizon（rollout 步數）。只作用於 pimc-v2，pimc 不受影響。 */
+  valueCutHorizon: number;
+}
+
+const DEFAULT_PIMC_BENCHMARK_CONFIG: PimcBenchmarkConfig = {
+  sampleCount: 8,
+  rolloutMaxSteps: 600,
+  candidateLimit: 8,
+  valueCutHorizon: 30,
+};
+
+let pimcBenchmarkConfig: PimcBenchmarkConfig = { ...DEFAULT_PIMC_BENCHMARK_CONFIG };
+
+export function configurePimcBenchmark(patch: Partial<PimcBenchmarkConfig>): void {
+  pimcBenchmarkConfig = { ...pimcBenchmarkConfig, ...patch };
+}
+
+export function getPimcBenchmarkConfig(): PimcBenchmarkConfig {
+  return { ...pimcBenchmarkConfig };
+}
 export type MatchOutcome = "complete" | "error" | "max-steps";
 export type MatrixMode = "ring" | "all-vs-all";
 export type LostReason = "judge-fail" | "no-deploy" | "voluntary" | "effect" | "unknown";
@@ -220,10 +252,28 @@ export function benchmarkPolicyDecision(
   state: GameState,
   randomByPlayer: [() => number, () => number],
   deckAxesByPlayer: readonly [readonly DeckAxis[], readonly DeckAxis[]] = [[], []],
+  knownDecksByPlayer?: readonly [readonly string[], readonly string[]],
 ): Decision {
   const pending = state.pendingDecision;
   if (!pending) throw new Error("目前沒有待決策，benchmark 無法推進");
   const player = pending.player as PlayerId;
+  if (policy === "pimc" || policy === "pimc-v2") {
+    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
+    const report = createPimcCoachReport(db, state, {
+      perspectivePlayer: player,
+      // 牌組身份在遊戲中是公開資訊，傳入真實 knownDecks 讓 determinize 從牌組重建對手未知牌、
+      // 不依賴對手現有隱藏區的排列（否則翻轉對手手牌會改變抽樣路徑）。
+      knownDecks: knownDecksByPlayer,
+      sampleCount: pimcBenchmarkConfig.sampleCount,
+      rolloutMaxSteps: pimcBenchmarkConfig.rolloutMaxSteps,
+      candidateLimit: pimcBenchmarkConfig.candidateLimit,
+      timeLimitMs: pimcBenchmarkConfig.timeLimitMs,
+      rolloutPolicy,
+      // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。allocation 兩者皆 uniform（S2 已 park）。
+      valueCutHorizon: policy === "pimc-v2" ? pimcBenchmarkConfig.valueCutHorizon : undefined,
+    });
+    return report.bestAction.decision;
+  }
   if (policy === "heuristic-v2-personality") return heuristicAiDecision(db, state, heuristicProfileForDeckAxes(deckAxesByPlayer[player]));
   if (isHeuristicV2ProfileId(policy)) return heuristicAiDecision(db, state, policy);
   if (policy === "heuristic-v1") return heuristicV1AiDecision(db, state);
@@ -514,7 +564,7 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
 
     try {
       const player = pending.player as PlayerId;
-      const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer, [config.decks[0].axes ?? [], config.decks[1].axes ?? []]);
+      const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer, [config.decks[0].axes ?? [], config.decks[1].axes ?? []], [config.decks[0].ids, config.decks[1].ids]);
       state = applyDecision(config.db, state, decision);
     } catch (error) {
       return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error));

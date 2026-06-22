@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
 import type { BatchReport, BenchmarkPolicyId, MatrixMode, MatrixReport } from "./benchmark";
-import { mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
+import { configurePimcBenchmark, mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
 import { createBenchmarkReportEnvelope } from "./benchmark-report";
 import { isHeuristicV2ProfileId } from "./heuristic";
 
@@ -41,8 +41,8 @@ function numberArg(name: string, fallback: number): number {
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
   if (raw === undefined) return fallback;
-  if (raw === "random" || raw === "heuristic-v1" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || isHeuristicV2ProfileId(raw)) return raw;
+  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
 }
 
 function matrixModeArg(): MatrixMode | null {
@@ -81,6 +81,16 @@ function run(): void {
   const deckB = findBenchmarkDeck(argValue("deck-b") ?? DEFAULTS.deckB);
   const policyA = policyArg("policy-a", DEFAULTS.policyA);
   const policyB = policyArg("policy-b", DEFAULTS.policyB);
+  // [Claude 2026-06-22] Phase F：PIMC policy 的 sample budget 旋鈕（強度↔速度）。預設保守，可覆寫。
+  if (policyA === "pimc" || policyB === "pimc" || policyA === "pimc-v2" || policyB === "pimc-v2") {
+    configurePimcBenchmark({
+      ...(argValue("pimc-samples") !== undefined ? { sampleCount: numberArg("pimc-samples", 8) } : {}),
+      ...(argValue("pimc-rollout-steps") !== undefined ? { rolloutMaxSteps: numberArg("pimc-rollout-steps", 600) } : {}),
+      ...(argValue("pimc-candidates") !== undefined ? { candidateLimit: numberArg("pimc-candidates", 8) } : {}),
+      ...(argValue("pimc-time-ms") !== undefined ? { timeLimitMs: numberArg("pimc-time-ms", 0) } : {}),
+      ...(argValue("pimc-value-cut") !== undefined ? { valueCutHorizon: numberArg("pimc-value-cut", 30) } : {}),
+    });
+  }
   const seedStart = numberArg("seed-start", DEFAULTS.seedStart);
   const games = numberArg("games", DEFAULTS.games);
   const maxSteps = numberArg("max-steps", DEFAULTS.maxSteps);

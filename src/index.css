@@ -931,6 +931,20 @@ input {
 .decision-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
 .decision-idle { justify-content: flex-start; color: var(--text-dim); }
 .decision-idle small { color: var(--accent); }
+/* [Claude 2026-06-22] 強敵 PIMC 思考提示：較亮的字色＋脈動圓點，暗示「正在推演」 */
+.decision-thinking { color: var(--text); }
+.decision-thinking > span { display: inline-flex; align-items: center; gap: 0.5em; }
+.thinking-dots {
+  display: inline-block;
+  width: 0.55em; height: 0.55em;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: thinking-pulse 1s ease-in-out infinite;
+}
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
 .decision-card-picker { flex-wrap: wrap; }
 /* 主 CTA 筆觸點綴（§3.3）：cream 按鈕外加手繪粗墨描邊 */
 .decision-actions button[data-primary="true"] { position: relative; }
