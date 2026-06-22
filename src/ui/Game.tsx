@@ -685,6 +685,7 @@ export function Game(props: {
   // [Claude 2026-06-22] Phase F 塊2：強敵 PIMC 思考用的 worker / 請求序號 / 思考提示狀態。
   const aiRequestRef = useRef(0);
   const aiWorkerRef = useRef<Worker | null>(null);
+  const aiPaceTimerRef = useRef<number | null>(null);
   const [aiThinking, setAiThinking] = useState<{ budgetMs: number } | null>(null);
   const replayCoachRequestRef = useRef(0);
   const replayScanTokenRef = useRef(0);
@@ -936,6 +937,7 @@ export function Game(props: {
   useEffect(() => {
     aiWorkerRef.current?.terminate();
     aiWorkerRef.current = null;
+    if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
     if (replayMode || pd?.player !== AI || state.phase === "gameOver") {
       setAiThinking(null);
       return;
@@ -964,6 +966,24 @@ export function Game(props: {
     // 0.5x/1x/2x 速度＝思考預算的乘除旋鈕（仍夾在 3–10 秒之間），讓速度設定對強敵有實際意義。
     const speedFactor = Number(speed) || 1;
     const timeLimitMs = Math.round(budgetMs / speedFactor);
+    // [Claude 2026-06-22] 出手節奏下限：S1 EV cut 讓 PIMC 常在 1 秒內想完，會搶在出手動畫（卡片飛行/落位 ~660ms、
+    // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，PIMC 思考時間計入此下限——想得久就不額外等、
+    // 想得快就補到下限讓動畫跑完。隨速度縮放（instant 不受影響、維持快速）。
+    const startedAt = Date.now();
+    // 900ms＝覆蓋最長的得分潑墨動畫（--splash-ms），讓出手動畫完整跑完；隨速度縮放。
+    const pacingMs = 900 / speedFactor;
+    function applyAiDecisionPaced(decision: Decision) {
+      const remaining = pacingMs - (Date.now() - startedAt);
+      if (remaining <= 0) {
+        applyAiDecision(decision);
+        return;
+      }
+      setAiThinking(null);
+      aiPaceTimerRef.current = window.setTimeout(() => {
+        aiPaceTimerRef.current = null;
+        applyAiDecision(decision);
+      }, remaining);
+    }
     const timer = window.setTimeout(() => {
       setAiThinking({ budgetMs: timeLimitMs });
       const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
@@ -972,14 +992,14 @@ export function Game(props: {
         if (event.data.requestId !== requestId || aiRequestRef.current !== Number(requestId)) return;
         worker.terminate();
         if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
-        if (event.data.ok) applyAiDecision(event.data.report.bestAction.decision);
-        else applyAiDecision(heuristicAiDecision(db, state, aiProfile));
+        if (event.data.ok) applyAiDecisionPaced(event.data.report.bestAction.decision);
+        else applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
       };
       worker.onerror = () => {
         if (aiRequestRef.current !== Number(requestId)) return;
         worker.terminate();
         if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
-        applyAiDecision(heuristicAiDecision(db, state, aiProfile));
+        applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
       };
       worker.postMessage({
         requestId,
@@ -1003,6 +1023,7 @@ export function Game(props: {
 
     return () => {
       window.clearTimeout(timer);
+      if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
       aiWorkerRef.current?.terminate();
       aiWorkerRef.current = null;
     };
@@ -1078,6 +1099,7 @@ export function Game(props: {
     replayCoachWorkerRef.current?.terminate();
     aiWorkerRef.current?.terminate();
     coachWorkerRef.current?.terminate();
+    if (aiPaceTimerRef.current !== null) window.clearTimeout(aiPaceTimerRef.current);
   }, []);
 
   // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
