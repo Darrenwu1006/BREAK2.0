@@ -7,9 +7,8 @@ import { randomAiDecision } from "./random";
 import { createPimcCoachReport } from "./coach";
 import type { DeckAxis } from "./benchmark-fixtures";
 
-// [Claude 2026-06-22] "pimc-v2"＝Phase F 第二槓桿目前在測的改良版；與 "pimc" 共用同一 sample budget，
-// 方便同預算 A/B（成功標準＝pimc-v2 對 pimc CI 下界 > 50%）。目前載 S1（終局 EV cut，valueCutHorizon）；
-// S2（Sequential Halving）經 A/B 未達標已 park（仍可由 coach `allocation` option 取用，待 S1 後重測）。
+// [Claude 2026-06-22] Phase F PIMC benchmark policy：pimc＝現況基準（無 EV cut）；
+// pimc-v2＝S1（EV cut@valueCutHorizon），已 A/B PASS、default-on。兩者共用同一 sample budget，方便同預算 A/B。
 export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | HeuristicV2ProfileId;
 
 // [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
@@ -269,7 +268,7 @@ export function benchmarkPolicyDecision(
       candidateLimit: pimcBenchmarkConfig.candidateLimit,
       timeLimitMs: pimcBenchmarkConfig.timeLimitMs,
       rolloutPolicy,
-      // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。allocation 兩者皆 uniform（S2 已 park）。
+      // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。
       valueCutHorizon: policy === "pimc-v2" ? pimcBenchmarkConfig.valueCutHorizon : undefined,
     });
     return report.bestAction.decision;

@@ -23,13 +23,6 @@ export interface PimcCoachOptions {
   rolloutPolicy?: HeuristicV2ProfileId;
   gameplanDeckLabels?: readonly [string, string];
   /**
-   * [Claude 2026-06-22] Phase F 第二槓桿 S2：樣本配置策略。
-   * "uniform"＝現況均勻 round-robin（預設，行為不變）；
-   * "sequential-halving"＝把同等總預算（sampleCount × 候選數）集中到競爭候選，逐輪淘汰底部一半。
-   * 只改「我方搜尋的計算分配」，不碰 determinize 抽樣來源 → leakage 不受影響。
-   */
-  allocation?: "uniform" | "sequential-halving";
-  /**
    * [Claude 2026-06-22] Phase F 第二槓桿 S1：rollout 終局 EV cut horizon（步數）。
    * 未設＝關閉（rollout 打到終局，行為同現況）；設正整數＝打到該步仍未終局就以價值函數估值截斷。
    * 效果＝rollout 更短（更多樣本）＋連續低方差訊號＋把長期資源控管注入評估。
@@ -500,83 +493,6 @@ function estimateFromStats(stats: MutableStats): CoachActionEstimate {
   };
 }
 
-/**
- * [Claude 2026-06-22] Phase F 第二槓桿 S2：Sequential Halving 樣本配置。
- * 總預算＝`perCandidateBudget × 候選數`（與 uniform 同），分 ceil(log2 n) 輪；每輪把該輪預算平均分給「當前存活候選」，
- * 抽完依「當前勝率信賴下界」淘汰底部一半，直到剩 1；剩餘預算（flooring 殘額）再灑在最終存活者。
- * 效果＝同預算下，競爭候選（含最終 chosen）拿到的有效樣本數遠多於 uniform → 選擇更穩。
- * 回傳 `chosen`＝SH 收斂到的那個 arm（**權威 bestAction**；不可改用「對全候選 raw winRate argmax」，
- * 因為 SH 下各候選樣本數差異極大，被早淘汰的低樣本候選可能因雜訊有虛高 winRate）。
- * `timedOut` 僅 deadline 觸發時為 true（耗盡預算屬正常結束）。不碰 determinize → leakage 不受影響。
- */
-function runSequentialHalving(
-  stats: MutableStats[],
-  perCandidateBudget: number,
-  deadline: number,
-  runOneSample: (item: MutableStats, index: number) => void,
-): { timedOut: boolean; chosen: MutableStats } {
-  const n = stats.length;
-  const totalBudget = perCandidateBudget * n;
-  let used = 0;
-  let timedOut = false;
-
-  const spend = (item: MutableStats, index: number): boolean => {
-    if (Date.now() >= deadline) {
-      timedOut = true;
-      return false;
-    }
-    if (used >= totalBudget) return false;
-    runOneSample(item, index);
-    used++;
-    return true;
-  };
-
-  // 淘汰排序鍵＝Wilson 勝率信賴下界（樣本少→下界低），避免「4 樣本幸運高勝率」把真正好棋擠掉、
-  // 也避免低樣本雜訊主導淘汰。confidenceFrom 在此不適用（它是區間寬度分），故直接算 Wilson lower bound。
-  const lowerBoundOf = (item: MutableStats): number => {
-    if (item.samples === 0) return 0;
-    const p = item.wins / item.samples;
-    const z = 1.96;
-    const nn = item.samples;
-    const denom = 1 + (z * z) / nn;
-    const center = p + (z * z) / (2 * nn);
-    const margin = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * nn)) / nn);
-    return Math.max(0, (center - margin) / denom);
-  };
-
-  let survivors = stats.map((item, index) => ({ item, index }));
-  const rounds = Math.max(1, Math.ceil(Math.log2(n)));
-  for (let r = 0; r < rounds && survivors.length > 1 && !timedOut && used < totalBudget; r++) {
-    const perCand = Math.max(1, Math.floor(totalBudget / (rounds * survivors.length)));
-    for (let s = 0; s < perCand && !timedOut && used < totalBudget; s++) {
-      for (const { item, index } of survivors) {
-        if (!spend(item, index)) break;
-      }
-    }
-    survivors = survivors
-      .slice()
-      .sort((a, b) => lowerBoundOf(b.item) - lowerBoundOf(a.item) || b.item.samples - a.item.samples)
-      .slice(0, Math.max(1, Math.ceil(survivors.length / 2)));
-  }
-
-  // 殘額預算 → 灑在最終存活者，把總抽樣數補到 totalBudget。
-  while (!timedOut && used < totalBudget) {
-    let progressed = false;
-    for (const { item, index } of survivors) {
-      if (!spend(item, index)) break;
-      progressed = true;
-    }
-    if (!progressed) break;
-  }
-
-  // chosen＝最終存活者中信賴下界最高者（一般情況下 survivors 已收斂到 1）。
-  const chosen = survivors
-    .slice()
-    .sort((a, b) => lowerBoundOf(b.item) - lowerBoundOf(a.item) || b.item.samples - a.item.samples)[0]?.item ?? stats[0]!;
-
-  return { timedOut, chosen };
-}
-
 export function createPimcCoachReport(db: CardDb, state: GameState, options: PimcCoachOptions = {}): CoachReport {
   const pd = state.pendingDecision;
   if (!pd) throw new Error("沒有待決策，無法產生 Coach 建議");
@@ -619,9 +535,8 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     }
   }
 
-  // [Claude 2026-06-22] S2：把單一抽樣抽成共享閉包。seed 由「候選原始 index + 該候選已抽次數」推導，
-  // 與原均勻公式（candidateIndex*7919 + sampleIndex*1009）等價 → uniform 路徑 seed 完全不變、determinism 測試仍綠；
-  // 不同配置策略只改「誰被抽幾次」，每一抽的 determinize 來源與既往一致。
+  // [Claude 2026-06-22] 把單一抽樣抽成共享閉包。seed 由「候選原始 index + 該候選已抽次數」推導，
+  // 與內層 round-robin 的 (candidateIndex*7919 + sampleIndex*1009) 等價 → seed 穩定、determinism 測試仍綠。
   const runOneSample = (item: MutableStats, index: number): void => {
     const sampleSeed = seed + (item.samples + item.maxSteps + item.errors) * 1009 + index * 7919 + 23;
     const sampledState = determinizeHiddenState(state, perspective, knownDecks, sampleSeed);
@@ -647,33 +562,21 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
   };
 
   let timedOut = false;
-  let shChosen: MutableStats | null = null;
-  if ((options.allocation ?? "uniform") === "sequential-halving" && stats.length > 1) {
-    const sh = runSequentialHalving(stats, sampleCount, deadline, runOneSample);
-    timedOut = sh.timedOut;
-    shChosen = sh.chosen;
-  } else {
-    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-      for (let candidateIndex = 0; candidateIndex < stats.length; candidateIndex++) {
-        if (Date.now() >= deadline) {
-          timedOut = true;
-          break;
-        }
-        runOneSample(stats[candidateIndex]!, candidateIndex);
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+    for (let candidateIndex = 0; candidateIndex < stats.length; candidateIndex++) {
+      if (Date.now() >= deadline) {
+        timedOut = true;
+        break;
       }
-      if (timedOut) break;
+      runOneSample(stats[candidateIndex]!, candidateIndex);
     }
+    if (timedOut) break;
   }
 
   const recommendations = stats
     .map(estimateFromStats)
     .sort((a, b) => b.winRate - a.winRate || b.confidence - a.confidence || b.sampleCount - a.sampleCount);
-  // [Claude 2026-06-22] S2：SH 路徑的 bestAction＝SH 收斂到的 arm（estimateFromStats 的 decision 與 stats 同參考可直接匹配），
-  // 不可沿用 recommendations[0]（對全候選 raw winRate argmax），否則低樣本幸運候選會被誤選。uniform 路徑維持原邏輯。
-  const bestAction =
-    (shChosen ? recommendations.find((item) => item.decision === shChosen!.decision) : undefined)
-    ?? recommendations[0]
-    ?? estimateFromStats({
+  const bestAction = recommendations[0] ?? estimateFromStats({
     decision: fallbackDecision,
     label: decisionLabel(db, state, fallbackDecision),
     wins: 0,

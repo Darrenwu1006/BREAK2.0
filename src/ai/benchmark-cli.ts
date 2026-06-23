@@ -82,7 +82,7 @@ function run(): void {
   const policyA = policyArg("policy-a", DEFAULTS.policyA);
   const policyB = policyArg("policy-b", DEFAULTS.policyB);
   // [Claude 2026-06-22] Phase F：PIMC policy 的 sample budget 旋鈕（強度↔速度）。預設保守，可覆寫。
-  if (policyA === "pimc" || policyB === "pimc" || policyA === "pimc-v2" || policyB === "pimc-v2") {
+  if ([policyA, policyB].some((p) => p === "pimc" || p === "pimc-v2")) {
     configurePimcBenchmark({
       ...(argValue("pimc-samples") !== undefined ? { sampleCount: numberArg("pimc-samples", 8) } : {}),
       ...(argValue("pimc-rollout-steps") !== undefined ? { rolloutMaxSteps: numberArg("pimc-rollout-steps", 600) } : {}),
