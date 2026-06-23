@@ -26,7 +26,7 @@ const DEFAULT_PIMC_BENCHMARK_CONFIG: PimcBenchmarkConfig = {
   sampleCount: 8,
   rolloutMaxSteps: 600,
   candidateLimit: 8,
-  valueCutHorizon: 30,
+  valueCutHorizon: 40, // [Claude 2026-06-23] horizon sweep 取最強（與 UI 一致）
 };
 
 let pimcBenchmarkConfig: PimcBenchmarkConfig = { ...DEFAULT_PIMC_BENCHMARK_CONFIG };

@@ -12,10 +12,12 @@ function fake(patch: {
   oppHand?: number[]; oppDeck?: number[]; oppSet?: number[];
 }): GameState {
   const arr = (n: number | undefined, fill = 0) => new Array(n ?? 0).fill(fill);
+  const court = { serve: [], blockCenter: [], blockSides: [], receive: [], toss: [], attack: [], drop: [], eventArea: [] };
   return {
     players: [
-      { setArea: arr(patch.s0), hand: arr(patch.h0), deck: arr(patch.d0) },
+      { ...court, setArea: arr(patch.s0), hand: arr(patch.h0), deck: arr(patch.d0) },
       {
+        ...court,
         setArea: patch.oppSet ?? arr(patch.s1),
         hand: patch.oppHand ?? arr(patch.h1),
         deck: patch.oppDeck ?? arr(patch.d1),

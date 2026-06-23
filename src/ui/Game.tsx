@@ -1014,9 +1014,9 @@ export function Game(props: {
           rolloutMaxSteps: 1400,
           timeLimitMs,
           rolloutPolicy: aiProfile,
-          // [Claude 2026-06-22] S1 終局 EV cut（A/B 同預算 68.8%、CI 61.2%-75.4% 顯著贏現況，且 rollout ~3x 快
-          // → 同時間預算內想更多手）。horizon 30 為驗證值。
-          valueCutHorizon: 30,
+          // [Claude 2026-06-23] S1 終局 EV cut。horizon sweep（vs heuristic、新V）：cut@20 86.9%／30 88.8%／40 90.0%，
+          // 趨勢「越長越強」（rollout 越長越少吃 value 偏誤），雖在雜訊內但取最強的 40；仍 sample-bound、速度無感。
+          valueCutHorizon: 40,
         },
       });
     }, 180);

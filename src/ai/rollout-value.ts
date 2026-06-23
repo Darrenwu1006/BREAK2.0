@@ -21,6 +21,12 @@ export const VALUE_FEATURE_NAMES = [
   "deckDiff", // 我 − 對手 牌庫張數
   "serving", // 本 set 發球權在我 → +1，否則 −1
   "turnMine", // 當前行動權在我 → +1，否則 −1
+  // [Claude 2026-06-23] S1a 擴充：場上發展（皆公開、用各區疊放張數，不讀隱藏內容）
+  "attackDiff", // 我 − 對手 攻擊線張數（最直接連到得分）
+  "blockDiff", // 我 − 對手 攔網（center+sides）張數（防守佈署）
+  "courtDiff", // 我 − 對手 場上總在場張數（serve/receive/toss/attack/block 合計）
+  "dropDiff", // 我 − 對手 棄牌區張數（資源消耗）
+  "eventDiff", // 我 − 對手 事件區張數（持續性佈局）
 ] as const;
 
 export type ValueFeatureName = (typeof VALUE_FEATURE_NAMES)[number];
@@ -38,6 +44,10 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId): n
   const opSigned = op ? (op.owner === me ? op.value : -op.value) : 0;
   const dpSigned = dp ? (dp.owner === me ? dp.value : -dp.value) : 0;
 
+  const blockCount = (p: typeof mine) => p.blockCenter.length + p.blockSides.length;
+  const courtCount = (p: typeof mine) =>
+    p.serve.length + p.receive.length + p.toss.length + p.attack.length + blockCount(p);
+
   return [
     mine.setArea.length - their.setArea.length,
     opSigned,
@@ -46,6 +56,11 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId): n
     mine.deck.length - their.deck.length,
     state.servingPlayer === me ? 1 : -1,
     state.turnPlayer === me ? 1 : -1,
+    mine.attack.length - their.attack.length,
+    blockCount(mine) - blockCount(their),
+    courtCount(mine) - courtCount(their),
+    mine.drop.length - their.drop.length,
+    mine.eventArea.length - their.eventArea.length,
   ];
 }
 
@@ -58,14 +73,14 @@ export interface ValueModel {
 }
 
 /**
- * [Claude 2026-06-22] 凍結係數。由 `npm run fit:rollout-value -- --games 400 --sample-every 4` 擬合產生並貼回。
- * setLifeDiff 主導（1.23，正向）、handDiff 次之（0.24）皆符合直覺；AUC 0.78＝對中局勝負有實質鑑別力。
- * 重擬合請更新本區塊與 provenance。
+ * [Claude 2026-06-23] 凍結係數。由 `npm run fit:rollout-value -- --games 400 --sample-every 4` 擬合產生並貼回。
+ * setLifeDiff 主導（1.06，正向），blockDiff（0.38，攔網佈署）與 handDiff（0.19）次之，皆符合直覺；
+ * 加入場上發展特徵後 AUC 0.78→0.81、acc 69.4%→71.8%。重擬合請更新本區塊與 provenance。
  */
 export const ROLLOUT_VALUE_MODEL: ValueModel = {
-  weights: [1.2334, 0.1152, 0.0595, 0.2438, 0.1187, -0.0718, 0.0302],
+  weights: [1.0557, 0.1429, 0.0147, 0.1874, 0.0332, 0.0257, 0.0976, 0.1196, 0.3760, -0.1203, -0.0728, 0.1256],
   bias: 0.0,
-  provenance: "fit games=400 samples=32664 logloss=0.5553 acc=69.4% auc=0.7817 [Claude 2026-06-22]",
+  provenance: "fit games=400 samples=32664 logloss=0.5297 acc=71.8% auc=0.8061 [Claude 2026-06-23]",
 };
 
 function sigmoid(z: number): number {
