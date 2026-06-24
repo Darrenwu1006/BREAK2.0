@@ -1001,22 +1001,22 @@ export function Game(props: {
         if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
         applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
       };
+      // [Claude 2026-06-23] Phase G G4：電腦對手改用 SO-ISMCTS（leaf rollout=40、對手模型=heuristic）。
+      // 3s 部署預算同 wall-clock A/B 勝現役 pimc-v2 57.5%（CI 49.8-64.9%，趨勢 40→50→57.5% 隨預算單調上升；
+      // 見 docs/M8_PHASE_G_ISMCTS_SPEC.md §8、WORKLOG 2026-06-23）。iterations 不設＝由 timeLimitMs（think-budget）綁定。
       worker.postMessage({
         requestId,
         state,
+        engine: "ismcts",
         options: {
           perspectivePlayer: AI,
           knownDecks: props.decks,
-          gameplanDeckLabels: [`${props.deckMeta[0].school}-${props.deckMeta[0].name}`, `${props.deckMeta[1].school}-${props.deckMeta[1].name}`],
           seed: state.rngState,
-          sampleCount: 32,
           candidateLimit: 8,
-          rolloutMaxSteps: 1400,
           timeLimitMs,
           rolloutPolicy: aiProfile,
-          // [Claude 2026-06-23] S1 終局 EV cut。horizon sweep（vs heuristic、新V）：cut@20 86.9%／30 88.8%／40 90.0%，
-          // 趨勢「越長越強」（rollout 越長越少吃 value 偏誤），雖在雜訊內但取最強的 40；仍 sample-bound、速度無感。
-          valueCutHorizon: 40,
+          leafRolloutHorizon: 40,
+          opponentModel: "heuristic",
         },
       });
     }, 180);

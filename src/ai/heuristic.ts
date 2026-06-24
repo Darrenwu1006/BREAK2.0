@@ -501,6 +501,31 @@ function chooseDeployUid(db: CardDb, state: GameState, p: PlayerId, area: Exclud
     });
   }
 
+  if (area === "toss") {
+    // [Claude 2026-06-23] 反擊托球聯合最佳化：OP = 托值 + 攻值，所以托球該選的不是「自己托值最高」，
+    // 而是「站托後攻擊格還能放的最佳合法攻擊」加起來最大者（同名禁止：攻≠托）。
+    // 修掉舊版托/攻各自獨立貪心會少打 OP 的盲點（見 reports/15）。OP 為主鍵，平手再用技能/少燒未來價值收尾。
+    const attackPool = deployableUids(db, state, p, "attack");
+    const nameJa = (uid: number) => cardOf(db, state, uid).nameJa;
+    return opts.reduce((best, uid) => {
+      const jointOp = (u: number) => {
+        const tossVal = paramOf(db, state, u, "toss");
+        let bestAtk = 0;
+        for (const a of attackPool) {
+          if (a === u || nameJa(a) === nameJa(u)) continue; // 同一張或同名不可同時站托+攻
+          const atk = paramOf(db, state, a, "attack");
+          if (atk > bestAtk) bestAtk = atk;
+        }
+        return tossVal + bestAtk;
+      };
+      const key = (u: number) =>
+        jointOp(u) * 100 +
+        skillBonus(cardOf(db, state, u), weights, "toss") * 1.4 -
+        futureCardValue(db, state, p, u, weights) * 0.08 * weights.deployFuturePenalty;
+      return key(uid) > key(best) ? uid : best;
+    });
+  }
+
   const areaWeight: Record<Exclude<Area, "block">, number> = { serve: 5.0, receive: 4.0, toss: 4.3, attack: 5.2 };
   return opts.reduce((best, uid) => {
     const score = paramOf(db, state, uid, area) * areaWeight[area] + skillBonus(cardOf(db, state, uid), weights, area) * 1.4 - futureCardValue(db, state, p, uid, weights) * 0.08 * weights.deployFuturePenalty;

@@ -3,12 +3,14 @@ import type { Card } from "../data/types";
 import type { GameState } from "../engine/types";
 import { createPimcCoachReport } from "./coach";
 import type { CoachReport, PimcCoachOptions } from "./coach";
+import { createIsmctsReport } from "./ismcts";
+import type { IsmctsOptions } from "./ismcts";
 
-export interface CoachWorkerRequest {
-  requestId: string;
-  state: GameState;
-  options?: PimcCoachOptions;
-}
+// [Claude 2026-06-23] Phase G G4：worker 依 engine 分派 PIMC／IS-MCTS。
+// 電腦對手（強敵）走 ismcts；玩家側的 coach 提示與 replay 復盤維持 pimc。
+export type CoachWorkerRequest =
+  | { requestId: string; state: GameState; engine?: "pimc"; options?: PimcCoachOptions }
+  | { requestId: string; state: GameState; engine: "ismcts"; options?: IsmctsOptions };
 
 export type CoachWorkerResponse =
   | { requestId: string; ok: true; report: CoachReport }
@@ -21,9 +23,12 @@ const workerSelf = self as unknown as {
 };
 
 workerSelf.onmessage = (event: MessageEvent<CoachWorkerRequest>) => {
-  const { requestId, state, options } = event.data;
+  const { requestId, state } = event.data;
   try {
-    const report = createPimcCoachReport(db, state, options);
+    const report =
+      event.data.engine === "ismcts"
+        ? createIsmctsReport(db, state, event.data.options)
+        : createPimcCoachReport(db, state, event.data.options);
     workerSelf.postMessage({ requestId, ok: true, report } satisfies CoachWorkerResponse);
   } catch (error) {
     workerSelf.postMessage({

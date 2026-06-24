@@ -4,7 +4,9 @@ import cardsJson from "../data/cards.json";
 import type { Card } from "../src/data/types";
 import type { CardDb, Decision, PlayerId } from "../src/engine/types";
 import { createPimcCoachReport } from "../src/ai/coach";
+import { renderBoardRange } from "../src/ai/replay-board";
 import { createReplayReviewReport, lostSetCauseLabel, type LostSetCause, type ReplayGameplanCheckpoint } from "../src/ai/replay-review";
+import { buildTriage, type TriageCandidate, type TriageCategory, type TriagePimcInput } from "../src/ai/replay-triage";
 import type { ReplaySession } from "../src/ui/replayHistory";
 
 interface CliOptions {
@@ -14,6 +16,10 @@ interface CliOptions {
   samples: number;
   threshold: number;
   maxCoachSteps: number;
+  /** --board=N｜a-b：只輸出該步（步）的盤面，1-based，含端點。 */
+  board?: { from: number; to: number };
+  /** --triage：輸出關鍵手候選清單（失誤＋打得好＋需留意）；搭 --coach 折入 PIMC。 */
+  triage: boolean;
 }
 
 interface CoachFinding {
@@ -43,6 +49,7 @@ function parseArgs(argv: string[]): CliOptions {
     samples: 5,
     threshold: 0.15,
     maxCoachSteps: Infinity,
+    triage: false,
   };
   for (const arg of argv) {
     if (arg === "--coach") options.coach = true;
@@ -51,9 +58,19 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg.startsWith("--samples=")) options.samples = Math.max(0, Number(arg.slice("--samples=".length)) || 0);
     else if (arg.startsWith("--threshold=")) options.threshold = Math.max(0, Number(arg.slice("--threshold=".length)) || 0);
     else if (arg.startsWith("--max-coach-steps=")) options.maxCoachSteps = Math.max(0, Number(arg.slice("--max-coach-steps=".length)) || 0);
+    else if (arg.startsWith("--board=")) options.board = parseBoardRange(arg.slice("--board=".length));
+    else if (arg === "--triage") options.triage = true;
   }
   if (options.player !== 0 && options.player !== 1) throw new Error("--player must be 0 or 1");
   return options;
+}
+
+function parseBoardRange(spec: string): { from: number; to: number } {
+  const match = /^(\d+)(?:-(\d+))?$/.exec(spec.trim());
+  if (!match) throw new Error("--board must be N or a-b, e.g. --board=29 or --board=22-30");
+  const from = Number(match[1]);
+  const to = match[2] === undefined ? from : Number(match[2]);
+  return { from, to };
 }
 
 function latestReplayFile(): string {
@@ -233,8 +250,66 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
   }
 }
 
+const TRIAGE_GROUP_LABEL: Record<TriageCategory, string> = {
+  mistake: "疑似失誤",
+  "good-play": "打得好",
+  concern: "需留意",
+};
+
+function printTriage(path: string, session: ReplaySession, options: CliOptions): void {
+  let pimc: TriagePimcInput[] | undefined;
+  if (options.coach) {
+    const { findings } = scanCoachFindings(session, options);
+    pimc = findings.map((finding) => ({
+      entryIndex: finding.step - 1,
+      kind: finding.kind === "mistake" ? "mistake" : "tradeoff",
+      delta: finding.delta,
+      bestChoice: finding.bestChoice,
+    }));
+    console.log("");
+  }
+  const result = buildTriage(db, session, { player: options.player, pimc });
+  const opp = (1 - result.player) as PlayerId;
+  const winner = result.matchWinner === null ? "未分勝負" : `${playerName(result.matchWinner)}獲勝`;
+  console.log(`載入對戰紀錄: ${path}`);
+  console.log(`Triage 篩選: ${result.deckLabels[0]} VS ${result.deckLabels[1]}`);
+  console.log(`結果: ${winner}（Set ${result.setWins[result.player]}:${result.setWins[opp]}）｜候選 ${result.candidates.length} 手｜分析座位 ${playerName(result.player)}`);
+  if (options.coach && pimc) console.log(`（已折入 PIMC 掃描，samples=${options.samples}）`);
+
+  const groups: TriageCategory[] = ["mistake", "good-play", "concern"];
+  for (const category of groups) {
+    const items = result.candidates.filter((candidate) => candidate.category === category);
+    if (items.length === 0) continue;
+    console.log("");
+    console.log(`【${TRIAGE_GROUP_LABEL[category]}】${items.length} 手`);
+    for (const candidate of items) printTriageCandidate(candidate);
+  }
+  console.log("");
+  console.log("挑幾步深掘：npm run analyze:replay -- --board=<步> 或 --board=<起>-<迄>（失 Set 候選建議回放整個 Set 找根因）");
+}
+
+function printTriageCandidate(candidate: TriageCandidate): void {
+  const stars = "★".repeat(candidate.strength) || "☆";
+  console.log(`  [第 ${candidate.step} 步] Set ${candidate.setNo} Turn ${candidate.turnNo}（${candidate.phase}/${candidate.pendingType}）${stars}`);
+  console.log(`     ${candidate.headline}`);
+  for (const signal of candidate.signals) console.log(`       · ${signal.detail}（${signal.source}）`);
+}
+
 const options = parseArgs(process.argv.slice(2));
 const { path, session } = loadReplay(options.file);
+
+if (options.triage) {
+  printTriage(path, session, options);
+  process.exit(0);
+}
+
+if (options.board) {
+  console.log(`載入對戰紀錄: ${path}`);
+  console.log("");
+  console.log(renderBoardRange(db, session, options.board.from, options.board.to));
+  process.exit(0);
+}
+
 printReport(path, session, options);
 
 if (options.coach) {

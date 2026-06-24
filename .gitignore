@@ -4,3 +4,7 @@ dist/
 
 # 協作文件（milestone/討論過程）不公開，本地保留
 docs/
+
+# 可重生產物：復盤盤面 dump 與 benchmark log（體積大、不進 repo）
+data/replays/
+data/ab/

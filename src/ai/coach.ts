@@ -45,7 +45,9 @@ export interface CoachActionEstimate {
 }
 
 export interface CoachReport {
-  kind: "pimc-coach-v1";
+  // [Claude 2026-06-23] Phase G：IS-MCTS 報告刻意沿用同一介面（worker/UI/benchmark 零改動），
+  // 僅用 kind 區分來源以便除錯。沒有 consumer 對 kind 做 exhaustive switch。
+  kind: "pimc-coach-v1" | "ismcts-coach-v1";
   perspectivePlayer: PlayerId;
   actingPlayer: PlayerId;
   pendingType: Decision["type"];
@@ -119,12 +121,48 @@ function cardParam(db: CardDb, state: GameState, uid: number, area: CourtArea): 
   return id ? db.get(id)?.params?.[area] ?? 0 : 0;
 }
 
+/** [Claude 2026-06-23] 估這個出手決策建立的即時 OP 壓制（OP = 托值 + 攻值）。
+ *  只在 winRate 統計同分時當 tiebreak：當對手在抽樣世界裡怎樣都防得住時，高/低 OP 線勝率會打平，
+ *  但高 OP 線「弱支配」（never worse，未抽到的世界裡有時更好）→ 同分時偏好它。
+ *  修掉 reports/15 的搜尋盲點：原本只比 winRate→confidence→sampleCount，OP 高低被無視。
+ *  非建構進攻的決策回 0（不參與此維度）。 */
+export function decisionOpPressure(db: CardDb, state: GameState, decision: Decision): number {
+  const p = state.pendingDecision?.player as PlayerId | undefined;
+  if (p === undefined) return 0;
+  const nameJa = (uid: number) => db.get(state.cards[uid] ?? "")?.nameJa ?? "";
+  if (decision.type === "deploy-serve") {
+    return decision.uid === null ? 0 : cardParam(db, state, decision.uid, "serve");
+  }
+  if (decision.type === "deploy-attack") {
+    if (decision.uid === null) return 0;
+    const toss = state.players[p].toss;
+    const tossTop = toss.length ? toss[toss.length - 1]! : null;
+    const tossVal = tossTop === null ? 0 : cardParam(db, state, tossTop, "toss");
+    return tossVal + cardParam(db, state, decision.uid, "attack");
+  }
+  if (decision.type === "deploy-toss") {
+    if (decision.uid === null) return 0;
+    // 聯合估值：托值 + 站托後攻擊格還能放的最佳合法攻擊（同名禁止：攻≠托）。
+    const tossVal = cardParam(db, state, decision.uid, "toss");
+    const tossName = nameJa(decision.uid);
+    let bestAtk = 0;
+    for (const a of deployableUids(db, state, p, "attack")) {
+      if (a === decision.uid || nameJa(a) === tossName) continue;
+      const atk = cardParam(db, state, a, "attack");
+      if (atk > bestAtk) bestAtk = atk;
+    }
+    return tossVal + bestAtk;
+  }
+  return 0;
+}
+
 function playerZoneUids(state: GameState, p: PlayerId, zones: readonly ZoneName[] = ALL_ZONES): number[] {
   const ps = state.players[p];
   return zones.flatMap((zone) => ps[zone]);
 }
 
-function inferKnownDecks(state: GameState): [string[], string[]] {
+// [Claude 2026-06-23] Phase G：以下四個純 helper 由 ismcts.ts 重用（determinize 抽樣、合法集列舉、決策標籤、牌組推斷）。
+export function inferKnownDecks(state: GameState): [string[], string[]] {
   return [0, 1].map((p) => playerZoneUids(state, p as PlayerId).map((uid) => state.cards[uid]!)) as [string[], string[]];
 }
 
@@ -163,7 +201,7 @@ function shuffleCopy<T>(items: readonly T[], rnd: () => number): T[] {
   return copy;
 }
 
-function determinizeHiddenState(
+export function determinizeHiddenState(
   state: GameState,
   perspective: PlayerId,
   knownDecks: readonly [readonly string[], readonly string[]],
@@ -270,7 +308,7 @@ function enumerateEffectCardChoices(db: CardDb, state: GameState, heuristic: Dec
   return decisions;
 }
 
-function enumerateCandidates(db: CardDb, state: GameState, limit: number, fallback: Decision): Decision[] {
+export function enumerateCandidates(db: CardDb, state: GameState, limit: number, fallback: Decision): Decision[] {
   const pd = state.pendingDecision;
   if (!pd) throw new Error("沒有待決策");
   const p = pd.player as PlayerId;
@@ -349,7 +387,7 @@ function enumerateCandidates(db: CardDb, state: GameState, limit: number, fallba
   return legal.slice(0, Math.max(1, limit));
 }
 
-function decisionLabel(db: CardDb, state: GameState, decision: Decision): string {
+export function decisionLabel(db: CardDb, state: GameState, decision: Decision): string {
   switch (decision.type) {
     case "serve-rights":
       return decision.take ? "取得首次發球權" : "讓出首次發球權";
@@ -573,9 +611,18 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     if (timedOut) break;
   }
 
+  // [Claude 2026-06-23] winRate 同分（差距 ≤ EPS）時，改用即時 OP 壓制決勝（弱支配的高 OP 線優先），
+  // 再退回 confidence / sampleCount。修掉 reports/15：搜尋在「對手怎樣都防得住」時把高 OP 線洗掉的盲點。
+  const WINRATE_TIE_EPS = 0.02;
   const recommendations = stats
-    .map(estimateFromStats)
-    .sort((a, b) => b.winRate - a.winRate || b.confidence - a.confidence || b.sampleCount - a.sampleCount);
+    .map((s) => ({ est: estimateFromStats(s), op: decisionOpPressure(db, state, s.decision) }))
+    .sort((a, b) => {
+      const dw = b.est.winRate - a.est.winRate;
+      if (Math.abs(dw) > WINRATE_TIE_EPS) return dw;
+      if (a.op !== b.op) return b.op - a.op;
+      return b.est.confidence - a.est.confidence || b.est.sampleCount - a.est.sampleCount;
+    })
+    .map((x) => x.est);
   const bestAction = recommendations[0] ?? estimateFromStats({
     decision: fallbackDecision,
     label: decisionLabel(db, state, fallbackDecision),

@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
 import type { BatchReport, BenchmarkPolicyId, MatrixMode, MatrixReport } from "./benchmark";
-import { configurePimcBenchmark, mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
+import { configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
 import { createBenchmarkReportEnvelope } from "./benchmark-report";
 import { isHeuristicV2ProfileId } from "./heuristic";
 
@@ -41,8 +41,8 @@ function numberArg(name: string, fallback: number): number {
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
   if (raw === undefined) return fallback;
-  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || isHeuristicV2ProfileId(raw)) return raw;
+  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
 }
 
 function matrixModeArg(): MatrixMode | null {
@@ -82,13 +82,27 @@ function run(): void {
   const policyA = policyArg("policy-a", DEFAULTS.policyA);
   const policyB = policyArg("policy-b", DEFAULTS.policyB);
   // [Claude 2026-06-22] Phase F：PIMC policy 的 sample budget 旋鈕（強度↔速度）。預設保守，可覆寫。
+  // [Claude 2026-06-23] Phase G：--time-ms 同時套用到 pimc 與 ismcts（同 wall-clock A/B 的便捷旋鈕）。
+  const sharedTimeMs = argValue("time-ms") !== undefined ? numberArg("time-ms", 0) : undefined;
   if ([policyA, policyB].some((p) => p === "pimc" || p === "pimc-v2")) {
     configurePimcBenchmark({
       ...(argValue("pimc-samples") !== undefined ? { sampleCount: numberArg("pimc-samples", 8) } : {}),
       ...(argValue("pimc-rollout-steps") !== undefined ? { rolloutMaxSteps: numberArg("pimc-rollout-steps", 600) } : {}),
       ...(argValue("pimc-candidates") !== undefined ? { candidateLimit: numberArg("pimc-candidates", 8) } : {}),
+      ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
       ...(argValue("pimc-time-ms") !== undefined ? { timeLimitMs: numberArg("pimc-time-ms", 0) } : {}),
       ...(argValue("pimc-value-cut") !== undefined ? { valueCutHorizon: numberArg("pimc-value-cut", 30) } : {}),
+    });
+  }
+  // [Claude 2026-06-23] Phase G：IS-MCTS 旋鈕（iterations／同 wall-clock 的 time-ms／UCB c／候選寬度）。
+  if ([policyA, policyB].some((p) => p === "is-mcts")) {
+    configureIsmctsBenchmark({
+      ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
+      ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
+      ...(argValue("ismcts-c") !== undefined ? { explorationC: numberArg("ismcts-c", Math.SQRT2) } : {}),
+      ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
+      ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
+      ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
     });
   }
   const seedStart = numberArg("seed-start", DEFAULTS.seedStart);

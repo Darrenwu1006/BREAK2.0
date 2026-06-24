@@ -5,11 +5,13 @@ import type { HeuristicV2ProfileId } from "./heuristic";
 import { heuristicV1AiDecision } from "./heuristic-v1";
 import { randomAiDecision } from "./random";
 import { createPimcCoachReport } from "./coach";
+import { createIsmctsReport } from "./ismcts";
 import type { DeckAxis } from "./benchmark-fixtures";
 
 // [Claude 2026-06-22] Phase F PIMC benchmark policy：pimc＝現況基準（無 EV cut）；
 // pimc-v2＝S1（EV cut@valueCutHorizon），已 A/B PASS、default-on。兩者共用同一 sample budget，方便同預算 A/B。
-export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | HeuristicV2ProfileId;
+// [Claude 2026-06-23] Phase G：is-mcts＝SO-ISMCTS。成本單位是 iteration（≠ PIMC sample），故 A/B 一律同 wall-clock。
+export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | "is-mcts" | HeuristicV2ProfileId;
 
 // [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
 // sample budget 是強度/速度的旋鈕（屬「模型能力」gate），先給保守可跑的初探預設，CLI 可覆寫。
@@ -37,6 +39,38 @@ export function configurePimcBenchmark(patch: Partial<PimcBenchmarkConfig>): voi
 
 export function getPimcBenchmarkConfig(): PimcBenchmarkConfig {
   return { ...pimcBenchmarkConfig };
+}
+
+// [Claude 2026-06-23] Phase G：IS-MCTS benchmark 旋鈕。iterations＝無 deadline 時硬上限；
+// 同 wall-clock A/B 時設 timeLimitMs（與 pimc-v2 同值）。leafRolloutHorizon 保留給 G3 方案 B，G1 忽略（leaf＝純 V）。
+export interface IsmctsBenchmarkConfig {
+  iterations: number;
+  timeLimitMs?: number;
+  explorationC: number;
+  candidateLimit: number;
+  /** [G3 保留] 方案 B：leaf 淺 rollout horizon。G1＝0（純 evaluateStateValue）。 */
+  leafRolloutHorizon: number;
+}
+
+const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
+  // [Claude 2026-06-23] 同 wall-clock A/B 由 timeLimitMs 綁定預算；iterations 設高當安全上限，
+  // 否則（如 800）會在 ~0.5s 就達上限、浪費剩餘 think budget → 對 is-mcts 不公平。
+  iterations: 1_000_000,
+  explorationC: Math.SQRT2,
+  candidateLimit: 8,
+  // [Claude 2026-06-23] G2 診斷後預設＝40（方案 B，對齊 PIMC horizon）：純 V leaf（=0）淺樹下區分力不足、
+  // 對手模型預設＝heuristic（createIsmctsReport 預設）——adversarial 對固定 heuristic 對手有害。
+  leafRolloutHorizon: 40,
+};
+
+let ismctsBenchmarkConfig: IsmctsBenchmarkConfig = { ...DEFAULT_ISMCTS_BENCHMARK_CONFIG };
+
+export function configureIsmctsBenchmark(patch: Partial<IsmctsBenchmarkConfig>): void {
+  ismctsBenchmarkConfig = { ...ismctsBenchmarkConfig, ...patch };
+}
+
+export function getIsmctsBenchmarkConfig(): IsmctsBenchmarkConfig {
+  return { ...ismctsBenchmarkConfig };
 }
 export type MatchOutcome = "complete" | "error" | "max-steps";
 export type MatrixMode = "ring" | "all-vs-all";
@@ -270,6 +304,21 @@ export function benchmarkPolicyDecision(
       rolloutPolicy,
       // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。
       valueCutHorizon: policy === "pimc-v2" ? pimcBenchmarkConfig.valueCutHorizon : undefined,
+    });
+    return report.bestAction.decision;
+  }
+  if (policy === "is-mcts") {
+    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
+    const report = createIsmctsReport(db, state, {
+      perspectivePlayer: player,
+      // 牌組身份公開：傳真實 knownDecks，讓 determinize 從牌組重建對手未知牌（不依賴隱藏排列）。
+      knownDecks: knownDecksByPlayer,
+      iterations: ismctsBenchmarkConfig.iterations,
+      timeLimitMs: ismctsBenchmarkConfig.timeLimitMs,
+      explorationC: ismctsBenchmarkConfig.explorationC,
+      candidateLimit: ismctsBenchmarkConfig.candidateLimit,
+      leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
+      rolloutPolicy,
     });
     return report.bestAction.decision;
   }
