@@ -66,7 +66,8 @@ export interface Modifier {
   target: number; // uid
   param: ParamName;
   amount: number;
-  kind?: "set";
+  /** "set"＝固定值；"noDecrease"＝守衛（amount 無意義，effParam 遇此忽略該 param 的負向修正 †「－されない」P03-064/041/057） */
+  kind?: "set" | "noDecrease";
   source: number; // 發生源 uid
 }
 
@@ -103,6 +104,8 @@ export interface Restriction {
   negateCenterBlock?: true;
   /** ワンタッチ(N) 無效（Q356；P02-016） */
   banOneTouch?: true;
+  /** ドシャット(N) 無效（P03-092） */
+  banDoshatto?: true;
   /** [=レシーブフェイズ][=手札] 主動技無效（Q357；P02-016） */
   banHandReceiveActive?: true;
   /** 禁止指定ポジション登場（P01-084/P02-097；搭配 fromHandOnly） */
@@ -145,7 +148,7 @@ export interface Turn1Entry {
 }
 
 /** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
-export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number } | { op: "_placeEventCost"; filter?: { affiliation?: string } } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: import("./dsl").CharaFilter } | { op: "_moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
+export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number; perArea?: true } | { op: "_dropEventAreaCost"; count: number; filter?: { affiliation?: string; playTimingAny?: import("./dsl").PhaseIcon[] } } | { op: "_placeSelfOnDeckBottomCost" } | { op: "_placeGutsOnSelfCost"; filter: { names?: string[] } } | { op: "_placeEventCost"; filter?: { affiliation?: string } } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: import("./dsl").CharaFilter } | { op: "_moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
 
 export interface EffectFrame {
   actions: RtAction[];
@@ -157,7 +160,7 @@ export type Awaiting =
   | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; else?: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "target" | "tutor" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost";
+      purpose: "guts" | "dropHand" | "dropEventArea" | "target" | "tutor" | "twoPick1" | "twoPick2" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "dropToDeckBottom" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost";
       /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
       chooser?: PlayerId;
       candidates: number[];
@@ -172,6 +175,10 @@ export type Awaiting =
       then?: Action[];
       /** tutor 用：實際看過的卡（選中→手牌、其餘→牌組底） */
       looked?: number[];
+      /** 「カード名の異なる」N 枚：選中的卡名須兩兩相異（P03-097 dropToHand distinctNames） */
+      distinctNames?: boolean;
+      /** lookTopTwoPick 第2段 filter（twoPick1 → twoPick2 用） */
+      pick2?: import("./dsl").CharaFilter;
       prompt: string;
     }
   | { kind: "option"; purpose: "param"; targetUid: number; amount: number; options: ParamName[]; prompt: string }

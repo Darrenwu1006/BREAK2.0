@@ -15782,6 +15782,7229 @@
   "productName": "ブースターパック 最強の挑戦者"
  },
  {
+  "id": "HV-P03-001",
+  "type": "CHARACTER",
+  "nameJa": "日向 翔陽",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "ボール拾い"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": null,
+   "toss": null,
+   "attack": null
+  },
+  "timing": [],
+  "skillJa": "[=アタックフェイズ][=手札]\n[=ターン1]〔手札からこのカードを自分のイベントエリアに置く〕：自分のキャラすべてが疑似ユースの場合に使える。カード1枚を引くか、自分のイベントエリアにあるカードが6枚以上の場合、自分のドロップエリアからキャラカード1枚までを手札に加える。",
+  "skillZh": "[=アタックフェイズ][=手札] [=ターン1]〔將這張卡從手牌放到自己的事件區〕：若自己的角色全部都是疑似ユース則可使用。抽1張卡，或在自己的事件區有6張以上的卡時，從自己的棄牌區將最多1張角色卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-001-I.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-001-IP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "頂A",
+    "imageEnd": "IA",
+    "image": "cards/HV-P03-001-IA.webp",
+    "illustrator": "出水ぽすか"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "attack"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "turn1": true,
+     "costs": [
+      {
+       "type": "placeSelfInEventArea"
+      }
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "疑似ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "chooseOne",
+         "options": [
+          {
+           "label": "カード1枚を引く",
+           "actions": [
+            {
+             "op": "draw",
+             "count": 1
+            }
+           ]
+          },
+          {
+           "label": "イベント≥6でドロップからキャラ回収",
+           "actions": [
+            {
+             "op": "if",
+             "cond": [
+              {
+               "type": "eventAreaCount",
+               "player": "self",
+               "min": 6
+              }
+             ],
+             "then": [
+              {
+               "op": "dropToHand",
+               "filter": {},
+               "cardType": "CHARACTER",
+               "count": 1,
+               "upTo": true
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひなた しょうよう",
+  "annotationJa": "[=アタックフェイズ][=手札]…このスキルはアタックフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-002",
+  "type": "CHARACTER",
+  "nameJa": "日向 翔陽",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 3,
+   "receive": 3,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-002-R.webp",
+    "illustrator": "御巫 史"
+   },
+   {
+    "rarity": "RA",
+    "imageEnd": "RA",
+    "image": "cards/HV-P03-002-RA.webp",
+    "illustrator": "photo:村田朋泰"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ひなた しょうよう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-003",
+  "type": "CHARACTER",
+  "nameJa": "月島 蛍",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 3,
+   "receive": 1,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=アタックエリア]\n2ガッツ払えば使える。自分のキャラすべてが烏野かすべてが疑似ユースで、自分のイベントエリアにあるカードが6枚以上の場合、このキャラのアタックポイントに+3し、次の相手のターン中、相手のセンターブロッカーが登場するたび、そのキャラのブロックポイントに－3する。",
+  "skillZh": "[=登場][=アタックエリア] 支付2點Guts則可使用。若自己的角色全部都是烏野或全部都是疑似ユース、且事件區有6張以上的卡，這名角色的攻擊點數+3，並在下個對手回合中，對手的中央攔網手每次登場時，該角色的攔網點數-3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-003-S.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-003-SP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-003-SA.webp",
+    "illustrator": "タケウチ リョースケ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliationsAny": [
+          "烏野",
+          "疑似ユース"
+         ]
+        },
+        {
+         "type": "eventAreaCount",
+         "player": "self",
+         "min": 6
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 3
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "opponent",
+          "area": [
+           "block"
+          ],
+          "filter": {
+           "blockRole": "center"
+          }
+         },
+         "duration": "nextOpponentTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "block",
+           "amount": -3
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "つきしま けい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-004",
+  "type": "CHARACTER",
+  "nameJa": "月島 蛍",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 3,
+   "receive": 3,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-004-N.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "つきしま けい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-005",
+  "type": "CHARACTER",
+  "nameJa": "金田一 勇太郎",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 2,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=アタックエリア]\n2ガッツ払えば使える。自分のイベントエリアにあるカードが4枚以上の場合、このキャラのアタックポイントに+2し、次の相手のターン中、相手のキャラが登場するたび、そのキャラのアタックポイントに－2する。",
+  "skillZh": "[=登場][=アタックエリア] 支付2點Guts則可使用。若自己的事件區有4張以上的卡，這名角色的攻擊點數+2，並在下個對手回合中，對手的角色每次登場時，該角色的攻擊點數-2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-005-S.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "eventAreaCount",
+         "player": "self",
+         "min": 4
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 2
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "opponent"
+         },
+         "duration": "nextOpponentTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "attack",
+           "amount": -2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "きんだいち ゆうたろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-006",
+  "type": "CHARACTER",
+  "nameJa": "金田一 勇太郎",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 2,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n相手のオフェンスポイントが4以上の場合に使える。[=ワンタッチ(2)]する。",
+  "skillZh": "[=登場][=ブロックエリア] 對手的進攻點數在4以上時可使用。進行[=ワンタッチ(2)]。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-006-N.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "opponentOp",
+         "min": 4
+        }
+       ],
+       "then": [
+        {
+         "op": "keyword",
+         "name": "ワンタッチ",
+         "n": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "きんだいち ゆうたろう",
+  "annotationJa": "[=ワンタッチ(N)]…相手のオフェンスポイントに－Nする。直ちにブロックフェイズを終了させ、自分のドローフェイズになる。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-007",
+  "type": "CHARACTER",
+  "nameJa": "国見 英",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\n3ガッツ払えば使える。自分のキャラすべてが青葉城西かすべてが疑似ユースで、自分のイベントエリアにあるカードが4枚以上の場合、カード1枚を引き、6枚以上の場合、このキャラのレシーブポイントに+3する。",
+  "skillZh": "[=登場][=レシーブエリア] 支付3點Guts則可使用。若自己的角色全部都是青葉城西或全部都是疑似ユース，且自己的事件區有4張以上的卡，抽1張卡；事件區6張以上時，這名角色的接球點數+3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-007-I.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-007-IP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliationsAny": [
+          "青葉城西",
+          "疑似ユース"
+         ]
+        },
+        {
+         "type": "eventAreaCount",
+         "player": "self",
+         "min": 4
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "eventAreaCount",
+           "player": "self",
+           "min": 6
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "self",
+           "param": "receive",
+           "amount": 3
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "くにみ あきら",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-008",
+  "type": "CHARACTER",
+  "nameJa": "国見 英",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 0,
+   "receive": 5,
+   "toss": 1,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-008-R.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "くにみ あきら",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-009",
+  "type": "CHARACTER",
+  "nameJa": "黄金川 貫至",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 2,
+   "receive": 0,
+   "toss": 1,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "[=登場][=トスエリア]\n2ガッツ払えば使える。自分のイベントエリアにあるカードが4枚以上の場合、このキャラのトスポイントに+2し、6枚以上の場合、次の相手のターン中、相手の[=ワンタッチ(N)]を無効にする。",
+  "skillZh": "[=登場][=トスエリア] 支付2點Guts則可使用。若自己的事件區有4張以上的卡，這名角色的托球點數+2；6張以上時，下個對手回合中，無效化對手的[=ワンタッチ(N)]。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-009-S.webp",
+    "illustrator": "パトリシアーナ菊池"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "eventAreaCount",
+         "player": "self",
+         "min": 4
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "toss",
+         "amount": 2
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "eventAreaCount",
+           "player": "self",
+           "min": 6
+          }
+         ],
+         "then": [
+          {
+           "op": "restrict",
+           "restriction": {
+            "banOneTouch": true
+           },
+           "duration": "nextOpponentTurn",
+           "player": "opponent"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "こがねがわ かんじ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-010",
+  "type": "CHARACTER",
+  "nameJa": "黄金川 貫至",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 2,
+   "toss": 2,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-010-N.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "こがねがわ かんじ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-011",
+  "type": "CHARACTER",
+  "nameJa": "五色 工",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 3,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=レシーブフェイズ][=手札]\n〔手札からこのカードをドロップする〕：自分のキャラすべてが白鳥沢かすべてが疑似ユースで、自分のイベントエリアにあるカードが4枚以上の場合、このカードを自分のレシーブエリアに登場させ、このキャラのレシーブポイントに+4する。",
+  "skillZh": "[=レシーブフェイズ][=手札] 〔從手牌丟棄這張卡〕：若自己的角色全部都是白鳥沢或全部都是疑似ユース，且自己的事件區有4張以上的卡，將這張卡登場到自己的接球區，這名角色的接球點數+4。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-011-I.webp",
+    "illustrator": "JSK"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-011-IP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "receive"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "costs": [
+      {
+       "type": "dropSelf"
+      }
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliationsAny": [
+          "白鳥沢",
+          "疑似ユース"
+         ]
+        },
+        {
+         "type": "eventAreaCount",
+         "player": "self",
+         "min": 4
+        }
+       ],
+       "then": [
+        {
+         "op": "deployFromDrop",
+         "filter": {
+          "names": [
+           "五色 工"
+          ]
+         },
+         "area": "receive",
+         "then": [
+          {
+           "op": "addParam",
+           "target": "target",
+           "param": "receive",
+           "amount": 4
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ごしき つとむ",
+  "annotationJa": "[=レシーブフェイズ][=手札]…このスキルはレシーブフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-012",
+  "type": "CHARACTER",
+  "nameJa": "五色 工",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 2,
+   "receive": 3,
+   "toss": 1,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-012-R.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ごしき つとむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-013",
+  "type": "CHARACTER",
+  "nameJa": "寒河江 勇将",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "ボール拾い"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": null,
+   "toss": null,
+   "attack": null
+  },
+  "timing": [],
+  "skillJa": "[=アタックフェイズ][=手札]\n[=ターン1]〔手札からこのカードを自分のイベントエリアに置く〕：自分のキャラすべてが疑似ユースの場合、自分のデッキの上から2枚を公開し、その中のキャラカード1枚までを手札に加える。加えなかったカードを好きな順番でデッキの下に置く。",
+  "skillZh": "[=アタックフェイズ][=手札] [=ターン1]〔從手牌將這張卡放到自己的事件區〕：若自己的角色全部都是疑似ユース，公開自己牌組頂的2張，將其中最多1張角色卡加入手牌，未加入的卡以喜歡的順序放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-013-N.webp",
+    "illustrator": "R"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "attack"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "turn1": true,
+     "costs": [
+      {
+       "type": "placeSelfInEventArea"
+      }
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "疑似ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "lookTopTutor",
+         "count": 2,
+         "cardType": "CHARACTER",
+         "upTo": 1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "さがえ ゆうしょう",
+  "annotationJa": "[=アタックフェイズ][=手札]…このスキルはアタックフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-014",
+  "type": "CHARACTER",
+  "nameJa": "赤倉 櫂",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "ボール拾い"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": null,
+   "toss": null,
+   "attack": null
+  },
+  "timing": [],
+  "skillJa": "[=アタックフェイズ][=手札]\n[=ターン1]〔手札からこのカードを自分のイベントエリアに置く〕：自分のキャラすべてが疑似ユースの場合、自分のデッキの上から3枚を公開し、その中のイベントカードすべてを手札に加える。加えなかったカードを好きな順番でデッキの下に置く。",
+  "skillZh": "[=アタックフェイズ][=手札] [=ターン1]〔從手牌將這張卡放到自己的事件區〕：若自己的角色全部都是疑似ユース，公開自己牌組頂的3張，將其中所有事件卡加入手牌，未加入的卡以喜歡的順序放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-014-N.webp",
+    "illustrator": "窓ノ晴雨"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "attack"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "turn1": true,
+     "costs": [
+      {
+       "type": "placeSelfInEventArea"
+      }
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "疑似ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "lookTopTutor",
+         "count": 3,
+         "cardType": "EVENT",
+         "upTo": 0,
+         "addAll": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あかくら かい",
+  "annotationJa": "[=アタックフェイズ][=手札]…このスキルはアタックフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-015",
+  "type": "CHARACTER",
+  "nameJa": "由良 正太",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢中",
+   "疑似ユース"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 1,
+   "receive": 4,
+   "toss": 2,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-015-N.webp",
+    "illustrator": "冬葉あぶる"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ゆら しょうた",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-016",
+  "type": "CHARACTER",
+  "nameJa": "百沢 雄大",
+  "nameZh": null,
+  "affiliations": [
+   "角川",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 2,
+   "receive": 2,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "自分のトスキャラが登場した時、自分のキャラすべてが角川かすべてが疑似ユースで、このキャラがレシーブキャラの場合、1ガッツ払えば使える。このキャラを手札に加え、このターン中、自分の「百沢 雄大」が登場するたび、そのキャラのアタックポイントに+2する。",
+  "skillZh": "當自己的托球角色登場時，若自己的角色全部都是角川或全部都是疑似ユース、且這名角色是接球角色，支付1點Guts則可使用：將這名角色加入手牌，並在這個回合中，自己的「百沢 雄大」每次登場時，該角色的攻擊點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-016-S.webp",
+    "illustrator": "菊野郎"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-016-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "toss"
+      ]
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliationsAny": [
+          "角川",
+          "疑似ユース"
+         ]
+        },
+        {
+         "type": "selfArea",
+         "area": [
+          "receive"
+         ]
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "guts",
+           "count": 1
+          }
+         ],
+         "then": [
+          {
+           "op": "moveCharaToHand",
+           "from": "receive",
+           "filter": {
+            "names": [
+             "百沢 雄大"
+            ]
+           },
+           "upTo": 1
+          },
+          {
+           "op": "watch",
+           "trigger": {
+            "on": "deploy",
+            "player": "self",
+            "filter": {
+             "names": [
+              "百沢 雄大"
+             ]
+            }
+           },
+           "duration": "thisTurn",
+           "actions": [
+            {
+             "op": "addParam",
+             "target": "trigger",
+             "param": "attack",
+             "amount": 2
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひゃくざわ ゆうだい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-017",
+  "type": "CHARACTER",
+  "nameJa": "百沢 雄大",
+  "nameZh": null,
+  "affiliations": [
+   "角川",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 3,
+   "receive": 3,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-017-N.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ひゃくざわ ゆうだい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-018",
+  "type": "CHARACTER",
+  "nameJa": "黒石 純二",
+  "nameZh": null,
+  "affiliations": [
+   "白水館",
+   "疑似ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 6,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-018-N.webp",
+    "illustrator": "眠居ぱん太"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "くろいし じゅんじ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-019",
+  "type": "CHARACTER",
+  "nameJa": "長松 夢人",
+  "nameZh": null,
+  "affiliations": [
+   "光仙中",
+   "疑似ユース"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-019-N.webp",
+    "illustrator": "mizugaki"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ながまつ ゆめと",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-020",
+  "type": "CHARACTER",
+  "nameJa": "影山 飛雄",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "元々のアタックポイントが3の自分のアタックキャラが登場した時、このキャラがレシーブキャラの場合、自分のイベントエリアからユースのカード1枚をドロップすれば使える。[=バックアタック(4)]し、次の相手のターン中、自分のオフェンスポイントは－されない。",
+  "skillZh": "當原本攻擊點數為3的自己攻擊角色登場時，若這名角色是接球角色，從自己的事件區丟棄1張ユース的卡則可使用：進行[=バックアタック(4)]，並在下個對手回合中，自己的進攻點數不會被降低。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-020-I.webp",
+    "illustrator": "JSK"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-020-IP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "attack"
+      ]
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "selfArea",
+         "area": [
+          "receive"
+         ]
+        },
+        {
+         "type": "triggerIs",
+         "filter": {
+          "baseParamEq": {
+           "param": "attack",
+           "value": 3
+          }
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "dropFromEventArea",
+           "count": 1,
+           "filter": {
+            "affiliation": "ユース"
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "keyword",
+           "name": "バックアタック",
+           "n": 4
+          },
+          {
+           "op": "restrict",
+           "restriction": {
+            "preventOpDecrease": true
+           },
+           "duration": "nextOpponentTurn",
+           "player": "self"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "かげやま とびお",
+  "annotationJa": "[=バックアタック(N)]…このカードを自分のアタックエリアに登場させ、このキャラのアタックポイントをNにする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-021",
+  "type": "CHARACTER",
+  "nameJa": "宮 侑",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 1,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "[=登場][=トスエリア]\n3ガッツ払えば使える。このキャラのトスポイントに+2し、自分のドロップエリアからユースのイベントカード1枚までを手札に加える。加えた場合、自分の手札からカード1枚をドロップする。",
+  "skillZh": "[=登場][=トスエリア] 支付3點Guts則可使用。這名角色的托球點數+2，並從自己的棄牌區將最多1張ユース的事件卡加入手牌。若有加入，從自己的手牌丟棄1張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-021-I.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-021-IP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "toss",
+         "amount": 2
+        },
+        {
+         "op": "dropToHand",
+         "filter": {
+          "affiliation": "ユース"
+         },
+         "cardType": "EVENT",
+         "count": 1,
+         "upTo": true
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "addedThisSkill",
+           "min": 1
+          }
+         ],
+         "then": [
+          {
+           "op": "dropFromHand",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "みや あつむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-022",
+  "type": "CHARACTER",
+  "nameJa": "宮 侑",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 3,
+   "receive": 0,
+   "toss": 2,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-022-R.webp",
+    "illustrator": "パトリシアーナ菊池"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "みや あつむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-023",
+  "type": "CHARACTER",
+  "nameJa": "星海 光来",
+  "nameZh": null,
+  "affiliations": [
+   "鴎台",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 4,
+   "block": 0,
+   "receive": 3,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア][=レシーブエリア][=アタックエリア]\n自分のキャラすべてがユースの場合、自分のイベントエリアからユースのカード1枚をドロップすれば使える。このキャラのパラメータ1つに+3する。",
+  "skillZh": "[=登場][=ブロックエリア][=レシーブエリア][=アタックエリア] 若自己的角色全部都是ユース，從自己的事件區丟棄1張ユース的卡則可使用：這名角色的1項參數+3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "頂",
+    "imageEnd": "I",
+    "image": "cards/HV-P03-023-I.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "頂P",
+    "imageEnd": "IP",
+    "image": "cards/HV-P03-023-IP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block",
+      "receive",
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "ユース"
+        }
+       ],
+       "costs": [
+        {
+         "type": "dropFromEventArea",
+         "count": 1,
+         "filter": {
+          "affiliation": "ユース"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "choose",
+         "amount": 3
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ほしうみ こうらい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-024",
+  "type": "CHARACTER",
+  "nameJa": "星海 光来",
+  "nameZh": null,
+  "affiliations": [
+   "鴎台",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-024-S.webp",
+    "illustrator": "JSK"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ほしうみ こうらい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-025",
+  "type": "CHARACTER",
+  "nameJa": "星海 光来",
+  "nameZh": null,
+  "affiliations": [
+   "鴎台",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 2,
+   "receive": 0,
+   "toss": 2,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-025-R.webp",
+    "illustrator": "O嬢"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ほしうみ こうらい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-026",
+  "type": "CHARACTER",
+  "nameJa": "佐久早 聖臣",
+  "nameZh": null,
+  "affiliations": [
+   "井闥山",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 2,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n自分のイベントエリアからユースのカード1枚をドロップすれば使える。このキャラのブロックポイントに+2する。",
+  "skillZh": "[=登場][=ブロックエリア] 從自己的事件區丟棄1張ユース的卡則可使用：這名角色的攔網點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-026-S.webp",
+    "illustrator": "匈歌ハトリ"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-026-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromEventArea",
+         "count": 1,
+         "filter": {
+          "affiliation": "ユース"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "block",
+         "amount": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "さくさ きよおみ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-027",
+  "type": "CHARACTER",
+  "nameJa": "佐久早 聖臣",
+  "nameZh": null,
+  "affiliations": [
+   "井闥山",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 4,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-027-R.webp",
+    "illustrator": "菊野郎"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "さくさ きよおみ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-028",
+  "type": "CHARACTER",
+  "nameJa": "古森 元也",
+  "nameZh": null,
+  "affiliations": [
+   "井闥山",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "自分のユースのトスキャラが登場した時、このキャラがレシーブキャラの場合、自分のレシーブエリアのガッツの「影山 飛雄」1枚をこのキャラの上に置けば使える。このターン中、自分のキャラが[=バックアタック(N)]で登場するたび、そのキャラのアタックポイントに+1する。",
+  "skillZh": "當自己的ユース托球角色登場時，若這名角色是接球角色，將自己接球區Guts中的1張「影山 飛雄」放到這名角色之上則可使用：這個回合中，自己的角色每次以[=バックアタック(N)]登場時，該角色的攻擊點數+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-028-S.webp",
+    "illustrator": "O嬢"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-028-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "toss"
+      ]
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "selfArea",
+         "area": [
+          "receive"
+         ]
+        },
+        {
+         "type": "triggerIs",
+         "filter": {
+          "affiliation": "ユース"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "placeGutsOnSelf",
+           "filter": {
+            "names": [
+             "影山 飛雄"
+            ]
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "watch",
+           "trigger": {
+            "on": "deploy",
+            "player": "self",
+            "backAttack": true
+           },
+           "duration": "thisTurn",
+           "actions": [
+            {
+             "op": "addParam",
+             "target": "trigger",
+             "param": "attack",
+             "amount": 1
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "こもり もとや",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-029",
+  "type": "CHARACTER",
+  "nameJa": "古森 元也",
+  "nameZh": null,
+  "affiliations": [
+   "井闥山",
+   "ユース"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 6,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-029-R.webp",
+    "illustrator": "菊野郎"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "こもり もとや",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-030",
+  "type": "CHARACTER",
+  "nameJa": "千鹿谷 栄吉",
+  "nameZh": null,
+  "affiliations": [
+   "森然",
+   "ユース"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n自分のキャラすべてがユースで、相手のオフェンスポイントが8以上の場合に使える。直ちにブロックフェイズを終了させ、自分のドローフェイズになる。さらに、このターン中、自分のレシーブキャラが登場するたび、そのキャラのレシーブポイントに+2する。",
+  "skillZh": "[=登場][=ブロックエリア] 若自己的角色全部都是ユース、且對手的進攻點數在8以上則可使用：立即結束攔網階段，進入自己的抽牌階段。此外，這個回合中，自己的接球角色每次登場時，該角色的接球點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-030-R.webp",
+    "illustrator": "KACHIN"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "ユース"
+        },
+        {
+         "type": "opponentOp",
+         "min": 8
+        }
+       ],
+       "then": [
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "self",
+          "area": [
+           "receive"
+          ]
+         },
+         "duration": "thisTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "receive",
+           "amount": 2
+          }
+         ]
+        },
+        {
+         "op": "skipToPhase",
+         "phase": "draw"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ちがや えいきち",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-031",
+  "type": "CHARACTER",
+  "nameJa": "孤爪 研磨",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 1,
+   "toss": 1,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=トスエリア]\n2ガッツ払えば使える。払ったカードすべてが音駒のSの場合、このキャラのトスポイントに+2し、自分のデッキの上から3枚を見て、その中の音駒か音駒中のイベントカード1枚までを公開し、そのカードを手札に加える。加えなかったカードを好きな順番でデッキの下に置く。",
+  "skillZh": "[=登場][=トスエリア] 支付2點Guts則可使用。若支付的卡全部都是音駒的S，這名角色的托球點數+2，並查看自己牌組頂的3張，將其中音駒或音駒中的事件卡最多1張公開並加入手牌，未加入的卡以喜歡的順序放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-031-S.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-031-SP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-031-SA.webp",
+    "illustrator": "松浦健人"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "paidGutsAll",
+           "filter": {
+            "affiliation": "音駒",
+            "position": "S"
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "self",
+           "param": "toss",
+           "amount": 2
+          },
+          {
+           "op": "lookTopTutor",
+           "count": 3,
+           "affiliationsAny": [
+            "音駒",
+            "音駒中"
+           ],
+           "cardType": "EVENT",
+           "upTo": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "こづめ けんま",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-032",
+  "type": "CHARACTER",
+  "nameJa": "孤爪 研磨",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 2,
+   "receive": 0,
+   "toss": 2,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-032-N.webp",
+    "illustrator": "O嬢"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "こづめ けんま",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-033",
+  "type": "CHARACTER",
+  "nameJa": "黒尾 鉄朗",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 1,
+   "receive": 1,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "自分の音駒のアタックキャラが登場した時、このキャラがサーブキャラの場合、1ガッツ払えば使える。[=バックアタック(4)]する。",
+  "skillZh": "當自己的音駒攻擊角色登場時，若這名角色是發球角色，支付1點Guts則可使用：進行[=バックアタック(4)]。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-033-S.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-033-SA.webp",
+    "illustrator": "片岡誉晴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "attack"
+      ]
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "selfArea",
+         "area": [
+          "serve"
+         ]
+        },
+        {
+         "type": "triggerIs",
+         "filter": {
+          "affiliation": "音駒"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "guts",
+           "count": 1
+          }
+         ],
+         "then": [
+          {
+           "op": "keyword",
+           "name": "バックアタック",
+           "n": 4
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "くろお てつろう",
+  "annotationJa": "[=バックアタック(N)]…このカードを自分のアタックエリアに登場させ、このキャラのアタックポイントをNにする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-034",
+  "type": "CHARACTER",
+  "nameJa": "黒尾 鉄朗",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 4,
+   "block": 3,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-034-N.webp",
+    "illustrator": "さいれんあやめ"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "くろお てつろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-035",
+  "type": "CHARACTER",
+  "nameJa": "夜久 衛輔",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\n3ガッツ払えば使える。カード1枚を引き、このキャラのレシーブポイントに+2する。",
+  "skillZh": "[=登場][=レシーブエリア] 支付3點Guts則可使用。抽1張卡，這名角色的接球點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-035-R.webp",
+    "illustrator": "ako"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "やく もりすけ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-036",
+  "type": "CHARACTER",
+  "nameJa": "灰羽 リエーフ",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 2,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n相手のオフェンスポイントが4以上の場合に使える。[=ワンタッチ(2)]する。",
+  "skillZh": "[=登場][=ブロックエリア] 對手的進攻點數在4以上時可使用。進行[=ワンタッチ(2)]。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-036-R.webp",
+    "illustrator": "O嬢"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "opponentOp",
+         "min": 4
+        }
+       ],
+       "then": [
+        {
+         "op": "keyword",
+         "name": "ワンタッチ",
+         "n": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "はいば りえーふ",
+  "annotationJa": "[=ワンタッチ(N)]…相手のオフェンスポイントに－Nする。直ちにブロックフェイズを終了させ、自分のドローフェイズになる。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-037",
+  "type": "CHARACTER",
+  "nameJa": "山本 猛虎",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 4,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-037-N.webp",
+    "illustrator": "冬葉あぶる"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "やまもと たけとら",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-038",
+  "type": "CHARACTER",
+  "nameJa": "犬岡 走",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n自分の手札から音駒のカード1枚をドロップすれば使える。このキャラのブロックポイントに+3し、相手の手札が2枚以下の場合、さらにブロックポイントに+2する。",
+  "skillZh": "[=登場][=ブロックエリア] 從自己手牌丟棄1張音駒的卡則可使用。這名角色的攔網點數+3，若對手手牌在2張以下，攔網點數再+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-038-N.webp",
+    "illustrator": "shizuo"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "affiliation": "音駒"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "block",
+         "amount": 3
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "handMax",
+           "count": 2,
+           "player": "opponent"
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "self",
+           "param": "block",
+           "amount": 2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "いぬおか そう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-039",
+  "type": "CHARACTER",
+  "nameJa": "宮 侑",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 0,
+   "receive": 0,
+   "toss": 1,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "自分の手札から稲荷崎のイベントカードがプレイされた時、サーブフェイズ中で、このキャラがサーブキャラの場合、自分のイベントエリアから[=サーブ]でプレイできる稲荷崎のカード2枚をドロップすれば使える。このキャラのサーブポイントに+1する。",
+  "skillZh": "當自己手牌的稲荷崎事件卡被打出時，若為發球階段中且這名角色是發球角色，從自己的事件區丟棄2張可用[=サーブ]打出的稲荷崎卡則可使用：這名角色的發球點數+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-039-S.webp",
+    "illustrator": "さいれんあやめ"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-039-SP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-039-SA.webp",
+    "illustrator": "松浦健人"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "eventPlayed",
+      "player": "self",
+      "filter": {
+       "affiliation": "稲荷崎"
+      }
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "phaseIs",
+         "phase": "serve"
+        },
+        {
+         "type": "selfArea",
+         "area": [
+          "serve"
+         ]
+        }
+       ],
+       "then": [
+        {
+         "op": "script",
+         "id": "card.HV-P03-039"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "みや あつむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-040",
+  "type": "CHARACTER",
+  "nameJa": "宮 侑",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 0,
+   "receive": 1,
+   "toss": 2,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-040-R.webp",
+    "illustrator": "マコ"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "みや あつむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-041",
+  "type": "CHARACTER",
+  "nameJa": "宮 治",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 1,
+   "receive": 3,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=アタックエリア]\nこのキャラがスキルで登場しており、自分の手札が3枚以下の場合、このキャラのアタックポイントに+2し、このターン中、このキャラのパラメータは－されない。",
+  "skillZh": "[=登場][=アタックエリア] 若這名角色是以技能登場、且自己手牌在3張以下，這名角色的攻擊點數+2，且這個回合中，這名角色的參數不會被降低。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-041-S.webp",
+    "illustrator": "マコ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "deployedBySkill"
+        },
+        {
+         "type": "handMax",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 2
+        },
+        {
+         "op": "preventParamDecrease",
+         "target": "self",
+         "param": "all"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "みや おさむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-042",
+  "type": "CHARACTER",
+  "nameJa": "宮 治",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-042-N.webp",
+    "illustrator": "shizuo"
+   },
+   {
+    "rarity": "NA",
+    "imageEnd": "NA",
+    "image": "cards/HV-P03-042-NA.webp",
+    "illustrator": "遥川潤"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "みや おさむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-043",
+  "type": "CHARACTER",
+  "nameJa": "北 信介",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 2,
+   "receive": 5,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-043-R.webp",
+    "illustrator": "パトリシアーナ菊池"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "きた しんすけ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-044",
+  "type": "CHARACTER",
+  "nameJa": "角名 倫太郎",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "自分の稲荷崎のブロックキャラが登場した時、このキャラがアタックキャラの場合、自分の手札からカード１枚をドロップすれば使える。このキャラをサイドブロッカーとして自分のブロックエリアに登場させる。",
+  "skillZh": "當自己的稲荷崎攔網角色登場時，若這名角色是攻擊角色，從自己的手牌丟棄1張卡則可使用：將這名角色作為側邊攔網手登場到自己的攔網區。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-044-R.webp",
+    "illustrator": "パトリシアーナ菊池"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "allyDeploy",
+      "area": [
+       "block"
+      ]
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "selfArea",
+         "area": [
+          "attack"
+         ]
+        },
+        {
+         "type": "triggerIs",
+         "filter": {
+          "affiliation": "稲荷崎"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "dropFromHand",
+           "count": 1
+          }
+         ],
+         "then": [
+          {
+           "op": "moveSelfToBlockSide"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "すな りんたろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-045",
+  "type": "CHARACTER",
+  "nameJa": "尾白 アラン",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 4,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア][=アタックエリア]\n自分の手札から稲荷崎のカード1枚をドロップすれば使える。このキャラのパラメータ1つに+2する。",
+  "skillZh": "[=登場][=レシーブエリア][=アタックエリア] 從自己的手牌丟棄1張稲荷崎的卡則可使用：這名角色的1項參數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-045-S.webp",
+    "illustrator": "パトリシアーナ菊池"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-045-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive",
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "affiliation": "稲荷崎"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "choose",
+         "amount": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "おじろ あらん",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-046",
+  "type": "CHARACTER",
+  "nameJa": "赤木 路成",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\n相手のサーブのオフェンスポイントが2以下の場合、カード1枚を引く。相手のサーブのオフェンスポイントが6以上の場合、このキャラのレシーブポイントに+2する。",
+  "skillZh": "[=登場][=レシーブエリア] 若對手發球的進攻點數在2以下，抽1張卡。若對手發球的進攻點數在6以上，這名角色的接球點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-046-N.webp",
+    "illustrator": "柿天"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "opponentOp",
+         "source": [
+          "serve"
+         ],
+         "max": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        }
+       ]
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "opponentOp",
+         "source": [
+          "serve"
+         ],
+         "min": 6
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あかぎ みちなり",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-047",
+  "type": "CHARACTER",
+  "nameJa": "影山 飛雄",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "自分のアタックフェイズ中、自分の手札からイベントカードがプレイされた時、このキャラがトスキャラの場合、このキャラのトスポイントに+1し、このターン中、このキャラのスキルでトスポイントは4以上にならない。",
+  "skillZh": "自己的攻擊階段中，當自己手牌的事件卡被打出時，若這名角色是托球角色，這名角色的托球點數+1，且這個回合中，這名角色的技能無法讓托球點數達到4以上。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-047-S.webp",
+    "illustrator": "JSK"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-047-SP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-047-SA.webp",
+    "illustrator": "photo:村田朋泰"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "eventPlayed",
+      "player": "self"
+     },
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "phaseIs",
+         "phase": "attack"
+        },
+        {
+         "type": "selfArea",
+         "area": [
+          "toss"
+         ]
+        }
+       ],
+       "then": [
+        {
+         "op": "script",
+         "id": "card.HV-P03-047"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "かげやま とびお",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-048",
+  "type": "CHARACTER",
+  "nameJa": "影山 飛雄",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 3,
+   "receive": 0,
+   "toss": 2,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "極",
+    "imageEnd": "K",
+    "image": "cards/HV-P03-048-K.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "極P",
+    "imageEnd": "KP",
+    "image": "cards/HV-P03-048-KP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-048-R.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "かげやま とびお",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-049",
+  "type": "CHARACTER",
+  "nameJa": "月島 蛍",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 3,
+   "receive": 2,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "秘",
+    "imageEnd": "H",
+    "image": "cards/HV-P03-049-H.webp",
+    "illustrator": "JSK"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "つきしま けい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-050",
+  "type": "CHARACTER",
+  "nameJa": "山口 忠",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 2,
+   "receive": 2,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "秘",
+    "imageEnd": "H",
+    "image": "cards/HV-P03-050-H.webp",
+    "illustrator": "JSK"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "やまぐち ただし",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-051",
+  "type": "CHARACTER",
+  "nameJa": "西谷 夕",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\n2ガッツ払えば使える。払ったカードすべてが烏野の場合、このキャラのレシーブポイントに+2し、相手のアタックキャラの元々のアタックポイントが0の場合、相手のアタックのオフェンスポイントに－3する。",
+  "skillZh": "[=登場][=レシーブエリア] 支付2點Guts則可使用。若支付的卡全部都是烏野，這名角色的接球點數+2，且若對手攻擊角色的原本攻擊點數為0，對手攻擊的進攻點數-3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-051-N.webp",
+    "illustrator": "ako"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "paidGutsAll",
+           "filter": {
+            "affiliation": "烏野"
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "self",
+           "param": "receive",
+           "amount": 2
+          },
+          {
+           "op": "if",
+           "cond": [
+            {
+             "type": "chara",
+             "player": "opponent",
+             "filter": {
+              "area": [
+               "attack"
+              ],
+              "baseParamEq": {
+               "param": "attack",
+               "value": 0
+              }
+             }
+            }
+           ],
+           "then": [
+            {
+             "op": "addOpponentOp",
+             "amount": -3
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "にしのや ゆう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-052",
+  "type": "CHARACTER",
+  "nameJa": "田中 龍之介",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=サーブエリア]\n自分の手札からカード1枚をデッキの下に置けば使える。カード1枚を引き、このキャラのサーブポイントに+5する。",
+  "skillZh": "[=登場][=サーブエリア] 將自己手牌的1張卡放到牌組底則可使用。抽1張卡，這名角色的發球點數+5。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-052-N.webp",
+    "illustrator": "みず"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-052-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "serve"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "handToDeckBottom",
+         "count": 1
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "serve",
+         "amount": 5
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "たなか りゅうのすけ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-053",
+  "type": "CHARACTER",
+  "nameJa": "東峰 旭",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 4,
+   "block": 1,
+   "receive": 2,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=アタックエリア]\n自分のトスキャラが「影山 飛雄」の場合、3ガッツ払えば使える。このキャラのアタックポイントに+3し、次の相手のターン中、相手の[=ドシャット(N)]を無効にし、相手のセンターブロッカーが登場するたび、そのキャラのブロックポイントに－4する。",
+  "skillZh": "[=登場][=アタックエリア] 若自己的托球角色是「影山 飛雄」，支付3點Guts則可使用。這名角色的攻擊點數+3，並在下個對手回合中，無效化對手的[=ドシャット(N)]，且對手的中央攔網手每次登場時，該角色的攔網點數-4。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-053-R.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "RP",
+    "imageEnd": "RP",
+    "image": "cards/HV-P03-053-RP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "chara",
+         "player": "self",
+         "filter": {
+          "area": [
+           "toss"
+          ],
+          "names": [
+           "影山 飛雄"
+          ]
+         }
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 3
+        },
+        {
+         "op": "restrict",
+         "restriction": {
+          "banDoshatto": true
+         },
+         "duration": "nextOpponentTurn",
+         "player": "opponent"
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "deploy",
+          "player": "opponent",
+          "area": [
+           "block"
+          ],
+          "filter": {
+           "blockRole": "center"
+          }
+         },
+         "duration": "nextOpponentTurn",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": "trigger",
+           "param": "block",
+           "amount": -4
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あずまね あさひ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-054",
+  "type": "CHARACTER",
+  "nameJa": "嶋田 誠",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "町内会"
+  ],
+  "grades": [],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 1,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=サーブエリア]\n次の相手のターン中、相手の手札からSのトスキャラが登場するたび、そのキャラのトスポイントを1にする。",
+  "skillZh": "[=登場][=サーブエリア] 在下個對手回合中，對手從手牌登場S的托球角色時，該角色的托球點數變為1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-054-N.webp",
+    "illustrator": "ちぇぴ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "serve"
+     ],
+     "actions": [
+      {
+       "op": "watch",
+       "trigger": {
+        "on": "deploy",
+        "player": "opponent",
+        "area": [
+         "toss"
+        ],
+        "filter": {
+         "position": "S"
+        },
+        "fromHand": true
+       },
+       "duration": "nextOpponentTurn",
+       "actions": [
+        {
+         "op": "setParam",
+         "target": "trigger",
+         "param": "toss",
+         "value": 1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "しまだ まこと",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-055",
+  "type": "CHARACTER",
+  "nameJa": "滝ノ上 祐輔",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "町内会"
+  ],
+  "grades": [],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 4,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-055-N.webp",
+    "illustrator": "ちぇぴ"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "たきのうえ ゆうすけ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-056",
+  "type": "CHARACTER",
+  "nameJa": "田代 秀水",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 0,
+   "receive": 3,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=アタックフェイズ][=手札]\n[=ターン1]〔手札からこのカードをドロップする〕：自分のドロップエリアから烏野の3年のキャラカード1枚を手札に加える。",
+  "skillZh": "[=アタックフェイズ][=手札] [=ターン1]〔將這張卡從手牌丟棄〕：從自己的棄牌區將1張烏野的3年級角色卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-056-N.webp",
+    "illustrator": "眠居ぱん太"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "attack"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "turn1": true,
+     "costs": [
+      {
+       "type": "dropSelf"
+      }
+     ],
+     "actions": [
+      {
+       "op": "dropToHand",
+       "filter": {
+        "affiliation": "烏野",
+        "gradesAny": [
+         "3年"
+        ]
+       },
+       "cardType": "CHARACTER",
+       "count": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "たしろ ひでみ",
+  "annotationJa": "[=アタックフェイズ][=手札]…このスキルはアタックフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-057",
+  "type": "CHARACTER",
+  "nameJa": "黒川 広樹",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 1,
+   "receive": 0,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=ドローフェイズ][=手札]\n〔手札からこのカードをドロップする〕：このターン中、自分の烏野の2年か3年のキャラが登場するたび、そのキャラのレシーブポイントに+2し、そのキャラのパラメータは－されない。",
+  "skillZh": "[=ドローフェイズ][=手札] 〔將這張卡從手牌丟棄〕：這個回合中，自己的烏野2年級或3年級角色每次登場時，該角色的接球點數+2，且該角色的參數不會被降低。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-057-N.webp",
+    "illustrator": "眠居ぱん太"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "active",
+     "phaseIcons": [
+      "draw"
+     ],
+     "areaIcons": [
+      "hand"
+     ],
+     "costs": [
+      {
+       "type": "dropSelf"
+      }
+     ],
+     "actions": [
+      {
+       "op": "watch",
+       "trigger": {
+        "on": "deploy",
+        "player": "self",
+        "filter": {
+         "affiliation": "烏野",
+         "gradesAny": [
+          "2年",
+          "3年"
+         ]
+        }
+       },
+       "duration": "thisTurn",
+       "actions": [
+        {
+         "op": "addParam",
+         "target": "trigger",
+         "param": "receive",
+         "amount": 2
+        },
+        {
+         "op": "preventParamDecrease",
+         "target": "trigger",
+         "param": "all"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "くろかわ ひろき",
+  "annotationJa": "[=ドローフェイズ][=手札]…このスキルはドローフェイズ中、このカードが手札にある場合、イベントカードと同様のタイミングに使える。\n〔A〕：…Aを実行しなければ、このスキルは使えない。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-058",
+  "type": "CHARACTER",
+  "nameJa": "及川 徹",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 2,
+   "receive": 0,
+   "toss": 2,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-058-R.webp",
+    "illustrator": "さいれんあやめ"
+   },
+   {
+    "rarity": "RA",
+    "imageEnd": "RA",
+    "image": "cards/HV-P03-058-RA.webp",
+    "illustrator": "黒イ森"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "おいかわ とおる",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-059",
+  "type": "CHARACTER",
+  "nameJa": "岩泉 一",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 4,
+   "block": 3,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-059-N.webp",
+    "illustrator": "繍夜"
+   },
+   {
+    "rarity": "NA",
+    "imageEnd": "NA",
+    "image": "cards/HV-P03-059-NA.webp",
+    "illustrator": "よい"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "いわいずみ はじめ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-060",
+  "type": "CHARACTER",
+  "nameJa": "国見 英",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 1,
+   "receive": 4,
+   "toss": 1,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "秘",
+    "imageEnd": "H",
+    "image": "cards/HV-P03-060-H.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "くにみ あきら",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-061",
+  "type": "CHARACTER",
+  "nameJa": "木兎 光太郎",
+  "nameZh": null,
+  "affiliations": [
+   "梟谷"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 2,
+   "toss": 1,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=サーブエリア][=アタックエリア]\n自分の手札から「木兎 光太郎」1枚をドロップすれば使える。カード1枚を引き、このキャラのパラメータ1つに+3する。",
+  "skillZh": "[=登場][=サーブエリア][=アタックエリア] 從自己的手牌丟棄1張「木兎 光太郎」則可使用：抽1張卡，這名角色的1項參數+3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-061-N.webp",
+    "illustrator": "木花ゆな"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-061-NP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "NA",
+    "imageEnd": "NA",
+    "image": "cards/HV-P03-061-NA.webp",
+    "illustrator": "akagi"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "serve",
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 1,
+         "filter": {
+          "names": [
+           "木兎 光太郎"
+          ]
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "choose",
+         "amount": 3
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ぼくと こうたろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-062",
+  "type": "CHARACTER",
+  "nameJa": "木葉 秋紀",
+  "nameZh": null,
+  "affiliations": [
+   "梟谷"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 0,
+   "receive": 5,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-062-N.webp",
+    "illustrator": "衣丘わこ"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "このは あきのり",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-063",
+  "type": "CHARACTER",
+  "nameJa": "青根 高伸",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=サーブエリア]\n自分のデッキの上から1枚をドロップし、そのカードが伊達工業のキャラカードの場合、このキャラのサーブポイントに+3し、次の相手のターン中、相手の[=アタック]でプレイできるイベントカードのスキルを無効にする。",
+  "skillZh": "[=登場][=サーブエリア] 將自己牌組頂的1張丟棄，若該卡是伊達工業的角色卡，這名角色的發球點數+3，並在下個對手回合中，無效化對手可以[=アタック]打出的事件卡的技能。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-063-R.webp",
+    "illustrator": "菊野郎"
+   },
+   {
+    "rarity": "RA",
+    "imageEnd": "RA",
+    "image": "cards/HV-P03-063-RA.webp",
+    "illustrator": "しらたき"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "serve"
+     ],
+     "actions": [
+      {
+       "op": "millTopAll",
+       "count": 1,
+       "match": {
+        "affiliation": "伊達工業",
+        "cardType": "CHARACTER"
+       },
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "serve",
+         "amount": 3
+        },
+        {
+         "op": "restrict",
+         "restriction": {
+          "banEventTimings": [
+           "attack"
+          ]
+         },
+         "duration": "nextOpponentTurn",
+         "player": "opponent"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あおね たかのぶ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-064",
+  "type": "CHARACTER",
+  "nameJa": "二口 堅治",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 2,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=ブロックエリア]\n自分の手札から伊達工業のカード2枚をドロップすれば使える。カード1枚を引き、このキャラのブロックポイントに+4し、このターン中、このキャラのブロックポイントは－されない。",
+  "skillZh": "[=登場][=ブロックエリア] 從自己手牌丟棄2張伊達工業的卡則可使用。抽1張卡，這名角色的攔網點數+4，且這個回合中，這名角色的攔網點數不會被降低。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-064-S.webp",
+    "illustrator": "JSK"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-064-SP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "SA",
+    "imageEnd": "SA",
+    "image": "cards/HV-P03-064-SA.webp",
+    "illustrator": "しらたき"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "dropFromHand",
+         "count": 2,
+         "filter": {
+          "affiliation": "伊達工業"
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "block",
+         "amount": 4
+        },
+        {
+         "op": "preventParamDecrease",
+         "target": "self",
+         "param": "block"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ふたくち けんじ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-065",
+  "type": "CHARACTER",
+  "nameJa": "女川 太郎",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 5,
+   "toss": 0,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-065-N.webp",
+    "illustrator": "ako"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "おながわ たろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-066",
+  "type": "CHARACTER",
+  "nameJa": "吹上 仁悟",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 3,
+   "receive": 2,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-066-N.webp",
+    "illustrator": "はちる"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ふきあげ じんご",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-067",
+  "type": "CHARACTER",
+  "nameJa": "牛島 若利",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 0,
+   "receive": 2,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\n2ガッツ払えば使える。このキャラのレシーブポイントに+4する。相手のアタックキャラの元々のアタックポイントが1以下の場合、自分の白鳥沢のブロックキャラ1人をドロップすれば使える。相手のアタックのオフェンスポイントに－2する。",
+  "skillZh": "[=登場][=レシーブエリア] 支付2點Guts則可使用。這名角色的接球點數+4。若對手攻擊角色的原本攻擊點數在1以下，丟棄自己1名白鳥沢的攔網角色則可使用：對手攻擊的進攻點數-2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-067-R.webp",
+    "illustrator": "匈歌ハトリ"
+   },
+   {
+    "rarity": "RP",
+    "imageEnd": "RP",
+    "image": "cards/HV-P03-067-RP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "RA",
+    "imageEnd": "RA",
+    "image": "cards/HV-P03-067-RA.webp",
+    "illustrator": "ohuton"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 4
+        },
+        {
+         "op": "gate",
+         "cond": [
+          {
+           "type": "chara",
+           "player": "opponent",
+           "filter": {
+            "area": [
+             "attack"
+            ],
+            "baseParamMax": {
+             "param": "attack",
+             "value": 1
+            }
+           }
+          }
+         ],
+         "costs": [
+          {
+           "type": "dropChara",
+           "area": "block",
+           "filter": {
+            "affiliation": "白鳥沢"
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "addOpponentOp",
+           "amount": -2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "うしじま わかとし",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-068",
+  "type": "CHARACTER",
+  "nameJa": "天童 覚",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 3,
+   "receive": 0,
+   "toss": 1,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-068-R.webp",
+    "illustrator": "O嬢"
+   },
+   {
+    "rarity": "RA",
+    "imageEnd": "RA",
+    "image": "cards/HV-P03-068-RA.webp",
+    "illustrator": "シロス"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "てんどう さとり",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-069",
+  "type": "CHARACTER",
+  "nameJa": "白布 賢二郎",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 1,
+   "block": 1,
+   "receive": 1,
+   "toss": 1,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=トスエリア]\n2ガッツ払えば使える。カード1枚を引き、このキャラのトスポイントに+1する。",
+  "skillZh": "[=登場][=トスエリア] 支付2點Guts則可使用。抽1張卡，這名角色的托球點數+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-069-S.webp",
+    "illustrator": "JSK"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "guts",
+         "count": 2
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "toss",
+         "amount": 1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "しらぶ けんじろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-070",
+  "type": "CHARACTER",
+  "nameJa": "五色 工",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 1,
+   "receive": 2,
+   "toss": 1,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "秘",
+    "imageEnd": "H",
+    "image": "cards/HV-P03-070-H.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ごしき つとむ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-071",
+  "type": "CHARACTER",
+  "nameJa": "山形 隼人",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア]\nお互いのセットカードが合計1枚以下の場合、3ガッツ払えば使える。このキャラのレシーブポイントに+2し、自分のドロップエリアから「山形 隼人」以外の白鳥沢の3年のキャラカード1枚までを手札に加える。",
+  "skillZh": "[=登場][=レシーブエリア] 雙方的Set卡合計在1張以下時，支付3點Guts則可使用。這名角色的接球點數+2，並從自己的棄牌區將最多1張「山形 隼人」以外的白鳥沢3年級角色卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-071-N.webp",
+    "illustrator": "御巫 史"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "setTotalMax",
+         "count": 1
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "receive",
+         "amount": 2
+        },
+        {
+         "op": "dropToHand",
+         "filter": {
+          "affiliation": "白鳥沢",
+          "gradesAny": [
+           "3年"
+          ],
+          "notNames": [
+           "山形 隼人"
+          ]
+         },
+         "cardType": "CHARACTER",
+         "count": 1,
+         "upTo": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "やまがた はやと",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-072",
+  "type": "CHARACTER",
+  "nameJa": "瀬見 英太",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "S"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 1,
+   "receive": 0,
+   "toss": 1,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "[=登場][=サーブエリア]\nこのキャラが白鳥沢のキャラの上に登場していた場合、このキャラのサーブポイントに+3し、次の相手のターン中、相手のLiのレシーブキャラが登場するたび、そのキャラのレシーブポイントに－1する。",
+  "skillZh": "[=登場][=サーブエリア] 若這名角色登場在白鳥沢角色之上，這名角色的發球點數+3，並在下個對手回合中，對手的Li接球角色每次登場時，該角色的接球點數-1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-072-N.webp",
+    "illustrator": "柴 サヤカ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy",
+      "overAffiliation": "白鳥沢"
+     },
+     "areaIcons": [
+      "serve"
+     ],
+     "actions": [
+      {
+       "op": "addParam",
+       "target": "self",
+       "param": "serve",
+       "amount": 3
+      },
+      {
+       "op": "watch",
+       "trigger": {
+        "on": "deploy",
+        "player": "opponent",
+        "area": [
+         "receive"
+        ],
+        "filter": {
+         "position": "Li"
+        }
+       },
+       "duration": "nextOpponentTurn",
+       "actions": [
+        {
+         "op": "addParam",
+         "target": "trigger",
+         "param": "receive",
+         "amount": -1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "せみ えいた",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-073",
+  "type": "CHARACTER",
+  "nameJa": "小鹿野 大樹",
+  "nameZh": null,
+  "affiliations": [
+   "森然"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 2,
+   "toss": 0,
+   "attack": 0
+  },
+  "timing": [],
+  "skillJa": "[=登場][=アタックエリア]\n自分のレシーブエリアとトスエリアとアタックエリアから2ガッツずつ払えば使える。このキャラのアタックポイントに+5し、次の相手のターン中、相手のブロックキャラのスキルを無効にする。",
+  "skillZh": "[=登場][=アタックエリア] 從自己的接球區、托球區、攻擊區各支付2點Guts則可使用：這名角色的攻擊點數+5，並在下個對手回合中，無效化對手攔網角色的技能。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-073-N.webp",
+    "illustrator": "R"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "gutsFrom",
+         "areas": [
+          "receive",
+          "toss",
+          "attack"
+         ],
+         "count": 2,
+         "perArea": true
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "attack",
+         "amount": 5
+        },
+        {
+         "op": "restrict",
+         "restriction": {
+          "disableSkills": {
+           "area": [
+            "block"
+           ]
+          }
+         },
+         "duration": "nextOpponentTurn",
+         "player": "opponent"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "おがの だいき",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-074",
+  "type": "CHARACTER",
+  "nameJa": "強羅 昌己",
+  "nameZh": null,
+  "affiliations": [
+   "生川"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-074-N.webp",
+    "illustrator": "R"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "ごうら まさき",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-075",
+  "type": "CHARACTER",
+  "nameJa": "寺泊 基希",
+  "nameZh": null,
+  "affiliations": [
+   "椿原"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 0,
+   "receive": 4,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "[=登場][=レシーブエリア][=アタックエリア]\n自分のトスキャラが「越後 栄」の場合、3ガッツ払えば使える。このキャラのパラメータ1つに+3する。",
+  "skillZh": "[=登場][=レシーブエリア][=アタックエリア] 若自己的托球角色是「越後 栄」，支付3點Guts則可使用：這名角色的1項參數+3。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-075-N.webp",
+    "illustrator": "Axxx."
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "passive",
+     "trigger": {
+      "on": "deploy"
+     },
+     "areaIcons": [
+      "receive",
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "cond": [
+        {
+         "type": "chara",
+         "player": "self",
+         "filter": {
+          "area": [
+           "toss"
+          ],
+          "names": [
+           "越後 栄"
+          ]
+         }
+        }
+       ],
+       "costs": [
+        {
+         "type": "guts",
+         "count": 3
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": "self",
+         "param": "choose",
+         "amount": 3
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "てらどまり もとき",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-076",
+  "type": "CHARACTER",
+  "nameJa": "志賀 智也",
+  "nameZh": null,
+  "affiliations": [
+   "早流川工業"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "MB"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 4,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": null,
+  "skillZh": null,
+  "skillZhStatus": "none",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-076-N.webp",
+    "illustrator": "はあと"
+   }
+  ],
+  "effect": null,
+  "effectStatus": "vanilla",
+  "nameRuby": "しが ともなり",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-077",
+  "type": "CHARACTER",
+  "nameJa": "日向・百沢",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース",
+   "角川"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "ボール拾い",
+   "WS"
+  ],
+  "params": {
+   "serve": 0,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「日向・百沢」の代わりに「日向 翔陽」か「百沢 雄大」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「日向・百沢」改為「日向 翔陽」或「百沢 雄大」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-077-N.webp",
+    "illustrator": "傭介"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-077-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "日向 翔陽",
+      "百沢 雄大"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひなた ひゃくざわ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-078",
+  "type": "EVENT",
+  "nameJa": "穴原 孝昭",
+  "nameZh": null,
+  "affiliations": [
+   "条善寺",
+   "疑似ユース"
+  ],
+  "grades": [],
+  "positions": [
+   "監督"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n自分のデッキの上から3枚を見て、その中の条善寺か疑似ユースのキャラカード1枚までを公開し、そのカードを手札に加える。加えなかったカードを好きな順番に並び替え、それらをデッキの上か下に置く。",
+  "skillZh": "[=ドロー] 查看自己牌組頂的3張，將其中最多1張条善寺或疑似ユース的角色卡公開並加入手牌，未加入的卡以喜歡的順序放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-078-N.webp",
+    "illustrator": "Axxx."
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "actions": [
+      {
+       "op": "lookTopTutor",
+       "count": 3,
+       "affiliationsAny": [
+        "条善寺",
+        "疑似ユース"
+       ],
+       "cardType": "CHARACTER",
+       "upTo": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あなばら たかあき",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-079",
+  "type": "EVENT",
+  "nameJa": "影山というセッターの居ないお前に 俺は価値を感じない",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢",
+   "疑似ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n自分のデッキの上から5枚を見て、その中の疑似ユースのWSかMBかSかLiのキャラカード1枚までを手札に加える。加えた場合、加えなかったカードの中のボール拾いのキャラカード1枚までを手札に加える。加えなかったカードを好きな順番でデッキの下に置く。",
+  "skillZh": "[=ドロー] 查看自己牌組頂的5張，將其中最多1張疑似ユース的WS、MB、S或Li角色卡加入手牌。若有加入，將未加入的卡中最多1張ボール拾い角色卡加入手牌。未加入的卡以喜歡的順序放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-079-N.webp",
+    "illustrator": "三森 公政"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "actions": [
+      {
+       "op": "lookTopTwoPick",
+       "count": 5,
+       "pick1": {
+        "affiliation": "疑似ユース",
+        "positionsAny": [
+         "WS",
+         "MB",
+         "S",
+         "Li"
+        ]
+       },
+       "pick2": {
+        "positionsAny": [
+         "ボール拾い"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "かげやまというせったーのいないおまえに おれはかちをかんじない",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-080",
+  "type": "EVENT",
+  "nameJa": "探せ",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n自分のレシーブエリアとトスエリアとアタックエリアから2ガッツずつ払えば使える。自分のイベントエリアから「探せ」以外のカード2枚までを手札に加える。",
+  "skillZh": "[=ドロー] 從自己的接球區、托球區、攻擊區各支付2點Guts則可使用。從自己的事件區將最多2張「探せ」以外的卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-080-N.webp",
+    "illustrator": "はあと"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "gutsFrom",
+         "areas": [
+          "receive",
+          "toss",
+          "attack"
+         ],
+         "count": 2,
+         "perArea": true
+        }
+       ],
+       "then": [
+        {
+         "op": "eventAreaToHand",
+         "filter": {
+          "notNames": [
+           "探せ"
+          ]
+         },
+         "count": 2,
+         "upTo": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "さがせ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-081",
+  "type": "EVENT",
+  "nameJa": "コートの中には情報がいっぱいだ",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "疑似ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ブロック][=レシーブ][=アタック]\n[=ターン1]カード1枚を引き、自分のキャラすべてが疑似ユースの場合、自分のキャラ1人のパラメータ1つに+1し、自分のイベントエリアにあるカードが8枚以上の場合、さらにカード1枚を引く。",
+  "skillZh": "[=ブロック][=レシーブ][=アタック] [=ターン1]抽1張卡，若自己的角色全部都是疑似ユース，自己1名角色的1項參數+1，且若自己的事件區有8張以上的卡，再抽1張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-081-R.webp",
+    "illustrator": "菊野郎"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "block",
+      "receive",
+      "attack"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "疑似ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self"
+         },
+         "param": "choose",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "eventAreaCount",
+           "player": "self",
+           "min": 8
+          }
+         ],
+         "then": [
+          {
+           "op": "draw",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "こーとのなかにはじょうほうがいっぱいだ",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-082",
+  "type": "EVENT",
+  "nameJa": "楽してこうぜ 百沢ァー!!",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "角川",
+   "疑似ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=レシーブ]\n自分のキャラすべてが疑似ユースの場合、カード1枚を引き、自分のキャラ1人のレシーブポイントに+1し、自分のイベントエリアにあるカードが4枚以上の場合、このターン中、自分の疑似ユースの「百沢 雄大」が登場するたび、そのキャラのアタックポイントに+1する。",
+  "skillZh": "[=レシーブ] 若自己的角色全部都是疑似ユース，抽1張卡，自己1名角色的接球點數+1，且若自己的事件區有4張以上的卡，這個回合中，自己的疑似ユース「百沢 雄大」每次登場時，該角色的攻擊點數+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-082-R.webp",
+    "illustrator": "パトリシアーナ菊池"
+   },
+   {
+    "rarity": "RP",
+    "imageEnd": "RP",
+    "image": "cards/HV-P03-082-RP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "疑似ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self"
+         },
+         "param": "receive",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "eventAreaCount",
+           "player": "self",
+           "min": 4
+          }
+         ],
+         "then": [
+          {
+           "op": "watch",
+           "trigger": {
+            "on": "deploy",
+            "player": "self",
+            "filter": {
+             "affiliation": "疑似ユース",
+             "names": [
+              "百沢 雄大"
+             ]
+            }
+           },
+           "duration": "thisTurn",
+           "actions": [
+            {
+             "op": "addParam",
+             "target": "trigger",
+             "param": "attack",
+             "amount": 1
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "らくしてこうぜ ひゃくざわー",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-083",
+  "type": "EVENT",
+  "nameJa": "火焼 呼太郎",
+  "nameZh": null,
+  "affiliations": [
+   "ユース"
+  ],
+  "grades": [],
+  "positions": [
+   "監督"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=レシーブ]\n自分のキャラすべてがユースの場合、カード1枚を引き、自分のキャラ1人のレシーブポイントに+1し、自分のレシーブエリアとアタックエリアのユースのガッツ1枚ずつまでを入れ替える。",
+  "skillZh": "[=レシーブ] 若自己的角色全部都是ユース，抽1張卡，自己1名角色的接球點數+1，並將自己接球區與攻擊區的ユース Guts 各最多1張互換。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-083-N.webp",
+    "illustrator": "三森 公政"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self"
+         },
+         "param": "receive",
+         "amount": 1
+        },
+        {
+         "op": "swapGuts",
+         "areaA": "receive",
+         "areaB": "attack",
+         "filter": {
+          "affiliation": "ユース"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひたき こたろう",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-084",
+  "type": "EVENT",
+  "nameJa": "雲雀田 吹",
+  "nameZh": null,
+  "affiliations": [
+   "全日本男子代表",
+   "ユース"
+  ],
+  "grades": [],
+  "positions": [
+   "監督"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=レシーブ]\n[=ターン1]自分のキャラすべてがユースの場合、カード1枚を引き、自分のキャラ1人のレシーブポイントに+1し、自分のイベントエリアにあるカードが2枚以下の場合、さらにレシーブポイントに+1する。",
+  "skillZh": "[=レシーブ] [=ターン1]若自己的角色全部都是ユース，抽1張卡，自己1名角色的接球點數+1，且若自己的事件區有2張以下的卡，接球點數再+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-084-N.webp",
+    "illustrator": "三森 公政"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-084-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "receive"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "ユース"
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self"
+         },
+         "param": "receive",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "eventAreaCount",
+           "player": "self",
+           "max": 2
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "target",
+           "param": "receive",
+           "amount": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひばりだ ふき",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-085",
+  "type": "EVENT",
+  "nameJa": "ド ン ッ",
+  "nameZh": null,
+  "affiliations": [
+   "鴎台",
+   "ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=アタック]\n[=ターン1]カード1枚を引き、自分のユースのキャラ1人のアタックポイントに+1する。そのキャラが「星海 光来」の場合、自分のアタックエリアから3ガッツ払えば使える。さらにアタックポイントに+2する。",
+  "skillZh": "[=アタック] [=ターン1]抽1張卡，自己1名ユース角色的攻擊點數+1。若該角色是「星海 光来」，從自己的攻擊區支付3點Guts則可使用：攻擊點數再+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-085-S.webp",
+    "illustrator": "衣丘わこ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "attack"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "addParam",
+       "target": {
+        "choose": true,
+        "player": "self",
+        "affiliation": "ユース"
+       },
+       "param": "attack",
+       "amount": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "targetIs",
+         "filter": {
+          "names": [
+           "星海 光来"
+          ]
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "gutsFrom",
+           "areas": [
+            "attack"
+           ],
+           "count": 3
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": "target",
+           "param": "attack",
+           "amount": 2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "どんっ",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-086",
+  "type": "EVENT",
+  "nameJa": "プレーは大分 おりこうさんよな",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎",
+   "ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=トス]\n自分のSのトスキャラ1人のトスポイントを2にする。このカードを自分のデッキの下に置けば使える。自分のイベントエリアから[=アタック]のみでプレイできるカード1枚までを手札に加える。",
+  "skillZh": "[=トス] 自己1名S托球角色的托球點數變為2。將這張卡放到自己的牌組底則可使用：從自己的事件區將最多1張只能以[=アタック]打出的卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-086-N.webp",
+    "illustrator": "繍夜"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-086-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "toss"
+     ],
+     "actions": [
+      {
+       "op": "setParam",
+       "target": {
+        "choose": true,
+        "player": "self",
+        "area": [
+         "toss"
+        ],
+        "position": "S"
+       },
+       "param": "toss",
+       "value": 2
+      },
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "placeSelfOnDeckBottom"
+        }
+       ],
+       "then": [
+        {
+         "op": "eventAreaToHand",
+         "filter": {
+          "playTimingOnly": "attack"
+         },
+         "count": 1,
+         "upTo": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ぷれーはだいぶん　おりこうさんよな",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-087",
+  "type": "EVENT",
+  "nameJa": "周りの上手さに引っ張られる",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "ユース"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=レシーブ][=アタック]\n[=ターン1]自分のキャラすべてが烏野かすべてがユースの場合、カード1枚を引き、自分のキャラ1人のアタックポイントに+1する。そのキャラが「影山 飛雄」の場合、自分のコートから合計6ガッツ払えば使える。さらにパラメータ1つに+2する。",
+  "skillZh": "[=レシーブ][=アタック] [=ターン1]若自己的角色全部都是烏野或全部都是ユース，抽1張卡，自己1名角色的攻擊點數+1。若該角色是「影山 飛雄」，從自己的場上支付合計6點Guts則可使用：再讓1項參數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-087-N.webp",
+    "illustrator": "木花ゆな"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "receive",
+      "attack"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliationsAny": [
+          "烏野",
+          "ユース"
+         ]
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "addParam",
+         "target": {
+          "choose": true,
+          "player": "self"
+         },
+         "param": "attack",
+         "amount": 1
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "targetIs",
+           "filter": {
+            "names": [
+             "影山 飛雄"
+            ]
+           }
+          }
+         ],
+         "then": [
+          {
+           "op": "gate",
+           "costs": [
+            {
+             "type": "gutsAny",
+             "count": 6
+            }
+           ],
+           "then": [
+            {
+             "op": "addParam",
+             "target": "target",
+             "param": "choose",
+             "amount": 2
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "まわりのうまさにひっぱられる",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-088",
+  "type": "EVENT",
+  "nameJa": "山本 あかね・灰羽 アリサ",
+  "nameZh": null,
+  "affiliations": [
+   "音駒中",
+   "音駒"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "応援団長",
+   "応援団"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n自分の手札が4枚以下の場合、自分のエリア1つからカード名の異なる音駒のガッツ2枚を手札に加える。加えた場合、自分のドロップエリアから音駒のキャラカード1枚までをデッキの下に置く。",
+  "skillZh": "[=ドロー] 若自己的手牌在4張以下，從自己的1個區域將2張卡名相異的音駒 Guts 加入手牌。若有加入，將自己棄牌區最多1張音駒角色卡放到牌組底。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-088-N.webp",
+    "illustrator": "冬野ふくろ"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-088-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "handMax",
+         "count": 4
+        }
+       ],
+       "then": [
+        {
+         "op": "gutsToHand",
+         "count": 2,
+         "distinctNames": true,
+         "affiliation": "音駒"
+        },
+        {
+         "op": "if",
+         "cond": [
+          {
+           "type": "addedThisSkill",
+           "min": 1
+          }
+         ],
+         "then": [
+          {
+           "op": "dropToDeckBottom",
+           "filter": {
+            "affiliation": "音駒"
+           },
+           "cardType": "CHARACTER",
+           "count": 1,
+           "upTo": true
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "やまもと  あかね　はいば ありさ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-089",
+  "type": "EVENT",
+  "nameJa": "―俺達は血液だ",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー][=レシーブ]\n自分のドロップエリアから音駒のキャラカード1枚を手札に加える。",
+  "skillZh": "[=ドロー][=レシーブ] 從自己的棄牌區將1張音駒的角色卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-089-R.webp",
+    "illustrator": "O嬢"
+   },
+   {
+    "rarity": "RP",
+    "imageEnd": "RP",
+    "image": "cards/HV-P03-089-RP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw",
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "dropToHand",
+       "filter": {
+        "affiliation": "音駒"
+       },
+       "cardType": "CHARACTER",
+       "count": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "おれたちはけつえきだ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-090",
+  "type": "EVENT",
+  "nameJa": "おれにバレーボール教えてくれて ありがとう",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n[=ターン1]自分のイベントエリアから「おれにバレーボール教えてくれて ありがとう」以外のイベントカード1枚を手札に加える。",
+  "skillZh": "[=ドロー] [=ターン1]從自己的事件區將1張「おれにバレーボール教えてくれて ありがとう」以外的事件卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-090-S.webp",
+    "illustrator": "星 和貴"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-090-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "eventAreaToHand",
+       "filter": {
+        "notNames": [
+         "おれにバレーボール教えてくれて ありがとう"
+        ],
+        "cardType": "EVENT"
+       },
+       "count": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "おれにばれーぼーるおしえてくれてありがとう",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-091",
+  "type": "EVENT",
+  "nameJa": "俺のサーブの邪魔すんなや この喧しブタ",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=サーブ][=ドロー]\nカード1枚を引く。サーブフェイズ中で、自分のサーブキャラが「宮 侑」の場合、そのキャラのサーブポイントを6にし、このターン中、このカードが自分のイベントエリアからドロップされた時、カード1枚を引く。",
+  "skillZh": "[=サーブ][=ドロー] 抽1張卡。若為發球階段中且自己的發球角色是「宮 侑」，該角色的發球點數變為6，且這個回合中，當這張卡從自己的事件區被丟棄時，抽1張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "S",
+    "imageEnd": "S",
+    "image": "cards/HV-P03-091-S.webp",
+    "illustrator": "匈歌ハトリ"
+   },
+   {
+    "rarity": "SP",
+    "imageEnd": "SP",
+    "image": "cards/HV-P03-091-SP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "serve",
+      "draw"
+     ],
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "phaseIs",
+         "phase": "serve"
+        },
+        {
+         "type": "chara",
+         "player": "self",
+         "filter": {
+          "area": [
+           "serve"
+          ],
+          "names": [
+           "宮 侑"
+          ]
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "setParam",
+         "target": {
+          "choose": true,
+          "player": "self",
+          "area": [
+           "serve"
+          ],
+          "names": [
+           "宮 侑"
+          ]
+         },
+         "param": "serve",
+         "value": 6
+        },
+        {
+         "op": "watch",
+         "trigger": {
+          "on": "selfDroppedFromEvent"
+         },
+         "duration": "thisTurn",
+         "actions": [
+          {
+           "op": "draw",
+           "count": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "おれのさーぶのじゃますんなや このやまかしぶた",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-092",
+  "type": "EVENT",
+  "nameJa": "あんたブロック上手だよ",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=アタック]\nカード1枚を引き、次の相手のターン中、相手の[=ドシャット(N)]と[=ワンタッチ(N)]を無効にする。自分のアタックキャラが「角名 倫太郎」の場合、自分のアタックエリアから2ガッツ払えば使える。そのキャラのアタックポイントに+2する。",
+  "skillZh": "[=アタック] 抽1張卡，並在下個對手回合中，無效化對手的[=ドシャット(N)]與[=ワンタッチ(N)]。若自己的攻擊角色是「角名 倫太郎」，從自己的攻擊區支付2點Guts則可使用：該角色的攻擊點數+2。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "R",
+    "imageEnd": "R",
+    "image": "cards/HV-P03-092-R.webp",
+    "illustrator": "はあと"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "restrict",
+       "restriction": {
+        "banDoshatto": true,
+        "banOneTouch": true
+       },
+       "duration": "nextOpponentTurn",
+       "player": "opponent"
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "chara",
+         "player": "self",
+         "filter": {
+          "area": [
+           "attack"
+          ],
+          "names": [
+           "角名 倫太郎"
+          ]
+         }
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "gutsFrom",
+           "areas": [
+            "attack"
+           ],
+           "count": 2
+          }
+         ],
+         "then": [
+          {
+           "op": "addParam",
+           "target": {
+            "choose": true,
+            "player": "self",
+            "area": [
+             "attack"
+            ],
+            "names": [
+             "角名 倫太郎"
+            ]
+           },
+           "param": "attack",
+           "amount": 2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "あんたぶろっくじょうずだよ",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-093",
+  "type": "EVENT",
+  "nameJa": "絶望の継続や",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=レシーブ]\nカード1枚を引く。以下から1つを選んで使える。\n ▶自分の稲荷崎のキャラ1人のレシーブポイントに+1する。\n ▶自分のレシーブエリアのガッツの「北 信介」1枚までをレシーブエリアに登場させる。",
+  "skillZh": "[=レシーブ] 抽1張卡。從以下選1個使用。▶自己1名稲荷崎角色的接球點數+1。▶將自己接球區Guts中最多1張「北 信介」登場到接球區。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-093-N.webp",
+    "illustrator": "菊野郎"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "receive"
+     ],
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "chooseOne",
+       "options": [
+        {
+         "label": "稲荷崎1人レシーブ+1",
+         "actions": [
+          {
+           "op": "addParam",
+           "target": {
+            "choose": true,
+            "player": "self",
+            "affiliation": "稲荷崎"
+           },
+           "param": "receive",
+           "amount": 1
+          }
+         ]
+        },
+        {
+         "label": "レシーブ区ガッツの北信介を登場",
+         "actions": [
+          {
+           "op": "deployFromGuts",
+           "filter": {
+            "names": [
+             "北 信介"
+            ]
+           },
+           "area": "receive",
+           "fromArea": "receive",
+           "upTo": 1
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ぜつぼうのけいぞくや",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-094",
+  "type": "EVENT",
+  "nameJa": "清水 潔子",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "3年"
+  ],
+  "positions": [
+   "マネージャー"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー]\n[=ターン1]自分のデッキの上から3枚を公開し、その中の烏野のイベントカード1枚までを手札に加え、加えなかったカードを好きな順番でデッキの下に置く。加えた場合、さらにこのカードを手札に加える。",
+  "skillZh": "[=ドロー] [=ターン1]公開自己牌組頂的3張，從中將最多1張烏野的事件卡加入手牌，未加入的卡以喜歡的順序放到牌組底。若有加入，再將這張卡加入手牌。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-094-N.webp",
+    "illustrator": "窓ノ晴雨"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-094-NP.webp",
+    "illustrator": "古舘 春一"
+   },
+   {
+    "rarity": "NA",
+    "imageEnd": "NA",
+    "image": "cards/HV-P03-094-NA.webp",
+    "illustrator": "風間雷太"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "lookTopTutor",
+       "count": 3,
+       "affiliation": "烏野",
+       "cardType": "EVENT",
+       "upTo": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "addedThisSkill",
+         "min": 1
+        }
+       ],
+       "then": [
+        {
+         "op": "eventAreaToHand",
+         "filter": {
+          "names": [
+           "清水 潔子"
+          ]
+         },
+         "count": 1
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "しみず きよこ",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-095",
+  "type": "EVENT",
+  "nameJa": "烏養 繋心",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [],
+  "positions": [
+   "コーチ"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=アタック]\n自分の烏野のキャラ1人のアタックポイントに+1する。自分のキャラすべてが烏野の場合、自分のコートから合計6ガッツ払えば使える。カード2枚を引く。",
+  "skillZh": "[=アタック] 自己1名烏野角色的攻擊點數+1。若自己的角色全部都是烏野，從自己的場上支付合計6點Guts則可使用：抽2張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-095-N.webp",
+    "illustrator": "ヤナギリュータ"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "addParam",
+       "target": {
+        "choose": true,
+        "player": "self",
+        "affiliation": "烏野"
+       },
+       "param": "attack",
+       "amount": 1
+      },
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "烏野"
+        }
+       ],
+       "then": [
+        {
+         "op": "gate",
+         "costs": [
+          {
+           "type": "gutsAny",
+           "count": 6
+          }
+         ],
+         "then": [
+          {
+           "op": "draw",
+           "count": 2
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "うかい けいしん",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-096",
+  "type": "EVENT",
+  "nameJa": "日向 夏",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ブロック][=レシーブ][=アタック]\n[=ターン1]カード1枚を引き、自分のキャラの「日向 翔陽」1人のパラメータ1つに+1する。",
+  "skillZh": "[=ブロック][=レシーブ][=アタック] [=ターン1]抽1張卡，自己1名「日向 翔陽」的1項參數+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-096-N.webp",
+    "illustrator": "窓ノ晴雨"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-096-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "block",
+      "receive",
+      "attack"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "draw",
+       "count": 1
+      },
+      {
+       "op": "addParam",
+       "target": {
+        "choose": true,
+        "player": "self",
+        "names": [
+         "日向 翔陽"
+        ]
+       },
+       "param": "choose",
+       "amount": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひなた なつ",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-097",
+  "type": "EVENT",
+  "nameJa": "滑津 舞",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "マネージャー"
+  ],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ブロック]\n自分のドロップエリアからカード名の異なる伊達工業のキャラカード2枚を手札に加え、自分の手札からカード1枚をドロップする。",
+  "skillZh": "[=ブロック] 從自己的棄牌區將2張卡名相異的伊達工業角色卡加入手牌，並從自己的手牌丟棄1張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-097-N.webp",
+    "illustrator": "はちる"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "dropToHand",
+       "filter": {
+        "affiliation": "伊達工業"
+       },
+       "cardType": "CHARACTER",
+       "distinctNames": true,
+       "count": 2
+      },
+      {
+       "op": "dropFromHand",
+       "count": 1
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "なめつ まい",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-098",
+  "type": "EVENT",
+  "nameJa": "ブッ潰ス!!!",
+  "nameZh": null,
+  "affiliations": [
+   "伊達工業"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=サーブ][=ブロック]\n自分のキャラすべてが伊達工業の場合、カード1枚を引き、以下から1つを選んで使える。\n ▶自分のキャラ1人のブロックポイントに+1する。\n ▶サーブフェイズ中の場合、次の相手のターン中、相手の手札からSのトスキャラが登場するたび、そのキャラのトスポイントに－1する。",
+  "skillZh": "[=サーブ][=ブロック] 若自己的角色全部都是伊達工業，抽1張卡，並從以下選1個使用。▶自己1名角色的攔網點數+1。▶發球階段中時，下個對手回合中，對手從手牌登場S的托球角色時，該角色的托球點數-1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-098-N.webp",
+    "illustrator": "KACHIN"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "serve",
+      "block"
+     ],
+     "actions": [
+      {
+       "op": "if",
+       "cond": [
+        {
+         "type": "allCharas",
+         "affiliation": "伊達工業"
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 1
+        },
+        {
+         "op": "chooseOne",
+         "options": [
+          {
+           "label": "角色1人のブロック+1",
+           "actions": [
+            {
+             "op": "addParam",
+             "target": {
+              "choose": true,
+              "player": "self"
+             },
+             "param": "block",
+             "amount": 1
+            }
+           ]
+          },
+          {
+           "label": "サーブ中：次相手ターン手札Sトス登場毎トス−1",
+           "actions": [
+            {
+             "op": "if",
+             "cond": [
+              {
+               "type": "phaseIs",
+               "phase": "serve"
+              }
+             ],
+             "then": [
+              {
+               "op": "watch",
+               "trigger": {
+                "on": "deploy",
+                "player": "opponent",
+                "area": [
+                 "toss"
+                ],
+                "filter": {
+                 "position": "S"
+                },
+                "fromHand": true
+               },
+               "duration": "nextOpponentTurn",
+               "actions": [
+                {
+                 "op": "addParam",
+                 "target": "trigger",
+                 "param": "toss",
+                 "amount": -1
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ぶっつぶす",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
+  "id": "HV-P03-099",
+  "type": "EVENT",
+  "nameJa": "…それで お前は何をやっている？",
+  "nameZh": null,
+  "affiliations": [
+   "白鳥沢"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=アタック]\nカード1枚を引き、自分の白鳥沢のアタックキャラ1人のアタックポイントに+1する。そのキャラが「牛島 若利」の場合、相手のイベントエリアからキャラカードすべてをドロップし、2枚以上ドロップした場合、さらにアタックポイントに+1する。",
+  "skillZh": "[=アタック] 抽1張卡，自己1名白鳥沢攻擊角色的攻擊點數+1。若該角色是「牛島 若利」，將對手事件區的所有角色卡丟棄，丟棄2張以上時，該角色的攻擊點數再+1。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "N",
+    "imageEnd": "N",
+    "image": "cards/HV-P03-099-N.webp",
+    "illustrator": "mizugaki"
+   },
+   {
+    "rarity": "NP",
+    "imageEnd": "NP",
+    "image": "cards/HV-P03-099-NP.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "attack"
+     ],
+     "actions": [
+      {
+       "op": "script",
+       "id": "card.HV-P03-099"
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "それでおまえはなにをやっている",
+  "annotationJa": null,
+  "productType": "HV-P03",
+  "productName": "ブースターパック ユース & 選抜強化合宿"
+ },
+ {
   "id": "HV-PR-001",
   "type": "CHARACTER",
   "nameJa": "日向 翔陽",
@@ -19012,6 +26235,387 @@
   "effectStatus": "dsl",
   "nameRuby": "若利君(わかとしくん)を倒(たお)したければ俺(おれ)を倒(たお)してから行(い)け～ ってな～",
   "annotationJa": "[=ドシャット(N)]…このターン終了時、自分のブロックのオフェンスポイントはNになる。",
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-057",
+  "type": "CHARACTER",
+  "nameJa": "着地上手組。",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [
+   "1年",
+   "2年"
+  ],
+  "positions": [
+   "MB",
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「着地上手組。」の代わりに「日向 翔陽」か「西谷 夕」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「着地上手組。」改為「日向 翔陽」或「西谷 夕」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-057-P.webp",
+    "illustrator": "古舘 春一"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "日向 翔陽",
+      "西谷 夕"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ちゃくちじょうずぐみ",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-058",
+  "type": "CHARACTER",
+  "nameJa": "黒尾・山本",
+  "nameZh": null,
+  "affiliations": [
+   "音駒"
+  ],
+  "grades": [
+   "3年",
+   "2年"
+  ],
+  "positions": [
+   "MB",
+   "WS"
+  ],
+  "params": {
+   "serve": 5,
+   "block": 0,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「黒尾・山本」の代わりに「黒尾 鉄朗」か「山本 猛虎」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「黒尾・山本」改為「黒尾 鉄朗」或「山本 猛虎」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-058-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "黒尾 鉄朗",
+      "山本 猛虎"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "くろお　やまもと",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-059",
+  "type": "CHARACTER",
+  "nameJa": "宮・古森",
+  "nameZh": null,
+  "affiliations": [
+   "稲荷崎",
+   "ユース",
+   "井闥山"
+  ],
+  "grades": [
+   "2年"
+  ],
+  "positions": [
+   "S",
+   "Li"
+  ],
+  "params": {
+   "serve": null,
+   "block": null,
+   "receive": 5,
+   "toss": 1,
+   "attack": 1
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「宮・古森」の代わりに「宮 侑」か「古森 元也」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「宮・古森」改為「宮 侑」或「古森 元也」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-059-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "宮 侑",
+      "古森 元也"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "みや　こもり",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-060",
+  "type": "CHARACTER",
+  "nameJa": "日向・黄金川",
+  "nameZh": null,
+  "affiliations": [
+   "烏野",
+   "伊達工業"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "MB",
+   "S"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 3,
+   "receive": 0,
+   "toss": 0,
+   "attack": 2
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「日向・黄金川」の代わりに「日向 翔陽」か「黄金川 貫至」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「日向・黄金川」改為「日向 翔陽」或「黄金川 貫至」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-060-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "日向 翔陽",
+      "黄金川 貫至"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "ひなた　こがねがわ",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-061",
+  "type": "CHARACTER",
+  "nameJa": "国見・五色",
+  "nameZh": null,
+  "affiliations": [
+   "青葉城西",
+   "白鳥沢"
+  ],
+  "grades": [
+   "1年"
+  ],
+  "positions": [
+   "WS"
+  ],
+  "params": {
+   "serve": 3,
+   "block": 1,
+   "receive": 1,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「国見・五色」の代わりに「国見 英」か「五色 工」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「国見・五色」改為「国見 英」或「五色 工」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-061-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "国見 英",
+      "五色 工"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "くにみ ごしき",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-062",
+  "type": "CHARACTER",
+  "nameJa": "灰羽・木兎",
+  "nameZh": null,
+  "affiliations": [
+   "音駒",
+   "梟谷"
+  ],
+  "grades": [
+   "1年",
+   "3年"
+  ],
+  "positions": [
+   "MB",
+   "WS"
+  ],
+  "params": {
+   "serve": 2,
+   "block": 2,
+   "receive": 0,
+   "toss": 0,
+   "attack": 3
+  },
+  "timing": [],
+  "skillJa": "このカードを登場させる際、このカードのカード名を「灰羽・木兎」の代わりに「灰羽 リエーフ」か「木兎 光太郎」にする。（このカードを登場させる際に選んだカード名は、そのターン終了時まで有効。このカードはコートのキャラの数を数える際、1人として扱う）",
+  "skillZh": "登場這張卡時，將這張卡的卡名以「灰羽・木兎」改為「灰羽 リエーフ」或「木兎 光太郎」。（登場時所選的卡名有效至該回合結束。這張卡在計算場上角色數量時視為1人）",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-062-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "deployNameChoice",
+     "names": [
+      "灰羽 リエーフ",
+      "木兎 光太郎"
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "はいば ぼくと",
+  "annotationJa": null,
+  "productType": "HV-PR",
+  "productName": "プロモカード"
+ },
+ {
+  "id": "HV-PR-063",
+  "type": "EVENT",
+  "nameJa": "ジャンバル最高!!",
+  "nameZh": null,
+  "affiliations": [
+   "烏野"
+  ],
+  "grades": [],
+  "positions": [],
+  "params": null,
+  "timing": [],
+  "skillJa": "[=ドロー] [=ターン1]「ジャンバル最高!!」と言ってピースすれば使える。自分と相手はカード2枚を引いてもよい。",
+  "skillZh": "[=ドロー] [=ターン1]說出「ジャンバル最高!!」並比出 V 手勢則可使用。自己抽最多2張卡，對手抽2張卡。",
+  "skillZhStatus": "machine",
+  "notes": null,
+  "printings": [
+   {
+    "rarity": "P",
+    "imageEnd": "P",
+    "image": "cards/HV-PR-063-P.webp",
+    "illustrator": "星 和貴"
+   }
+  ],
+  "effect": {
+   "skills": [
+    {
+     "kind": "event",
+     "phaseIcons": [
+      "draw"
+     ],
+     "turn1": true,
+     "actions": [
+      {
+       "op": "gate",
+       "costs": [
+        {
+         "type": "tilt"
+        }
+       ],
+       "then": [
+        {
+         "op": "draw",
+         "count": 2,
+         "upTo": true
+        },
+        {
+         "op": "drawOpponent",
+         "count": 2
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "effectStatus": "dsl",
+  "nameRuby": "じゃんばるさいこう",
+  "annotationJa": "[=ターン1]…このターン中、このカードと同じカード名の自分のカードのスキルを無効にする。",
   "productType": "HV-PR",
   "productName": "プロモカード"
  },

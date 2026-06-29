@@ -12,15 +12,16 @@ export const KNOWN_ACTION_OPS = [
   "millTop", "dropFromHand", "deployFromDrop", "moveCharaToHand", "gutsToHand",
   "eventAreaToHand", "handToDeckBottom", "deployFromGuts", "setParam", "millTopAll",
   "dropOpponentGuts", "coinFlip", "moveGutsToArea", "watch", "restrict", "keyword",
-  "setOwnOp", "addOpponentOp", "skipToPhase", "calcAttackOpAs", "lostOpponent",
-  "handToDeckTop", "setParamToBase", "shuffleHandIntoDeck", "moveOpponentEvent",
+  "setOwnOp", "addOpponentOp", "skipToPhase", "calcAttackOpAs", "lostOpponent", "backAttack",
+  "drawOpponent", "swapGuts", "lookTopTwoPick",
+  "handToDeckTop", "setParamToBase", "preventParamDecrease", "dropToDeckBottom", "shuffleHandIntoDeck", "moveOpponentEvent",
   "handToGuts", "gutsToHandAny", "dropTarget", "opponentMayPlaceEvent",
   "script", // 安全網 2：特例腳本逃生口
 ] as const;
 
 /** Condition 的 type（對應 dsl.ts Condition union；effects.ts evalCond 處理） */
 export const KNOWN_CONDITION_TYPES = [
-  "opponentOp", "selfArea", "handMax", "handMin", "setTotalMax", "deployedFromHand", "chara",
+  "opponentOp", "selfArea", "handMax", "handMin", "setTotalMax", "deployedFromHand", "deployedBySkill", "chara",
   "allCharas", "distinctAffiliationCharas", "eventAreaCount", "phaseIs", "targetIs",
   "triggerIs", "targetParam", "deployedByCard", "dropDistinctNames", "addedThisSkill", "gutsParity",
   "milledIs", "selfIsSideBlocker", "paidGutsAll",
@@ -28,7 +29,7 @@ export const KNOWN_CONDITION_TYPES = [
 
 /** Cost 的 type（對應 dsl.ts Cost union；effects.ts costPayable/costOps 處理） */
 export const KNOWN_COST_TYPES = [
-  "guts", "gutsAny", "dropFromHand", "dropSelf", "handToDeckBottom",
+  "guts", "gutsAny", "dropFromHand", "dropSelf", "dropFromEventArea", "placeSelfInEventArea", "placeSelfOnDeckBottom", "placeGutsOnSelf", "handToDeckBottom",
   "placeEventFromHand", "gutsFrom", "millDeck", "dropChara", "tilt",
   "dropSelfFromCourt", "selfToDeckBottom", "moveOpponentEventCost",
 ] as const;
@@ -36,7 +37,7 @@ export const KNOWN_COST_TYPES = [
 /** PassiveTrigger.on ∪ DelayedTrigger.on */
 export const KNOWN_TRIGGER_ONS = [
   "deploy", "allyDeploy", "covered", // passive
-  "opponentLost", "blockSuccess", "turnEnd", "handAddByEffect", "handAdd", // delayed
+  "opponentLost", "blockSuccess", "turnEnd", "handAddByEffect", "handAdd", "selfDroppedFromEvent", // delayed
   "eventPlayed",
 ] as const;
 
@@ -73,6 +74,11 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   deployFromGuts: ["filter", "area", "upTo"],
   setParam: ["target", "param", "value"],
   setParamToBase: ["target", "param"],
+  preventParamDecrease: ["target", "param"],
+  dropToDeckBottom: ["filter", "count"],
+  drawOpponent: ["count"],
+  swapGuts: ["areaA", "areaB"],
+  lookTopTwoPick: ["count", "pick1", "pick2"],
   millTopAll: ["count"],
   dropOpponentGuts: ["area", "upTo"],
   coinFlip: ["heads", "tails"],
@@ -106,7 +112,7 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   gutsParity: ["area", "parity"],
   milledIs: ["affiliation"],
   paidGutsAll: ["filter"],
-  allCharas: ["affiliation"],
+  // allCharas：affiliation 與 affiliationsAny 二擇一（OR 句型），由型別把關，不列必填
   distinctAffiliationCharas: ["min"],
   // costs
   guts: ["count"],

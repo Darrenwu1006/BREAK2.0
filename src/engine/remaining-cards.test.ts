@@ -25,10 +25,12 @@ const REMAINING_IDS = [
 ] as const;
 
 describe("剩餘 94 張完成條件", () => {
-  it("所有有技能文字的卡都已有 DSL，且不再留下 todo", () => {
+  it("所有有技能文字的卡都已有 DSL，且不再留下 todo（P03 / 新 PR 除外）", () => {
     const cards = cardsJson as { id: string; skillJa: string | null; effectStatus: string }[];
-    const skilled = cards.filter((card) => card.skillJa?.trim().length);
-    expect(cards.filter((card) => card.effectStatus === "todo")).toEqual([]);
+    const NEW_PR = new Set(["HV-PR-057","HV-PR-058","HV-PR-059","HV-PR-060","HV-PR-061","HV-PR-062","HV-PR-063"]);
+    const isNewPool = (id: string) => id.startsWith("HV-P03") || NEW_PR.has(id);
+    const skilled = cards.filter((card) => card.skillJa?.trim().length && !isNewPool(card.id));
+    expect(cards.filter((card) => card.effectStatus === "todo" && !isNewPool(card.id))).toEqual([]);
     expect(skilled).toHaveLength(192);
     expect(skilled.every((card) => card.effectStatus === "dsl" && card.id in effectsJson)).toBe(true);
   });

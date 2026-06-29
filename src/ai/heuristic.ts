@@ -576,7 +576,9 @@ function evalCondition(db: CardDb, state: GameState, p: PlayerId, cond: Conditio
     }
     case "allCharas": {
       const cs = charasOf(state, p);
-      return cs.length > 0 && cs.every((x) => cardOf(db, state, x.uid).affiliations.includes(cond.affiliation));
+      if (cs.length === 0) return false;
+      const affs = cond.affiliationsAny ?? (cond.affiliation ? [cond.affiliation] : []);
+      return affs.some((aff) => cs.every((x) => cardOf(db, state, x.uid).affiliations.includes(aff)));
     }
     case "eventAreaCount": {
       const who = cond.player === "opponent" ? other(p) : p;

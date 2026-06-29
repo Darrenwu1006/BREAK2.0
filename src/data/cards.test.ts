@@ -22,9 +22,10 @@ describe("data/cards.json", () => {
     }
   });
 
-  it("角色卡至少有一個非 null 參數（全「－」的角色卡不存在）", () => {
+  it("角色卡至少有一個非 null 參數（ボール拾い 位置卡除外）", () => {
     for (const c of cards) {
       if (c.type !== "CHARACTER" || !c.params) continue;
+      if (c.positions.includes("ボール拾い")) continue;
       expect(Object.values(c.params).some((v) => v !== null)).toBe(true);
     }
   });
