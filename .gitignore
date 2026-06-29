@@ -8,3 +8,6 @@ docs/
 # 可重生產物：復盤盤面 dump 與 benchmark log（體積大、不進 repo）
 data/replays/
 data/ab/
+
+# 個人偏好狀態：常用牌組勾選（執行期生成，因人而異，不進 repo）
+data/deck-favorites.json
