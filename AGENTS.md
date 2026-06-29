@@ -58,6 +58,7 @@
 - `docs/BLUEPRINT.md`：里程碑、長期架構、跨模型交接規格。
 - `docs/WORKLOG.md`：每次完成實作或重要決策後的 session log。
 - 完成實作、重要文件規劃、架構決策後，都要同步更新 `docs/WORKLOG.md`。
+- **WORKLOG 一律反序（最新在最上）**：新 session 一節插在檔案最前面（緊接頂部規則區塊之後、舊 session 之上），不要往檔尾追加。各模型務必遵守同一順序，避免新舊混雜、時間軸錯亂。
 - M5/M8 相關規劃需標清楚是「對局內決策」、「Coach Mode」、「Match Simulator」或「Deck Optimizer」，不要混成單一 AI 任務。
 
 ## Guardrails

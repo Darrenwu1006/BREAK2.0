@@ -33,7 +33,22 @@ function deckApi(root: string): Plugin {
   const deckDir = join(root, "decks");
   const dataDeckDir = join(root, "data", "decks");
   const adoptionLogPath = join(root, "data", "deck-optimizer-adoptions.jsonl");
+  const favoritesPath = join(root, "data", "deck-favorites.json");
+  // 牌組「常用」清單：key = `${school}/${name}`，只有勾選的牌組會出現在對戰入口
+  const deckKey = (school: string, name: string) => `${school}/${name}`;
+  const readFavorites = (): Set<string> => {
+    if (!existsSync(favoritesPath)) return new Set();
+    try {
+      const parsed = JSON.parse(readFileSync(favoritesPath, "utf8")) as unknown;
+      return new Set(Array.isArray(parsed) ? (parsed as string[]) : []);
+    } catch { return new Set(); }
+  };
+  const writeFavorites = (favs: Set<string>) => {
+    mkdirSync(join(root, "data"), { recursive: true });
+    writeFileSync(favoritesPath, `${JSON.stringify([...favs], null, 1)}\n`, "utf8");
+  };
   const listDecks = () => {
+    const favorites = readFavorites();
     const decks: unknown[] = [];
     for (const school of readdirSync(deckDir)) {
       const p = join(deckDir, school);
@@ -49,7 +64,8 @@ function deckApi(root: string): Plugin {
           const printing = idx["卡面"] !== undefined ? (r[idx["卡面"]!] ?? "").trim() || undefined : undefined;
           return [{ id, count, ...(printing ? { printing } : {}) }];
         });
-        decks.push({ school, name: f.replace(/\.csv$/, ""), source: `decks/${school}/${f}`, cards });
+        const name = f.replace(/\.csv$/, "");
+        decks.push({ school, name, source: `decks/${school}/${f}`, cards, favorite: favorites.has(deckKey(school, name)) });
       }
     }
     return decks;
@@ -144,12 +160,61 @@ function deckApi(root: string): Plugin {
             });
             return;
           }
+          if (req.method === "DELETE") {
+            const url = new URL(req.url || "", `http://${req.headers.host}`);
+            const school = (url.searchParams.get("school") || "").trim();
+            const name = (url.searchParams.get("name") || "").trim();
+            if (!school || !name || /[/\\.]{2}|[/\\]/.test(school + name)) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: "非法的學校或牌組名稱" }));
+              return;
+            }
+            const csvPath = join(deckDir, school, `${name}.csv`);
+            if (!existsSync(csvPath)) {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: `找不到牌組 ${school}/${name}` }));
+              return;
+            }
+            unlinkSync(csvPath);
+            const jsonPath = join(dataDeckDir, `${school}-${name}.json`);
+            if (existsSync(jsonPath)) unlinkSync(jsonPath);
+            const favs = readFavorites();
+            if (favs.delete(deckKey(school, name))) writeFavorites(favs);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, deleted: `decks/${school}/${name}.csv` }));
+            return;
+          }
           res.statusCode = 405;
           res.end();
         } catch (e) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));
         }
+      });
+      // POST /api/deck-favorites  body {school, name, favorite} → 切換「常用」狀態
+      server.middlewares.use("/api/deck-favorites", (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          try {
+            const { school, name, favorite } = JSON.parse(body) as { school: string; name: string; favorite: boolean };
+            if (!school || !name) throw new Error("缺少 school 或 name");
+            const favs = readFavorites();
+            if (favorite) favs.add(deckKey(school, name));
+            else favs.delete(deckKey(school, name));
+            writeFavorites(favs);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, favorite }));
+          } catch (e) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));
+          }
+        });
       });
     },
   };

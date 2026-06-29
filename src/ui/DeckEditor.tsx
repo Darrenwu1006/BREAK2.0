@@ -9,14 +9,39 @@ export interface ApiDeck {
   name: string;
   source: string;
   cards: { id: string; count: number; printing?: string }[];
+  favorite?: boolean;
 }
 
 interface Entry { count: number; printing?: string }
+
+// 彈別（卡片出自哪一個商品／彈）：取卡號中字母開頭的段（D01/P02/PR/HVBP…）
+function expansionOf(id: string): string {
+  return id.split("-").find((seg) => seg !== "HV" && /^[A-Za-z]+\d*$/.test(seg)) ?? id;
+}
+const EXPANSION_LABELS: Record<string, string> = {
+  D01: "起始牌組①（D01）",
+  D02: "起始牌組②（D02）",
+  D03: "起始牌組③（D03）",
+  P01: "第一彈（P01）",
+  P02: "第二彈（P02）",
+  P03: "第三彈（P03）",
+  PR: "促銷卡（PR）",
+  HVBP: "特別卡（HVBP）",
+};
+const EXPANSION_ORDER = ["D01", "D02", "D03", "P01", "P02", "P03", "PR", "HVBP"];
+const expansionRank = (code: string) => {
+  const i = EXPANSION_ORDER.indexOf(code);
+  return i === -1 ? EXPANSION_ORDER.length : i;
+};
 
 export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => void; onSaved: () => Promise<void> }) {
   const { db } = props;
   const allCards = useMemo(() => [...db.values()].sort((a, b) => a.id.localeCompare(b.id)), [db]);
   const schools = useMemo(() => [...new Set(allCards.flatMap((c) => c.affiliations))].sort(), [allCards]);
+  const expansions = useMemo(
+    () => [...new Set(allCards.map((c) => expansionOf(c.id)))].sort((a, b) => expansionRank(a) - expansionRank(b) || a.localeCompare(b)),
+    [allCards],
+  );
 
   // 編輯中的牌組
   const [school, setSchool] = useState("");
@@ -27,6 +52,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
   // 篩選
   const [fSchool, setFSchool] = useState("");
   const [fType, setFType] = useState("");
+  const [fExp, setFExp] = useState("");
   const [fText, setFText] = useState("");
   const [hovered, setHovered] = useState<Card | null>(null);
 
@@ -88,9 +114,40 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
     await props.onSaved();
   }
 
+  // 目前載入中的牌組是否對應到一個已存在的牌組檔（決定刪除／常用是否可用）
+  const existingDeck = props.decks.find((d) => d.school === school.trim() && d.name === name.trim()) ?? null;
+  const isFavorite = existingDeck?.favorite ?? false;
+
+  async function toggleFavorite() {
+    if (!existingDeck) return;
+    const res = await fetch("/api/deck-favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ school: existingDeck.school, name: existingDeck.name, favorite: !isFavorite }),
+    });
+    const json = await res.json();
+    if (!res.ok) { setMessage(`⚠ 常用設定失敗：${json.error}`); return; }
+    setMessage(!isFavorite ? "✓ 已設為常用（會出現在對戰入口）" : "✓ 已取消常用");
+    await props.onSaved();
+  }
+
+  async function deleteDeck() {
+    if (!existingDeck) return;
+    if (!window.confirm(`確定刪除牌組「${existingDeck.school}／${existingDeck.name}」？此動作無法復原。`)) return;
+    const res = await fetch(`/api/decks?school=${encodeURIComponent(existingDeck.school)}&name=${encodeURIComponent(existingDeck.name)}`, {
+      method: "DELETE",
+    });
+    const json = await res.json();
+    if (!res.ok) { setMessage(`⚠ 刪除失敗：${json.error}`); return; }
+    setMessage(`✓ 已刪除 ${json.deleted}`);
+    setSchool(""); setName(""); setEntries(new Map()); setDirty(false);
+    await props.onSaved();
+  }
+
   const filtered = allCards.filter((c) => {
     if (fSchool && !c.affiliations.includes(fSchool)) return false;
     if (fType && c.type !== fType) return false;
+    if (fExp && expansionOf(c.id) !== fExp) return false;
     if (fText) {
       const t = fText.toLowerCase();
       const hay = `${c.id} ${c.nameJa} ${c.nameZh ?? ""} ${c.skillZh ?? ""} ${c.skillJa ?? ""}`.toLowerCase();
@@ -115,6 +172,15 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
           <input placeholder="學校" value={school} onChange={(e) => { setSchool(e.target.value); setDirty(true); }} style={{ width: 110 }} />
           <input placeholder="牌組名稱" value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} style={{ width: 150 }} />
           <button className="btn-start-sm" onClick={save}>{import.meta.env.DEV ? `儲存${dirty ? "＊" : ""}` : "線上唯讀"}</button>
+          {import.meta.env.DEV && existingDeck && (
+            <label className="fav-toggle" title="常用牌組才會出現在對戰入口">
+              <input type="checkbox" checked={isFavorite} onChange={toggleFavorite} />
+              {isFavorite ? "★ 常用" : "☆ 常用"}
+            </label>
+          )}
+          {import.meta.env.DEV && existingDeck && (
+            <button className="btn-x" title="刪除此牌組" onClick={deleteDeck}>刪除</button>
+          )}
           {message && <span className={message.startsWith("✓") ? "win" : "danger"}>{message}</span>}
           <button className="btn-exit" onClick={props.onExit}>回主選單</button>
         </div>
@@ -128,6 +194,10 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
             <option value="">角色＋事件</option>
             <option value="CHARACTER">角色</option>
             <option value="EVENT">事件</option>
+          </select>
+          <select value={fExp} onChange={(e) => setFExp(e.target.value)} title="出自哪一彈／商品">
+            <option value="">全部彈別</option>
+            {expansions.map((code) => <option key={code} value={code}>{EXPANSION_LABELS[code] ?? code}</option>)}
           </select>
           <input placeholder="搜尋卡名／編號／技能文字" value={fText} onChange={(e) => setFText(e.target.value)} style={{ flex: 1 }} />
           <span className="dim small">{filtered.length} 張</span>

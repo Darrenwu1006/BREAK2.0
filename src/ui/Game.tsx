@@ -16,6 +16,7 @@ import type { CoachPanelState } from "./GamePanels";
 import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "./selection";
+import { ZONE_LABEL, groupCandidatesByZone } from "./zoneLocate";
 import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory, UNDO_HISTORY_LIMIT } from "./undoHistory";
 import { appendReplayEntry, createReplaySession, keyReplayEntries, stateAtReplayStep, summarizeReplaySession, truncateReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "./replayHistory";
 import type { CardPointerDragInfo } from "./CardView";
@@ -1368,23 +1369,40 @@ export function Game(props: {
             <button data-primary="true" disabled={multiSel.length < min || multiSel.length > max} onClick={() => decide({ type: "effect-cards", uids: multiSel })}>確定</button>
           ));
         }
+        // 依來源區域把候選卡分組，每組一個有標題的容器，避免跨區挑卡時丟錯
+        const candidates = pd.candidates ?? [];
+        const groups = groupCandidatesByZone(state, candidates);
+        const multiZone = groups.length > 1;
+        const renderCard = (uid: number) => (
+          <CardView
+            key={uid}
+            card={cardOf(uid)}
+            uid={uid}
+            width={64}
+            selected={multiSel.includes(uid)}
+            onHover={(card) => setHoverUid(card ? uid : null)}
+            onLongPress={() => inspectUid(uid)}
+            onClick={() => toggleSelection(uid, max)}
+          />
+        );
         return (
           <div className="decision-bar decision-card-picker">
             <span className="decision-hint">{pd.prompt}（選 {min === max ? min : `${min}～${max}`} 張）</span>
-            <div className="effect-cards-row">
-              {pd.candidates?.map((uid) => (
-                <CardView
-                  key={uid}
-                  card={cardOf(uid)}
-                  uid={uid}
-                  width={64}
-                  selected={multiSel.includes(uid)}
-                  onHover={(card) => setHoverUid(card ? uid : null)}
-                  onLongPress={() => inspectUid(uid)}
-                  onClick={() => toggleSelection(uid, max)}
-                />
-              ))}
-            </div>
+            {multiZone ? (
+              <div className="effect-cards-zones">
+                {groups.map((g) => (
+                  <div key={g.key} className="effect-cards-zone">
+                    <span className="effect-cards-zone-label">
+                      {g.owner !== HUMAN ? "對手・" : ""}{ZONE_LABEL[g.zone] ?? g.zone}
+                      <em>{g.uids.length}</em>
+                    </span>
+                    <div className="effect-cards-row">{g.uids.map(renderCard)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="effect-cards-row">{candidates.map(renderCard)}</div>
+            )}
             <div className="decision-actions">
               <button data-primary="true" disabled={multiSel.length < min || multiSel.length > max} onClick={() => decide({ type: "effect-cards", uids: multiSel })}>確定</button>
             </div>

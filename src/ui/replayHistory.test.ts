@@ -151,4 +151,41 @@ describe("replay history helpers", () => {
     expect(summary.setWins[1]).toBe(1);
     expect(keyReplayEntries(four).map((entry) => entry.index)).toEqual([0, 2, 3]);
   });
+
+  it("counts the match-deciding set (match-won) toward the winner's set tally", () => {
+    const initial = state("initial");
+    // 前兩個 Set：勝方各拿一張普通 set-won（最終比數 winner=1 應為 3，loser=0 為 2）
+    const lostA = withLog(state("lostA"), "宣告 Lost", {
+      player: 0, setNo: 1, turnNo: 1, text: "宣告 Lost",
+      event: { kind: "set-won", winner: 1, loser: 0, setNo: 1, loserSetRemaining: 1 },
+    });
+    const lostB = withLog(state("lostB"), "宣告 Lost", {
+      player: 1, setNo: 2, turnNo: 1, text: "宣告 Lost",
+      event: { kind: "set-won", winner: 0, loser: 1, setNo: 2, loserSetRemaining: 1 },
+    });
+    const lostA2 = withLog(state("lostA2"), "宣告 Lost", {
+      player: 0, setNo: 3, turnNo: 1, text: "宣告 Lost",
+      event: { kind: "set-won", winner: 1, loser: 0, setNo: 3, loserSetRemaining: 1 },
+    });
+    const lostB2 = withLog(state("lostB2"), "宣告 Lost", {
+      player: 1, setNo: 4, turnNo: 1, text: "宣告 Lost",
+      event: { kind: "set-won", winner: 0, loser: 1, setNo: 4, loserSetRemaining: 1 },
+    });
+    // 致勝 Set：引擎只發 match-won、不發 set-won
+    const matchEnd = withLog(state("matchEnd"), "獲勝！", {
+      player: 1, setNo: 5, turnNo: 1, text: "獲勝！",
+      event: { kind: "match-won", winner: 1, loser: 0, setNo: 5 },
+    });
+
+    const pass: Decision = { type: "free", action: "pass" };
+    let session = appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, lostA, "ai");
+    session = appendReplayEntry(session, state("b1", 1), pass, lostB, "player");
+    session = appendReplayEntry(session, state("a2", 0), pass, lostA2, "ai");
+    session = appendReplayEntry(session, state("b2", 1), pass, lostB2, "player");
+    session = appendReplayEntry(session, state("end", 0), pass, matchEnd, "ai");
+    const summary = summarizeReplaySession(session);
+
+    expect(summary.matchWinner).toBe(1);
+    expect(summary.setWins).toEqual([2, 3]);
+  });
 });

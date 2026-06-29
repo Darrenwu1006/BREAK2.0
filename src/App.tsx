@@ -115,6 +115,22 @@ export function App() {
     void refreshReplays();
   }, []);
 
+  // 對戰入口只列「常用」牌組；若一個都沒勾，退而列全部（避免鎖死無牌可選）
+  const battleDecks = useMemo(() => {
+    const indexed = decks.map((d, i) => ({ d, i }));
+    const favs = indexed.filter((x) => x.d.favorite);
+    return favs.length ? favs : indexed;
+  }, [decks]);
+  const hasFavorites = useMemo(() => decks.some((d) => d.favorite), [decks]);
+
+  // 牌組清單變動後，把選取索引夾回目前可選的對戰牌組，避免顯示成空白
+  useEffect(() => {
+    if (!battleDecks.length) return;
+    const valid = new Set(battleDecks.map((x) => x.i));
+    if (!valid.has(myDeck)) setMyDeck(battleDecks[0]!.i);
+    if (!valid.has(aiDeck)) setAiDeck(battleDecks[Math.min(1, battleDecks.length - 1)]!.i);
+  }, [battleDecks]);
+
   if (mode === "game") {
     if (loadedReplay) {
       const label0 = loadedReplay.decks[0].label;
@@ -214,16 +230,19 @@ export function App() {
           <div className="menu-row menu-decks">
             <label>我的牌組
               <select value={myDeck} onChange={(e) => setMyDeck(Number(e.target.value))}>
-                {decks.map((d, i) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
+                {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
             </label>
             <span className="menu-versus" aria-hidden="true">VS</span>
             <label>電腦牌組
               <select value={aiDeck} onChange={(e) => setAiDeck(Number(e.target.value))}>
-                {decks.map((d, i) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
+                {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
             </label>
           </div>
+          {!hasFavorites && decks.length > 0 && (
+            <p className="dim small">尚未設定常用牌組，暫時列出全部 {decks.length} 副。到「牌組編輯」勾選★常用，這裡就只會顯示常用牌組。</p>
+          )}
 
           {incomplete.length > 0 && (
             <div className="support-warning" role="status">

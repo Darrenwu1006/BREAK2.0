@@ -176,7 +176,11 @@ export function summarizeReplaySession(session: ReplaySession): ReplayAnalytics 
       const event = log.event;
       if (event) {
         if (event.kind === "set-won") analytics.setWins[event.winner]++;
-        else if (event.kind === "match-won") analytics.matchWinner = event.winner;
+        else if (event.kind === "match-won") {
+          analytics.matchWinner = event.winner;
+          // 致勝 Set 只發 match-won、不發 set-won；補計入勝方 Set 數，避免比數漏算（例：3:2 顯示成 2:2）
+          analytics.setWins[event.winner]++;
+        }
         else if (event.kind === "pay-guts") {
           analytics.payGuts[event.player] += event.count;
           for (const [source, count] of Object.entries(event.sources) as [ReplayGutsSource, number][]) {
