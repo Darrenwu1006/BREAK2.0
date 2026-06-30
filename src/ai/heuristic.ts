@@ -8,7 +8,7 @@ import type { Card } from "../data/types";
 import type { Action, CharaFilter, Condition, Cost, CourtArea, EffectDef, ParamName, SkillDef } from "../engine/dsl";
 import type { Awaiting, CardDb, Decision, GameState, PendingItem, PlayerId } from "../engine/types";
 import { blockDeployMax, canChooseBlock, charasOf, deployableUids, effParam, freeOptions } from "../engine/engine";
-import { autoPickCards } from "../engine/effects";
+import { autoPickCards, topChara } from "../engine/effects";
 import { pickDeployName } from "./util";
 
 type Area = CourtArea;
@@ -868,12 +868,31 @@ function gateAcceptScore(db: CardDb, state: GameState, p: PlayerId, aw: Extract<
   return actionsScore(db, state, p, aw.then, weights) - costsScore(aw.costs, weights);
 }
 
+/**
+ * uid 是否「站在能讓 param 進入計分的位置」＝buff/debuff 到它身上才會改變 OP/DP（engine.ts calcOp/calcDp）。
+ * 例：attack 只算攻擊區頂端攻擊手；toss 只算托球區頂端；block 算攔網中央頂端＋側翼。
+ * 加在舉球/攔網區角色的 attack 修正＝白費（calcOp 不讀）→ 這判斷讓 AI 不再亂加。
+ */
+function paramContributorAt(state: GameState, uid: number, param: ParamName): boolean {
+  for (const ps of state.players) {
+    if (param === "block") {
+      if (ps.blockSides.includes(uid) || topChara(ps.blockCenter) === uid) return true;
+    } else if (topChara(ps[param]) === uid) {
+      return true;
+    }
+  }
+  return false;
+}
+const POSITIONAL_TARGET_BONUS = 100; // 位置貢獻權重，遠大於點數差(0~9)與 futureValue，確保壓過非貢獻位置
+
 function cardSortValue(db: CardDb, state: GameState, p: PlayerId, uid: number, purpose: string, weights: HeuristicV2Weights): number {
   if (purpose === "target") {
     const aw = state.effectCtx?.awaiting;
     const param = aw?.kind === "cards" && aw.param && aw.param !== "choose" ? aw.param : currentNeed(state) ?? "attack";
     const amount = aw?.kind === "cards" ? aw.amount ?? 1 : 1;
-    return effParamOf(db, state, uid, param as ParamName) * Math.sign(amount) + futureCardValue(db, state, p, uid, weights) * 0.15;
+    // 位置貢獻優先：只有站在「該 param 會被計分」的位置，修正才有意義（買/減皆然）。
+    const positional = paramContributorAt(state, uid, param as ParamName) ? POSITIONAL_TARGET_BONUS : 0;
+    return positional + effParamOf(db, state, uid, param as ParamName) * Math.sign(amount) + futureCardValue(db, state, p, uid, weights) * 0.15;
   }
   if (purpose === "deployFromDrop" || purpose === "deployFromGuts") {
     const aw = state.effectCtx?.awaiting;
