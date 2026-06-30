@@ -204,7 +204,8 @@ function translateKeyword(kw: string): string {
     .replace(/Aパス/g, "A Pass")
     .replace(/銅牆鐵壁/g, "銅牆鐵壁")
     .replace(/虛攻/g, "虛攻")
-    .replace(/ブロックアウト/g, "打手出界");
+    .replace(/ブロックアウト/g, "打手出界")
+    .replace(/バックアタック/g, "後排攻擊");
 }
 
 export function extractLeadingSkillMarkers(text: string): { markers: string[]; body: string } {
@@ -229,6 +230,104 @@ function renderSkillText(text: string) {
     }
     return <span key={index}>{part}</span>;
   });
+}
+
+interface GlossaryItem {
+  key: string;
+  name: string;
+  definition: string;
+}
+
+const GLOSSARY_LIST: GlossaryItem[] = [
+  {
+    key: "ドシャット",
+    name: "攔死",
+    definition: "攔網成功時的遲發效果。該回合結束時，我方的進攻點數（OP）直接設為該數值。"
+  },
+  {
+    key: "ワンタッチ",
+    name: "一次觸球",
+    definition: "使對手的進攻點數（OP）減少該數值，並立即跳過進行中的攔網階段，進入我方的抽牌階段。"
+  },
+  {
+    key: "フェイント",
+    name: "虛攻",
+    definition: "攻擊回合結束時觸發。我方該回合的進攻點數（OP）設為該數值，且下一個對手回合中，對手不能登場攔網角色。"
+  },
+  {
+    key: "ブロックアウト",
+    name: "打手出界",
+    definition: "攻擊後的遲發效果。在下一個對手回合中，若對手登場「原始攔網點數（元々のブロックポイント）」小於或等於該數值的第一名攔網角色時，對手直接宣告 Lost。"
+  },
+  {
+    key: "Aパス",
+    name: "A Pass",
+    definition: "當我方的托球角色登場時，其托球點數增加該數值。"
+  },
+  {
+    key: "ツーアタック",
+    name: "二次進攻",
+    definition: "將我方的進攻點數（OP）設為該數值，並立即跳過托球階段，直接進入我方的結束階段，且下一個對手回合中，對手不能登場攔網角色。"
+  },
+  {
+    key: "バックアタック",
+    name: "後排攻擊",
+    definition: "可將此卡登場至我方的攻擊區，並將該角色的攻擊點數設為該數值。"
+  },
+  {
+    key: "ターン1",
+    name: "一回合一次",
+    definition: "當此技能的任何一部分被解決（生效）後，本回合中，與該卡同名的我方所有卡片技能全部無效化。"
+  }
+];
+
+export function getGlossaryItems(card: Card): GlossaryItem[] {
+  const skillText = (card.skillZh || "") + " " + (card.skillJa || "");
+  const matched: GlossaryItem[] = [];
+
+  for (const item of GLOSSARY_LIST) {
+    let hasMatch = false;
+    if (item.key === "ドシャット") {
+      hasMatch = /ドシャット|攔死/.test(skillText);
+    } else if (item.key === "ワンタッチ") {
+      hasMatch = /ワンタッチ|一次觸球|One Touch/.test(skillText);
+    } else if (item.key === "フェイント") {
+      hasMatch = /フェイント|虛攻/.test(skillText);
+    } else if (item.key === "ブロックアウト") {
+      hasMatch = /ブロックアウト|打手出界/.test(skillText);
+    } else if (item.key === "Aパス") {
+      hasMatch = /Aパス|A\s*Pass/i.test(skillText);
+    } else if (item.key === "ツーアタック") {
+      hasMatch = /ツーアタック|二次進攻|二次攻擊/.test(skillText);
+    } else if (item.key === "バックアタック") {
+      hasMatch = /バックアタック|後排攻擊|後衛攻擊/.test(skillText);
+    } else if (item.key === "ターン1") {
+      hasMatch = /ターン1|一回合一次/.test(skillText) || card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
+    }
+
+    if (hasMatch) {
+      matched.push(item);
+    }
+  }
+  return matched;
+}
+
+export function CardSkillGlossary({ card }: { card: Card }) {
+  const items = getGlossaryItems(card);
+  if (items.length === 0) return null;
+  return (
+    <div className="skill-glossary">
+      <div className="glossary-title">效果註釋</div>
+      <ul className="glossary-list">
+        {items.map((item) => (
+          <li key={item.key} className="glossary-item">
+            <span className="glossary-name">{item.name}</span>
+            <span className="glossary-def">{item.definition}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /** 共用：技能發動時機/限制 badge ＋技能文（含關鍵字 chip）。對戰詳情與牌組編輯器共用。 */
@@ -258,8 +357,11 @@ export function CardSkillInfo({ card }: { card: Card }) {
       )}
       {displaySkillText && (
         <div className="skill-text">
-          {renderSkillText(displaySkillText)}
-          {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
+          <div className="skill-body-text">
+            {renderSkillText(displaySkillText)}
+            {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
+          </div>
+          <CardSkillGlossary card={card} />
         </div>
       )}
     </>

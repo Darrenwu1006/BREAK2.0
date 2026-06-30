@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameState, PlayerId } from "../engine/types";
-import { evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, VALUE_FEATURE_DIM } from "./rollout-value";
+import { benchmarkDb } from "./benchmark-fixtures";
+import { evaluatePressureScore, evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, VALUE_FEATURE_DIM } from "./rollout-value";
 
 // [Claude 2026-06-22] S1a：價值函數只讀公開 scalar，用最小 fixture 聚焦特徵→值映射與公平性。
 function fake(patch: {
@@ -61,5 +62,18 @@ describe("rollout-value 價值函數", () => {
     const base = fake({ s0: 1, s1: 2, h0: 5, h1: 4, d0: 30, d1: 28, oppHand: [9, 8, 7, 6], oppDeck: [1, 2, 3], oppSet: [11, 12] });
     const flipped = fake({ s0: 1, s1: 2, h0: 5, h1: 4, d0: 30, d1: 28, oppHand: [6, 7, 8, 9], oppDeck: [3, 2, 1], oppSet: [12, 11] });
     expect(evaluateStateValue(flipped, 0)).toBe(evaluateStateValue(base, 0));
+  });
+
+  it("Phase H 壓制力分數不讀對手隱藏內容", () => {
+    const base = fake({ s0: 1, s1: 1, h0: 5, h1: 4, d0: 24, d1: 25, op: { value: 5, owner: 0 as PlayerId }, oppHand: [9, 8, 7, 6], oppDeck: [1, 2, 3], oppSet: [11, 12] });
+    const flipped = fake({ s0: 1, s1: 1, h0: 5, h1: 4, d0: 24, d1: 25, op: { value: 5, owner: 0 as PlayerId }, oppHand: [6, 7, 8, 9], oppDeck: [3, 2, 1], oppSet: [12, 11] });
+    expect(evaluatePressureScore(benchmarkDb, flipped, 0)).toBe(evaluatePressureScore(benchmarkDb, base, 0));
+  });
+
+  it("Phase H shaping 不翻轉明確勝率差", () => {
+    const epsilon = 0.05;
+    const higherWinLowPressure = shapeStateValue(0.96, -0.1, epsilon);
+    const lowerWinHighPressure = shapeStateValue(0.95, 0.1, epsilon);
+    expect(higherWinLowPressure).toBeGreaterThanOrEqual(lowerWinHighPressure);
   });
 });

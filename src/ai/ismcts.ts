@@ -1,4 +1,4 @@
-import { applyDecision } from "../engine/engine";
+import { applyDecision, deployableUids, effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
@@ -10,7 +10,8 @@ import {
   type CoachActionEstimate,
   type CoachReport,
 } from "./coach";
-import { evaluateStateValue } from "./rollout-value";
+import { evaluatePressureScore, evaluateShapedStateValue } from "./rollout-value";
+import { pickDeployName } from "./util";
 
 /**
  * [Claude 2026-06-23] Phase G — SO-ISMCTS（單觀察者資訊集 Monte-Carlo 樹搜尋）。
@@ -52,6 +53,22 @@ export interface IsmctsOptions {
    */
   leafRolloutHorizon?: number;
   /**
+   * [Codex 2026-06-29] Phase H H2：leaf value 加入極小的公開壓制力 shaping。
+   * 預設 0（off），待行為閘＋強度守門閘 A/B PASS 後才可 default-on。
+   */
+  pressureShapingEpsilon?: number;
+  /**
+   * [Codex 2026-06-29] Phase H H2B：root 最終選手 tie-break。
+   * 0（預設＝off）；>0 時，只在候選 winRate 距 robust best 不超過此 delta 時，
+   * 用公開壓制力／攻擊點數品質打破平手。
+   */
+  rootPressureTieBreakDelta?: number;
+  /**
+   * [Codex 2026-06-29] Phase H H2C：root tie-break 的拖球候選改看「拖球＋後續最佳攻擊」組合品質。
+   * 只在 rootPressureTieBreakDelta 開啟時生效；用於避免把攻擊高的牌誤放到拖球區。
+   */
+  rootPairQualityTieBreak?: boolean;
+  /**
    * [Claude 2026-06-23] 對手節點模型（G2 診斷後新增）：
    *   "heuristic"（預設）：對手節點 = 環境，直接套用 heuristic 決策、不建樹分支。
    *     ＝資訊集樹只在「我方多步決策」上展開，對手/隱藏由 determinize＋heuristic 模擬。
@@ -67,6 +84,7 @@ export interface IsmctsOptions {
 const DEFAULT_ITERATIONS = 800;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
 const DEFAULT_CANDIDATE_LIMIT = 8;
+const ROOT_TIE_BREAK_MIN_VISIT_RATIO = 0.5;
 /** 每 iteration 換 world 的 seed 間距（大質數，避免抽樣相關）。 */
 const SEED_STRIDE = 1000003;
 
@@ -131,9 +149,10 @@ function leafEval(
   perspective: PlayerId,
   rolloutPolicy: HeuristicV2ProfileId,
   horizon: number,
+  pressureShapingEpsilon: number,
 ): number {
   if (cur.phase === "gameOver") return cur.winner === perspective ? 1 : 0;
-  if (horizon <= 0) return clamp01(evaluateStateValue(cur, perspective));
+  if (horizon <= 0) return clamp01(evaluateShapedStateValue(db, cur, perspective, pressureShapingEpsilon));
   let s = cur;
   for (let step = 0; step < horizon; step++) {
     if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
@@ -145,7 +164,7 @@ function leafEval(
     }
   }
   if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
-  return clamp01(evaluateStateValue(s, perspective));
+  return clamp01(evaluateShapedStateValue(db, s, perspective, pressureShapingEpsilon));
 }
 
 interface LegalEntry {
@@ -165,6 +184,121 @@ function legalEntries(
   return decisions.map((decision) => ({ key: JSON.stringify(decision), decision }));
 }
 
+function decisionWithDefaultNameChoice(db: CardDb, state: GameState, decision: Decision): Decision {
+  const pd = state.pendingDecision;
+  if (!pd) return decision;
+  const p = pd.player as PlayerId;
+  switch (decision.type) {
+    case "deploy-serve":
+      if (decision.uid === null || decision.nameChoice !== undefined) return decision;
+      return { ...decision, nameChoice: pickDeployName(db, state, p, decision.uid, "serve") };
+    case "deploy-receive":
+      if (decision.uid === null || decision.nameChoice !== undefined) return decision;
+      return { ...decision, nameChoice: pickDeployName(db, state, p, decision.uid, "receive") };
+    case "deploy-toss":
+      if (decision.uid === null || decision.nameChoice !== undefined) return decision;
+      return { ...decision, nameChoice: pickDeployName(db, state, p, decision.uid, "toss") };
+    case "deploy-attack":
+      if (decision.uid === null || decision.nameChoice !== undefined) return decision;
+      return { ...decision, nameChoice: pickDeployName(db, state, p, decision.uid, "attack") };
+    default:
+      return decision;
+  }
+}
+
+function bestAttackPointAfterToss(db: CardDb, state: GameState, perspective: PlayerId, uid: number, nameChoice?: string): number {
+  try {
+    const afterToss = applyDecision(db, state, { type: "deploy-toss", uid, nameChoice });
+    const legalAttacks = deployableUids(db, afterToss, perspective, "attack");
+    if (legalAttacks.length === 0) return 0;
+    return Math.max(...legalAttacks.map((attackUid) => effParam(db, afterToss, attackUid, "attack") ?? 0));
+  } catch {
+    return -Infinity;
+  }
+}
+
+function tossAttackPairPoint(db: CardDb, state: GameState, perspective: PlayerId, uid: number, nameChoice?: string): number {
+  const tossPoint = effParam(db, state, uid, "toss") ?? 0;
+  const attackPoint = bestAttackPointAfterToss(db, state, perspective, uid, nameChoice);
+  return Number.isFinite(attackPoint) ? tossPoint + attackPoint : -Infinity;
+}
+
+function bestLegalTossAttackPairPoint(db: CardDb, state: GameState, perspective: PlayerId): number {
+  const legal = deployableUids(db, state, perspective, "toss");
+  const values = legal
+    .map((uid) => tossAttackPairPoint(db, state, perspective, uid, pickDeployName(db, state, perspective, uid, "toss")))
+    .filter(Number.isFinite);
+  return values.length > 0 ? Math.max(...values) : 0;
+}
+
+export function rootDecisionPressureScore(
+  db: CardDb,
+  state: GameState,
+  decision: Decision,
+  perspective: PlayerId,
+  options: { pairAware?: boolean } = {},
+): number {
+  let score = 0;
+  try {
+    const next = applyDecision(db, state, decisionWithDefaultNameChoice(db, state, decision));
+    score += evaluatePressureScore(db, next, perspective);
+  } catch {
+    return -Infinity;
+  }
+
+  const pd = state.pendingDecision;
+  if (!pd || pd.player !== perspective) return score;
+  if (decision.type === "deploy-toss" && options.pairAware) {
+    const legal = deployableUids(db, state, perspective, "toss");
+    if (legal.length > 1) {
+      const best = bestLegalTossAttackPairPoint(db, state, perspective);
+      const chosen =
+        decision.uid === null
+          ? 0
+          : tossAttackPairPoint(
+              db,
+              state,
+              perspective,
+              decision.uid,
+              decision.nameChoice ?? pickDeployName(db, state, perspective, decision.uid, "toss"),
+            );
+      if (Number.isFinite(best) && Number.isFinite(chosen)) score += (chosen - best) / 10;
+    }
+  } else if (decision.type === "deploy-toss" || decision.type === "deploy-attack") {
+    const area = decision.type === "deploy-toss" ? "toss" : "attack";
+    const legal = deployableUids(db, state, perspective, area);
+    if (legal.length > 1) {
+      const best = Math.max(...legal.map((uid) => effParam(db, state, uid, area) ?? 0));
+      const chosen = decision.uid === null ? 0 : effParam(db, state, decision.uid, area) ?? 0;
+      score += (chosen - best) / 10;
+    }
+  }
+  if (decision.type === "effect-confirm" && state.effectCtx?.desc.includes("技能")) {
+    score += decision.accept ? 0.05 : -0.05;
+  }
+  return score;
+}
+
+function chooseRootTieBreakBest(
+  db: CardDb,
+  state: GameState,
+  recommendations: CoachActionEstimate[],
+  perspective: PlayerId,
+  winRateDelta: number,
+  pairAware: boolean,
+): CoachActionEstimate | null {
+  if (winRateDelta <= 0 || recommendations.length <= 1) return null;
+  const robustBest = recommendations[0]!;
+  const minVisits = Math.max(1, Math.floor(robustBest.sampleCount * ROOT_TIE_BREAK_MIN_VISIT_RATIO));
+  const close = recommendations.filter(
+    (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
+  );
+  if (close.length <= 1) return null;
+  return close
+    .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware }) }))
+    .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+}
+
 /**
  * 一次 iteration：在 `world` 內跑 selection→expansion→leaf eval→backup，回傳 root-perspective value。
  */
@@ -178,6 +312,7 @@ function iterate(
   rolloutPolicy: HeuristicV2ProfileId,
   leafRolloutHorizon: number,
   opponentModel: "heuristic" | "adversarial",
+  pressureShapingEpsilon: number,
 ): number {
   let node = root;
   let cur = world;
@@ -236,7 +371,7 @@ function iterate(
   }
 
   // ---- Leaf evaluation（方案 A＝純 V；方案 B＝淺 rollout 後 V）----
-  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon);
+  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon, pressureShapingEpsilon);
 
   // ---- Backup（統計掛在子節點：path 上每條 edge 的目標節點）----
   for (const step of path) {
@@ -302,6 +437,9 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const rolloutPolicy = options.rolloutPolicy ?? "heuristic-v2";
   const leafRolloutHorizon = Math.max(0, Math.floor(options.leafRolloutHorizon ?? 0));
   const opponentModel = options.opponentModel ?? "heuristic";
+  const pressureShapingEpsilon = Math.max(0, options.pressureShapingEpsilon ?? 0);
+  const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? 0);
+  const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? false;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
   // 沒 timeLimitMs 才退回固定 DEFAULT_ITERATIONS（純迭代模式，測試用）。避免 800 上限在 ~0.5s 就吃掉 think budget。
@@ -323,7 +461,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
       break;
     }
     const world = determinizeHiddenState(state, perspective, knownDecks, baseSeed + iter * SEED_STRIDE);
-    iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel);
+    iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel, pressureShapingEpsilon);
     completed++;
   }
 
@@ -341,6 +479,14 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     (a, b) => b.sampleCount - a.sampleCount || b.winRate - a.winRate || b.confidence - a.confidence,
   );
 
+  const tieBreakBest = chooseRootTieBreakBest(db, state, recommendations, perspective, rootPressureTieBreakDelta, rootPairQualityTieBreak);
+  if (tieBreakBest) {
+    const index = recommendations.indexOf(tieBreakBest);
+    if (index > 0) {
+      recommendations.splice(index, 1);
+      recommendations.unshift(tieBreakBest);
+    }
+  }
   const bestAction = recommendations[0] ?? fallbackEstimate(db, state, fallbackDecision);
 
   return {

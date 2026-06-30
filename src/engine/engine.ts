@@ -271,6 +271,16 @@ export function applyDecision(db: CardDb, prev: GameState, decision: Decision): 
 // ---------- Lost / 勝負 ----------
 
 function declareLost(state: GameState, p: PlayerId): void {
+  // 攔網階段中途宣告 Lost（攔網失敗 †5-15 / ブロックアウト †9-5 等）會繞過攔網終了步驟（sub 6）的
+  // 清理；但サイドブロッカー無論攔網如何結束都必須進棄牌區（†5-7-2⑦，跳過時亦然 †8-6-6）。
+  // 故在此補做側邊攔網手 → 棄牌的清理。側邊攔網手僅存在於回合玩家的攔網階段，故清回合玩家的。
+  if (state.phase === "block") {
+    const bps = state.players[state.turnPlayer];
+    if (bps.blockSides.length > 0) {
+      bps.drop.push(...bps.blockSides);
+      bps.blockSides = [];
+    }
+  }
   state.lostBy = p;
   const winner = other(p);
   // 敗北判定 †0-1-3-1-1：Set 區 0 張時宣告 Lost → 立即敗北

@@ -41,8 +41,8 @@ function numberArg(name: string, fallback: number): number {
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
   if (raw === undefined) return fallback;
-  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || raw === "is-mcts-h2" || raw === "is-mcts-h2b" || raw === "is-mcts-h2c" || isHeuristicV2ProfileId(raw)) return raw;
+  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、is-mcts-h2、is-mcts-h2b、is-mcts-h2c、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
 }
 
 function matrixModeArg(): MatrixMode | null {
@@ -54,6 +54,12 @@ function matrixModeArg(): MatrixMode | null {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPlayQuality(label: string, quality: BatchReport["summary"]["playQualityByPlayer"][number]): string {
+  return `${label}: M-Throw1 ${formatPercent(quality.lowPointDeployRate)} (${quality.lowPointDeploys}/${quality.lowPointDeployOpportunities}, avg deficit ${quality.averageLowPointDeficit.toFixed(2)}), ` +
+    `M-Throw2 ${formatPercent(quality.defenseSkillNonUseRate)} (${quality.defenseSkillNonUses}/${quality.defenseSkillOpportunities}), ` +
+    `M-Throw3 OP ${quality.averageOpPressure.toFixed(2)} (${quality.opPressureSamples} samples)`;
 }
 
 function printDecks(): void {
@@ -95,12 +101,14 @@ function run(): void {
     });
   }
   // [Claude 2026-06-23] Phase G：IS-MCTS 旋鈕（iterations／同 wall-clock 的 time-ms／UCB c／候選寬度）。
-  if ([policyA, policyB].some((p) => p === "is-mcts")) {
+  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c")) {
     configureIsmctsBenchmark({
       ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
       ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
       ...(argValue("ismcts-c") !== undefined ? { explorationC: numberArg("ismcts-c", Math.SQRT2) } : {}),
       ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
+      ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
+      ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
       ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
       ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
     });
@@ -138,6 +146,9 @@ function run(): void {
     console.log(`Average rallies/set: ${report.summary.averageRalliesPerSet.toFixed(2)}`);
     console.log(`Set win methods: ${Object.entries(report.summary.setWinsByReason).map(([reason, count]) => `${reason}=${count}`).join(", ") || "none"}`);
     console.log(`Lost reasons: ${Object.entries(report.summary.lostReasons).map(([reason, count]) => `${reason}=${count}`).join(", ") || "none"}`);
+    console.log("Phase H play quality:");
+    console.log(formatPlayQuality("P0", report.summary.playQualityByPlayer[0]));
+    console.log(formatPlayQuality("P1", report.summary.playQualityByPlayer[1]));
     const failedPairs = report.pairs.filter((pair) => pair.summary.errored > 0 || pair.summary.maxSteps > 0);
     if (failedPairs.length > 0) {
       console.log("Failed pairs:");
@@ -177,6 +188,9 @@ function run(): void {
   console.log(`Average steps: ${summary.averageSteps.toFixed(1)}, average final set: ${summary.averageSetNo.toFixed(2)}`);
   console.log(`Average rallies/set: ${summary.averageRalliesPerSet.toFixed(2)}`);
   console.log(`Set win methods: ${Object.entries(summary.setWinsByReason).map(([reason, count]) => `${reason}=${count}`).join(", ") || "none"}`);
+  console.log("Phase H play quality:");
+  console.log(formatPlayQuality("P0", summary.playQualityByPlayer[0]));
+  console.log(formatPlayQuality("P1", summary.playQualityByPlayer[1]));
 
   const failed = report.matches.filter((match) => match.outcome !== "complete");
   if (failed.length > 0) {

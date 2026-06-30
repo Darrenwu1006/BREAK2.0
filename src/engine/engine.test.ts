@@ -241,6 +241,38 @@ describe("攔網軸 †5-7 與攔網選擇限制（rules_sheet）", () => {
     expect(s.phase).toBe("interval");
     expect(s.lostBy).toBe(0);
   });
+
+  it("攔網失敗→Lost 時，側邊攔網手仍進棄牌區、中央者留場（Lost 不得繞過 †5-7-2⑦/†8-6-6）", () => {
+    // P0（攔網方）：WEAK(center,b1)＋WALL(side,b3) → DP=4
+    // P1（攻擊方）：toss=SETTER(4)＋attack=ACE(4) = OP8 > 4 → 攔網失敗 → Lost
+    const deckA = [...Array(20).fill("T-WEAK"), ...Array(20).fill("T-WALL")];
+    const deckB = [...Array(14).fill("T-LIB"), ...Array(13).fill("T-SET"), ...Array(13).fill("T-ACE")];
+    let s = setupGame(testDb, deckA, deckB, 23);
+    // P0 發球（任意）→ P1 選接球 → draw → 接球 LIB → 托球 SETTER → 攻擊 ACE
+    s = feed(testDb, s, { type: "deploy-serve", uid: deployableUids(testDb, s, 0, "serve")[0]! });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    s = feed(testDb, s, { type: "defense-choice", choice: "receive" });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    s = feed(testDb, s, { type: "deploy-receive", uid: s.players[1].hand.find((u) => s.cards[u] === "T-LIB")! });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    s = feed(testDb, s, { type: "deploy-toss", uid: s.players[1].hand.find((u) => s.cards[u] === "T-SET")! });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    s = feed(testDb, s, { type: "deploy-attack", uid: s.players[1].hand.find((u) => s.cards[u] === "T-ACE")! });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    s = feed(testDb, s, { type: "defense-choice", choice: "block" });
+    expect(s.pendingDecision).toEqual({ player: 0, type: "deploy-block" });
+    const center = s.players[0].hand.find((u) => s.cards[u] === "T-WEAK")!;
+    const side = s.players[0].hand.find((u) => s.cards[u] === "T-WALL")!;
+    s = feed(testDb, s, { type: "deploy-block", uids: [center, side], center });
+    s = feed(testDb, s, { type: "free", action: "pass" });
+    // 攔網失敗 → Lost。即使提早轉入 lostSet，側邊者必須進棄牌、中央者續留場上
+    expect(s.lostBy).toBe(0);
+    expect(s.players[0].blockSides.length).toBe(0);
+    expect(s.players[0].drop).toContain(side);
+    expect(s.players[0].drop).not.toContain(center);
+    expect(s.players[0].blockCenter).toContain(center);
+    checkInvariants(s);
+  });
 });
 
 describe("勝負 †0-1-3", () => {

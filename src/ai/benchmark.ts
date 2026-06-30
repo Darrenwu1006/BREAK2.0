@@ -1,4 +1,4 @@
-import { applyDecision, createGame } from "../engine/engine";
+import { applyDecision, createGame, deployableUids, effParam, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileId } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
@@ -11,7 +11,7 @@ import type { DeckAxis } from "./benchmark-fixtures";
 // [Claude 2026-06-22] Phase F PIMC benchmark policy：pimc＝現況基準（無 EV cut）；
 // pimc-v2＝S1（EV cut@valueCutHorizon），已 A/B PASS、default-on。兩者共用同一 sample budget，方便同預算 A/B。
 // [Claude 2026-06-23] Phase G：is-mcts＝SO-ISMCTS。成本單位是 iteration（≠ PIMC sample），故 A/B 一律同 wall-clock。
-export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | "is-mcts" | HeuristicV2ProfileId;
+export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | "is-mcts" | "is-mcts-h2" | "is-mcts-h2b" | "is-mcts-h2c" | HeuristicV2ProfileId;
 
 // [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
 // sample budget 是強度/速度的旋鈕（屬「模型能力」gate），先給保守可跑的初探預設，CLI 可覆寫。
@@ -50,6 +50,10 @@ export interface IsmctsBenchmarkConfig {
   candidateLimit: number;
   /** [G3 保留] 方案 B：leaf 淺 rollout horizon。G1＝0（純 evaluateStateValue）。 */
   leafRolloutHorizon: number;
+  /** [Codex 2026-06-29] Phase H H2：is-mcts-h2 公開壓制力 shaping 強度。 */
+  pressureShapingEpsilon: number;
+  /** [Codex 2026-06-29] Phase H H2B/H2C：root tie-break winRate delta。 */
+  rootPressureTieBreakDelta: number;
 }
 
 const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
@@ -61,6 +65,8 @@ const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
   // [Claude 2026-06-23] G2 診斷後預設＝40（方案 B，對齊 PIMC horizon）：純 V leaf（=0）淺樹下區分力不足、
   // 對手模型預設＝heuristic（createIsmctsReport 預設）——adversarial 對固定 heuristic 對手有害。
   leafRolloutHorizon: 40,
+  pressureShapingEpsilon: 0.05,
+  rootPressureTieBreakDelta: 0.03,
 };
 
 let ismctsBenchmarkConfig: IsmctsBenchmarkConfig = { ...DEFAULT_ISMCTS_BENCHMARK_CONFIG };
@@ -145,6 +151,23 @@ export interface DefenseStats {
   failures: number;
 }
 
+export interface LowPointDeployStats {
+  opportunities: number;
+  lowPointChoices: number;
+  totalDeficit: number;
+  maxDeficit: number;
+}
+
+export interface DefenseSkillNonUseStats {
+  opportunities: number;
+  nonUses: number;
+}
+
+export interface PlayQualityStats {
+  lowPointDeploy: Record<"toss" | "attack", LowPointDeployStats>;
+  defenseSkillNonUse: DefenseSkillNonUseStats;
+}
+
 export interface ActionImpactStats {
   uses: number;
   effectiveUses: number;
@@ -171,6 +194,7 @@ export interface MatchPlayerStats {
   opBySource: Record<OpSource, PointStats>;
   dp: PointStats;
   defense: Record<DefenseRoute, DefenseStats>;
+  playQuality: PlayQualityStats;
   actionImpact: Record<"event" | "skill", ActionImpactStats>;
   gutsPaidBySource: Record<GutsSource, number>;
 }
@@ -207,6 +231,19 @@ export interface BatchSummary {
   setWinsByPlayer: [number, number];
   setWinsByReason: Partial<Record<LostReason, number>>;
   lostReasons: Partial<Record<LostReason, number>>;
+  playQualityByPlayer: [PlayQualitySummary, PlayQualitySummary];
+}
+
+export interface PlayQualitySummary {
+  lowPointDeployOpportunities: number;
+  lowPointDeploys: number;
+  lowPointDeployRate: number;
+  averageLowPointDeficit: number;
+  defenseSkillOpportunities: number;
+  defenseSkillNonUses: number;
+  defenseSkillNonUseRate: number;
+  averageOpPressure: number;
+  opPressureSamples: number;
 }
 
 export interface BatchReport {
@@ -249,6 +286,7 @@ export interface MatrixSummary {
   averageRalliesPerSet: number;
   setWinsByReason: Partial<Record<LostReason, number>>;
   lostReasons: Partial<Record<LostReason, number>>;
+  playQualityByPlayer: [PlayQualitySummary, PlayQualitySummary];
 }
 
 export interface MatrixReport {
@@ -307,7 +345,7 @@ export function benchmarkPolicyDecision(
     });
     return report.bestAction.decision;
   }
-  if (policy === "is-mcts") {
+  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c") {
     const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
     const report = createIsmctsReport(db, state, {
       perspectivePlayer: player,
@@ -318,6 +356,9 @@ export function benchmarkPolicyDecision(
       explorationC: ismctsBenchmarkConfig.explorationC,
       candidateLimit: ismctsBenchmarkConfig.candidateLimit,
       leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
+      pressureShapingEpsilon: policy === "is-mcts-h2" ? ismctsBenchmarkConfig.pressureShapingEpsilon : 0,
+      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
+      rootPairQualityTieBreak: policy === "is-mcts-h2c",
       rolloutPolicy,
     });
     return report.bestAction.decision;
@@ -407,6 +448,21 @@ function blankDefenseStats(): DefenseStats {
   return { attempts: 0, successes: 0, failures: 0 };
 }
 
+function blankLowPointDeployStats(): LowPointDeployStats {
+  return { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 };
+}
+
+function blankDefenseSkillNonUseStats(): DefenseSkillNonUseStats {
+  return { opportunities: 0, nonUses: 0 };
+}
+
+function blankPlayQualityStats(): PlayQualityStats {
+  return {
+    lowPointDeploy: { toss: blankLowPointDeployStats(), attack: blankLowPointDeployStats() },
+    defenseSkillNonUse: blankDefenseSkillNonUseStats(),
+  };
+}
+
 function blankActionImpactStats(): ActionImpactStats {
   return { uses: 0, effectiveUses: 0, impactCount: 0, pointMods: 0, draws: 0, handAdds: 0, deploys: 0, paidGuts: 0 };
 }
@@ -427,9 +483,34 @@ function blankPlayerStats(): MatchPlayerStats {
     opBySource: { serve: blankPointStats(), block: blankPointStats(), attack: blankPointStats() },
     dp: blankPointStats(),
     defense: { receive: blankDefenseStats(), block: blankDefenseStats(), unknown: blankDefenseStats() },
+    playQuality: blankPlayQualityStats(),
     actionImpact: { event: blankActionImpactStats(), skill: blankActionImpactStats() },
     gutsPaidBySource: { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 },
   };
+}
+
+function addLowPointDeployStats(target: LowPointDeployStats, source: LowPointDeployStats): void {
+  target.opportunities += source.opportunities;
+  target.lowPointChoices += source.lowPointChoices;
+  target.totalDeficit += source.totalDeficit;
+  target.maxDeficit = Math.max(target.maxDeficit, source.maxDeficit);
+}
+
+function addDefenseSkillNonUseStats(target: DefenseSkillNonUseStats, source: DefenseSkillNonUseStats): void {
+  target.opportunities += source.opportunities;
+  target.nonUses += source.nonUses;
+}
+
+function addPlayQualityStats(target: PlayQualityStats, source: PlayQualityStats): void {
+  addLowPointDeployStats(target.lowPointDeploy.toss, source.lowPointDeploy.toss);
+  addLowPointDeployStats(target.lowPointDeploy.attack, source.lowPointDeploy.attack);
+  addDefenseSkillNonUseStats(target.defenseSkillNonUse, source.defenseSkillNonUse);
+}
+
+function copyPlayQualityStats(source: PlayQualityStats): PlayQualityStats {
+  const copy = blankPlayQualityStats();
+  addPlayQualityStats(copy, source);
+  return copy;
 }
 
 function firstNumber(text: string): number {
@@ -469,8 +550,57 @@ function markActionImpact(stats: MatchPlayerStats, active: ActiveAction, field: 
   return active;
 }
 
-export function collectMatchStats(state: GameState): MatchStats {
+function effectivePoint(db: CardDb, state: GameState, uid: number, area: "toss" | "attack"): number {
+  return effParam(db, state, uid, area) ?? 0;
+}
+
+function recordLowPointDeploy(db: CardDb, state: GameState, player: PlayerId, area: "toss" | "attack", uid: number | null, stats: LowPointDeployStats): void {
+  if (uid === null) return;
+  const legal = deployableUids(db, state, player, area);
+  if (legal.length <= 1) return;
+  const chosen = effectivePoint(db, state, uid, area);
+  const best = Math.max(...legal.map((candidate) => effectivePoint(db, state, candidate, area)));
+  const deficit = best - chosen;
+  stats.opportunities++;
+  if (deficit >= 2) {
+    stats.lowPointChoices++;
+    stats.totalDeficit += deficit;
+    stats.maxDeficit = Math.max(stats.maxDeficit, deficit);
+  }
+}
+
+function isDefensiveFreeStep(state: GameState, player: PlayerId): boolean {
+  return (state.phase === "block" || state.phase === "receive") && !!state.op && state.op.owner !== player;
+}
+
+export function recordPlayQualityDecision(db: CardDb, state: GameState, decision: Decision, stats: PlayQualityStats): void {
+  const pending = state.pendingDecision;
+  if (!pending) return;
+  const player = pending.player as PlayerId;
+  if (decision.type === "deploy-toss" || decision.type === "deploy-attack") {
+    const area = decision.type === "deploy-toss" ? "toss" : "attack";
+    recordLowPointDeploy(db, state, player, area, decision.uid, stats.lowPointDeploy[area]);
+    return;
+  }
+  if (decision.type === "free" && isDefensiveFreeStep(state, player)) {
+    const availableSkills = freeOptions(db, state).skills.length;
+    if (availableSkills === 0) return;
+    stats.defenseSkillNonUse.opportunities++;
+    if (decision.action !== "skill") stats.defenseSkillNonUse.nonUses++;
+    return;
+  }
+  if (decision.type === "effect-confirm" && isDefensiveFreeStep(state, player) && state.effectCtx?.desc.includes("技能")) {
+    stats.defenseSkillNonUse.opportunities++;
+    if (!decision.accept) stats.defenseSkillNonUse.nonUses++;
+  }
+}
+
+export function collectMatchStats(state: GameState, playQuality?: readonly [PlayQualityStats, PlayQualityStats]): MatchStats {
   const players: [MatchPlayerStats, MatchPlayerStats] = [blankPlayerStats(), blankPlayerStats()];
+  if (playQuality) {
+    players[0].playQuality = copyPlayQualityStats(playQuality[0]);
+    players[1].playQuality = copyPlayQualityStats(playQuality[1]);
+  }
   const currentRoute: [DefenseRoute, DefenseRoute] = ["unknown", "unknown"];
   const activeAction: [ActiveAction, ActiveAction] = [null, null];
 
@@ -555,7 +685,7 @@ function logTail(state: GameState, count = 8): string[] {
   });
 }
 
-function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOutcome, steps: number, error?: string): MatchResult {
+function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOutcome, steps: number, error?: string, playQuality?: readonly [PlayQualityStats, PlayQualityStats]): MatchResult {
   const winner = state.winner;
   const winnerPolicy = winner === null ? null : config.policies[winner];
   const lost = collectLostStats(state);
@@ -573,7 +703,7 @@ function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOu
     averageRalliesPerSet: averageRallies(lost.setResults),
     lostBy: lost.lostBy,
     lostReasonsByPlayer: lost.lostReasonsByPlayer,
-    stats: collectMatchStats(state),
+    stats: collectMatchStats(state, playQuality),
     invariants: [
       playerInvariant(state, 0, config.decks[0].ids.length),
       playerInvariant(state, 1, config.decks[1].ids.length),
@@ -589,6 +719,7 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
     seededRnd(config.seed * 3 + 11),
     seededRnd(config.seed * 5 + 17),
   ];
+  const playQuality: [PlayQualityStats, PlayQualityStats] = [blankPlayQualityStats(), blankPlayQualityStats()];
 
   let state: GameState;
   try {
@@ -602,24 +733,25 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
       decks: [config.decks[0].ids, config.decks[1].ids],
       skipDeckValidation: true,
     });
-    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error));
+    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error), playQuality);
   }
 
   for (let step = 0; step < maxSteps; step++) {
-    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step);
+    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step, undefined, playQuality);
     const pending = state.pendingDecision;
-    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision");
+    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision", playQuality);
 
     try {
       const player = pending.player as PlayerId;
       const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer, [config.decks[0].axes ?? [], config.decks[1].axes ?? []], [config.decks[0].ids, config.decks[1].ids]);
+      recordPlayQualityDecision(config.db, state, decision, playQuality[player]);
       state = applyDecision(config.db, state, decision);
     } catch (error) {
-      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error));
+      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error), playQuality);
     }
   }
 
-  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`);
+  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`, playQuality);
 }
 
 function wilson(successes: number, total: number): ConfidenceInterval {
@@ -632,6 +764,35 @@ function wilson(successes: number, total: number): ConfidenceInterval {
   return {
     low: Math.max(0, (center - margin) / denom),
     high: Math.min(1, (center + margin) / denom),
+  };
+}
+
+function summarizePlayQuality(matches: MatchResult[], player: PlayerId): PlayQualitySummary {
+  const quality = blankPlayQualityStats();
+  const op = blankPointStats();
+  for (const match of matches) {
+    const stats = match.stats.players[player];
+    addPlayQualityStats(quality, stats.playQuality);
+    op.count += stats.op.count;
+    op.total += stats.op.total;
+    op.max = Math.max(op.max, stats.op.max);
+    op.highCount += stats.op.highCount;
+  }
+  const lowPointDeployOpportunities = quality.lowPointDeploy.toss.opportunities + quality.lowPointDeploy.attack.opportunities;
+  const lowPointDeploys = quality.lowPointDeploy.toss.lowPointChoices + quality.lowPointDeploy.attack.lowPointChoices;
+  const totalDeficit = quality.lowPointDeploy.toss.totalDeficit + quality.lowPointDeploy.attack.totalDeficit;
+  const defenseSkillOpportunities = quality.defenseSkillNonUse.opportunities;
+  const defenseSkillNonUses = quality.defenseSkillNonUse.nonUses;
+  return {
+    lowPointDeployOpportunities,
+    lowPointDeploys,
+    lowPointDeployRate: lowPointDeployOpportunities === 0 ? 0 : lowPointDeploys / lowPointDeployOpportunities,
+    averageLowPointDeficit: lowPointDeploys === 0 ? 0 : totalDeficit / lowPointDeploys,
+    defenseSkillOpportunities,
+    defenseSkillNonUses,
+    defenseSkillNonUseRate: defenseSkillOpportunities === 0 ? 0 : defenseSkillNonUses / defenseSkillOpportunities,
+    averageOpPressure: op.count === 0 ? 0 : op.total / op.count,
+    opPressureSamples: op.count,
   };
 }
 
@@ -679,6 +840,7 @@ export function summarizeMatches(matches: MatchResult[]): BatchSummary {
     setWinsByPlayer,
     setWinsByReason,
     lostReasons,
+    playQualityByPlayer: [summarizePlayQuality(matches, 0), summarizePlayQuality(matches, 1)],
   };
 }
 
@@ -749,6 +911,7 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
   let maxStepsCount = 0;
   let rallyTotal = 0;
   let setTotal = 0;
+  const playQualityMatches: [MatchResult[], MatchResult[]] = [[], []];
 
   for (const pair of pairs) {
     totalGames += pair.summary.total;
@@ -767,6 +930,8 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
       addCount(setWinsByReason, reason, count);
     }
     for (const match of pair.matches) {
+      playQualityMatches[0].push(match);
+      playQualityMatches[1].push(match);
       if (match.outcome !== "complete" || match.winner === null) continue;
       const winnerDeck = match.decks[match.winner]!;
       winsByDeck[winnerDeck] = (winsByDeck[winnerDeck] ?? 0) + 1;
@@ -794,6 +959,7 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
       averageRalliesPerSet: setTotal === 0 ? 0 : rallyTotal / setTotal,
       setWinsByReason,
       lostReasons,
+      playQualityByPlayer: [summarizePlayQuality(playQualityMatches[0], 0), summarizePlayQuality(playQualityMatches[1], 1)],
     },
     pairs,
   };

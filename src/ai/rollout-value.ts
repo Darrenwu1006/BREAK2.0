@@ -1,4 +1,5 @@
-import type { GameState, PlayerId } from "../engine/types";
+import { effParam } from "../engine/engine";
+import type { CardDb, GameState, PlayerId, PlayerState } from "../engine/types";
 
 /**
  * [Claude 2026-06-22] Phase F 第二槓桿 S1a：rollout 終局 EV cut 用的狀態價值函數。
@@ -82,6 +83,62 @@ export const ROLLOUT_VALUE_MODEL: ValueModel = {
   bias: 0.0,
   provenance: "fit games=400 samples=32664 logloss=0.5297 acc=71.8% auc=0.8061 [Claude 2026-06-23]",
 };
+
+function top(stack: readonly number[]): number | null {
+  return stack.length > 0 ? stack[stack.length - 1]! : null;
+}
+
+function topParam(db: CardDb, state: GameState, player: PlayerState, area: "block" | "receive" | "toss" | "attack"): number {
+  if (area === "block") {
+    const center = top(player.blockCenter);
+    const centerValue = center === null ? 0 : effParam(db, state, center, "block") ?? 0;
+    const sideValue = player.blockSides.reduce((sum, uid) => sum + (effParam(db, state, uid, "block") ?? 0), 0);
+    return centerValue + sideValue;
+  }
+  const uid = top(player[area]);
+  return uid === null ? 0 : effParam(db, state, uid, area) ?? 0;
+}
+
+/**
+ * Phase H objective shaping 用的公開壓制力分數。
+ * 回傳範圍刻意壓到約 [-0.1, 0.1]，讓 epsilon 只做 tie-break gradient，不翻轉明確勝負判斷。
+ */
+export function evaluatePressureScore(db: CardDb, state: GameState, perspective: PlayerId): number {
+  const me = perspective;
+  const opp = (perspective === 0 ? 1 : 0) as PlayerId;
+  const mine = state.players[me];
+  const their = state.players[opp];
+  const opSigned = state.op ? (state.op.owner === me ? state.op.value : -state.op.value) : 0;
+  const attackLineDiff =
+    topParam(db, state, mine, "toss") +
+    topParam(db, state, mine, "attack") -
+    topParam(db, state, their, "toss") -
+    topParam(db, state, their, "attack");
+  const defensePressure =
+    topParam(db, state, their, "receive") +
+    topParam(db, state, their, "block") -
+    topParam(db, state, mine, "receive") -
+    topParam(db, state, mine, "block");
+  const resourcePressure = mine.hand.length - their.hand.length;
+  const raw = opSigned * 0.75 + attackLineDiff * 0.6 - defensePressure * 0.25 + resourcePressure * 0.15;
+  return Math.tanh(raw / 10) * 0.1;
+}
+
+export function shapeStateValue(winProb: number, pressureScore: number, epsilon: number): number {
+  return Math.max(0, Math.min(1, winProb + epsilon * pressureScore));
+}
+
+export function evaluateShapedStateValue(
+  db: CardDb,
+  state: GameState,
+  perspective: PlayerId,
+  epsilon: number,
+  model: ValueModel = ROLLOUT_VALUE_MODEL,
+): number {
+  const winProb = evaluateStateValue(state, perspective, model);
+  if (epsilon <= 0) return winProb;
+  return shapeStateValue(winProb, evaluatePressureScore(db, state, perspective), epsilon);
+}
 
 function sigmoid(z: number): number {
   if (z >= 0) {

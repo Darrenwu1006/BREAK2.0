@@ -333,6 +333,13 @@ function blankPlayerStats(): MatchPlayerStats {
       block: { attempts: 0, successes: 0, failures: 0 },
       unknown: { attempts: 0, successes: 0, failures: 0 },
     },
+    playQuality: {
+      lowPointDeploy: {
+        toss: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
+        attack: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
+      },
+      defenseSkillNonUse: { opportunities: 0, nonUses: 0 },
+    },
     actionImpact: { event: blankActionImpactStats(), skill: blankActionImpactStats() },
     gutsPaidBySource: { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 },
   };
@@ -364,6 +371,14 @@ function mergePlayerStats(target: MatchPlayerStats, source: MatchPlayerStats): v
     target.defense[route].successes += source.defense[route].successes;
     target.defense[route].failures += source.defense[route].failures;
   }
+  for (const area of ["toss", "attack"] as const) {
+    target.playQuality.lowPointDeploy[area].opportunities += source.playQuality.lowPointDeploy[area].opportunities;
+    target.playQuality.lowPointDeploy[area].lowPointChoices += source.playQuality.lowPointDeploy[area].lowPointChoices;
+    target.playQuality.lowPointDeploy[area].totalDeficit += source.playQuality.lowPointDeploy[area].totalDeficit;
+    target.playQuality.lowPointDeploy[area].maxDeficit = Math.max(target.playQuality.lowPointDeploy[area].maxDeficit, source.playQuality.lowPointDeploy[area].maxDeficit);
+  }
+  target.playQuality.defenseSkillNonUse.opportunities += source.playQuality.defenseSkillNonUse.opportunities;
+  target.playQuality.defenseSkillNonUse.nonUses += source.playQuality.defenseSkillNonUse.nonUses;
   for (const kind of ["event", "skill"] as const) {
     target.actionImpact[kind].uses += source.actionImpact[kind].uses;
     target.actionImpact[kind].effectiveUses += source.actionImpact[kind].effectiveUses;

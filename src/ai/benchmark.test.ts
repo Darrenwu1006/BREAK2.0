@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { applyDecision, createGame } from "../engine/engine";
+import { applyDecision, createGame, deployableUids, effParam } from "../engine/engine";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
-import { benchmarkPolicyDecision, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
-import type { BenchmarkPolicyId } from "./benchmark";
+import { benchmarkPolicyDecision, configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
+import type { BenchmarkPolicyId, PlayQualityStats } from "./benchmark";
 import { BENCHMARK_REPORT_SCHEMA_VERSION, createBenchmarkReportEnvelope } from "./benchmark-report";
 
 describe("M8 benchmark harness", () => {
+  function blankPlayQualityStats(): PlayQualityStats {
+    return {
+      lowPointDeploy: {
+        toss: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
+        attack: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
+      },
+      defenseSkillNonUse: { opportunities: 0, nonUses: 0 },
+    };
+  }
+
   it("同一組 seed 重跑會得到一致結果", () => {
     const deckA = findBenchmarkDeck("烏野-預組");
     const deckB = findBenchmarkDeck("音駒-預組");
@@ -56,6 +66,69 @@ describe("M8 benchmark harness", () => {
       expect(match.stats.players[0].opBySource.attack.count + match.stats.players[1].opBySource.attack.count, `seed ${match.seed}`).toBeGreaterThan(0);
       expect(match.stats.players[0].gutsPaidBySource.attack + match.stats.players[1].gutsPaidBySource.attack, `seed ${match.seed}`).toBeGreaterThanOrEqual(0);
     }
+    expect(report.summary.playQualityByPlayer[0].lowPointDeployRate).toBeGreaterThanOrEqual(0);
+    expect(report.summary.playQualityByPlayer[0].lowPointDeployRate).toBeLessThanOrEqual(1);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillNonUseRate).toBeGreaterThanOrEqual(0);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillNonUseRate).toBeLessThanOrEqual(1);
+    expect(report.summary.playQualityByPlayer[0].averageOpPressure).toBeGreaterThanOrEqual(0);
+  });
+
+  it("Phase H 行為尺會計入明顯低於手中最高點的攻擊登場", () => {
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 171, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    const p = 0;
+    state.turnPlayer = p;
+    state.phase = "attack";
+    state.pendingDecision = { player: p, type: "deploy-attack" };
+
+    const attackOptions = deployableUids(benchmarkDb, state, p, "attack")
+      .map((uid) => ({ uid, value: effParam(benchmarkDb, state, uid, "attack") ?? 0 }))
+      .sort((a, b) => a.value - b.value);
+    const low = attackOptions[0]!;
+    const high = attackOptions[attackOptions.length - 1]!;
+    expect(high.value - low.value).toBeGreaterThanOrEqual(2);
+
+    const stats = blankPlayQualityStats();
+    recordPlayQualityDecision(benchmarkDb, state, { type: "deploy-attack", uid: low.uid }, stats);
+
+    expect(stats.lowPointDeploy.attack.opportunities).toBe(1);
+    expect(stats.lowPointDeploy.attack.lowPointChoices).toBe(1);
+    expect(stats.lowPointDeploy.attack.totalDeficit).toBe(high.value - low.value);
+    expect(stats.lowPointDeploy.attack.maxDeficit).toBe(high.value - low.value);
+  });
+
+  it("Phase H 行為尺會計入防守中拒絕可用技能的怠用", () => {
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 172, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state.phase = "block";
+    state.turnPlayer = 0;
+    state.op = { owner: 1, value: 5, source: "attack" };
+    state.pendingDecision = { player: 0, type: "effect-confirm", prompt: "3ガッツ払えば使える" };
+    state.effectCtx = {
+      player: 0,
+      source: state.players[0].hand[0]!,
+      frames: [],
+      lastTarget: null,
+      triggerUid: null,
+      turn1: false,
+      anyExecuted: false,
+      awaiting: { kind: "confirm", what: "gate", costs: [], then: [], prompt: "3ガッツ払えば使える" },
+      desc: "黒尾 鉄朗 的技能",
+    };
+
+    const stats = blankPlayQualityStats();
+    recordPlayQualityDecision(benchmarkDb, state, { type: "effect-confirm", accept: false }, stats);
+
+    expect(stats.defenseSkillNonUse.opportunities).toBe(1);
+    expect(stats.defenseSkillNonUse.nonUses).toBe(1);
   });
 
   it("benchmark 牌組池會包含 UI 新增牌組且都是 40 張", () => {
@@ -203,5 +276,33 @@ describe("M8 benchmark harness", () => {
     const fromHidden = benchmarkPolicyDecision("pimc", benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], axes, known);
     const fromClean = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
     expect(fromHidden).toEqual(fromClean);
+  });
+
+  it("is-mcts-h2 / h2b / h2c policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
+    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10 });
+    const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
+    const deckB = findBenchmarkDeck("青葉城西-第三彈測試");
+    let state = createGame(benchmarkDb, { seed: 191, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+
+    const axes = [deckA.axes, deckB.axes] as const;
+    const known = [deckA.ids, deckB.ids] as const;
+    const acting = state.pendingDecision!.player;
+    const oppo = acting === 0 ? 1 : 0;
+
+    const hiddenChanged = structuredClone(state);
+    hiddenChanged.players[oppo].hand.reverse();
+    hiddenChanged.players[oppo].deck.reverse();
+    hiddenChanged.players[oppo].setArea.reverse();
+    for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c"] satisfies BenchmarkPolicyId[]) {
+      const decision = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+      expect(decision.type, policy).toBeTruthy();
+      expect(() => applyDecision(benchmarkDb, state, decision), policy).not.toThrow();
+      const fromHidden = benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], axes, known);
+      const fromClean = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+      expect(fromHidden, policy).toEqual(fromClean);
+    }
   });
 });
