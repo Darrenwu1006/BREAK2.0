@@ -160,7 +160,7 @@ export type Awaiting =
   | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; else?: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "dropEventArea" | "target" | "tutor" | "twoPick1" | "twoPick2" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "dropToDeckBottom" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost";
+      purpose: "guts" | "dropHand" | "dropEventArea" | "target" | "tutor" | "twoPick1" | "twoPick2" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "dropToDeckBottom" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost" | "swapGutsA" | "swapGutsB";
       /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
       chooser?: PlayerId;
       candidates: number[];
@@ -171,6 +171,8 @@ export type Awaiting =
       amount?: number;
       /** deployFromDrop 用 */
       area?: CourtArea;
+      /** swapGuts 用：第二個互換區域（area＝第一區） */
+      areaB?: CourtArea;
       destination?: "drop" | "deckBottom";
       then?: Action[];
       /** tutor 用：實際看過的卡（選中→手牌、其餘→牌組底） */

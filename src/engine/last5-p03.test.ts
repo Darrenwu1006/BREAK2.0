@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
 import { topChara } from "./effects";
 import { db, deckWith, grab, placeDeckTop, setup, serveWith, receiveTrack, drainCp, FILLER } from "./testkit";
-import type { GameState, Decision, PlayerId } from "./types";
+import type { Awaiting, GameState, Decision, PlayerId } from "./types";
 
 function feed(s: GameState, d: Decision): GameState {
   return applyDecision(db, s, d);
@@ -16,6 +16,11 @@ function pushGuts(s: GameState, p: PlayerId, area: "receive" | "toss" | "attack"
   s.players[p].hand.splice(s.players[p].hand.indexOf(u), 1);
   s.players[p][area].unshift(u); // 底＝ガッツ層
   return u;
+}
+function cardAwaiting(s: GameState): Extract<Awaiting, { kind: "cards" }> {
+  const awaiting = s.effectCtx?.awaiting;
+  expect(awaiting?.kind).toBe("cards");
+  return awaiting as Extract<Awaiting, { kind: "cards" }>;
 }
 
 describe("P03 最後5張", () => {
@@ -117,5 +122,51 @@ describe("P03 最後5張", () => {
     s = feed(s, { type: "free", action: "event", uid: ev });
     if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: [miya] });
     expect(effParam(db, s, miya, "receive")).toBe(base + 1);
+  });
+
+  // Q1526/Q1527：ガッツ入替はプレイヤーが「どれを換えるか／換えないか」を選ぶ。
+  // 受け・攻撃の両エリアにユースガッツがある状態を直接構築して 083 をプレイ。
+  function setup083WithGuts(): { s: GameState; recvChara: number; recvGuts: number; atkChara: number; atkGuts: number } {
+    let s = setup(deckWith("HV-P03-083", "HV-P03-022", "HV-P03-022", "HV-P03-022", "HV-P03-022"), deckWith(FILLER), 1);
+    s = serveWith(s, FILLER);
+    s = feed(s, { type: "defense-choice", choice: "receive" });
+    s = feed(s, { type: "free", action: "pass" });
+    const recvChara = grab(s, 0, "HV-P03-022"); // ユース（受けトップ）
+    s = deploy(s, "receive", recvChara);
+    s = drainCp(s, false);
+    // 受けの下にユースガッツ、攻撃区にユースキャラ＋その下にユースガッツを直接構築
+    const recvGuts = pushGuts(s, 0, "receive", "HV-P03-022");
+    const atkChara = grab(s, 0, "HV-P03-022");
+    s.players[0].hand.splice(s.players[0].hand.indexOf(atkChara), 1);
+    s.players[0].attack.push(atkChara);              // 攻撃トップ＝キャラ
+    const atkGuts = pushGuts(s, 0, "attack", "HV-P03-022"); // unshift＝底（ガッツ層）
+    const ev = grab(s, 0, "HV-P03-083");
+    s = feed(s, { type: "free", action: "event", uid: ev });
+    s = feed(s, { type: "effect-cards", uids: [recvChara] }); // addParam receive+1 の対象選択
+    return { s, recvChara, recvGuts, atkChara, atkGuts };
+  }
+
+  it("P03-083 火焼：ガッツ入替は2段で選ぶ→受け⇔攻撃の底が入れ替わる（Q1526）", () => {
+    let { s, recvGuts, atkGuts } = setup083WithGuts();
+    // swapGutsA＝受け側のユースガッツ候補
+    expect(cardAwaiting(s).purpose).toBe("swapGutsA");
+    expect(cardAwaiting(s).candidates).toContain(recvGuts);
+    s = feed(s, { type: "effect-cards", uids: [recvGuts] });
+    // swapGutsB＝攻撃側のユースガッツ候補
+    expect(cardAwaiting(s).purpose).toBe("swapGutsB");
+    expect(cardAwaiting(s).candidates).toContain(atkGuts);
+    s = feed(s, { type: "effect-cards", uids: [atkGuts] });
+    // 入替後：受けの底＝旧攻撃ガッツ、攻撃の底＝旧受けガッツ
+    expect(s.players[0].receive[0]).toBe(atkGuts);
+    expect(s.players[0].attack[0]).toBe(recvGuts);
+  });
+
+  it("P03-083 火焼：第1段で0枚＝入れ替えない（Q1527）", () => {
+    let { s, recvGuts, atkGuts } = setup083WithGuts();
+    expect(cardAwaiting(s).purpose).toBe("swapGutsA");
+    s = feed(s, { type: "effect-cards", uids: [] }); // 換えない
+    expect(s.effectCtx?.awaiting).toBeFalsy(); // 第2段に進まず効果解決
+    expect(s.players[0].receive[0]).toBe(recvGuts); // そのまま
+    expect(s.players[0].attack[0]).toBe(atkGuts);
   });
 });

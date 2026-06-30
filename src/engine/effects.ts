@@ -928,6 +928,11 @@ function applySetMod(db: CardDb, state: GameState, ctx: EffectCtx, targetUid: nu
 const PARAM_LABELS: Record<ParamName, string> = { serve: "發球點數", block: "攔網點數", receive: "接球點數", toss: "托球點數", attack: "攻擊點數" };
 const paramLabel = (p: ParamName): string => PARAM_LABELS[p];
 
+const AREA_LABELS_ZH: Record<CourtArea, string> = {
+  serve: "發球區", receive: "接球區", toss: "托球區", attack: "攻擊區", block: "攔網區",
+};
+const areaLabelZh = (area: CourtArea): string => AREA_LABELS_ZH[area];
+
 function pushFrame(ctx: EffectCtx, actions: RtAction[]): void {
   if (actions.length) ctx.frames.push({ actions, pc: 0 });
 }
@@ -1738,7 +1743,10 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "swapGuts": {
-      // 2 エリアの filter 一致ガッツを 1 枚ずつ入れ替える（両方ある時のみ；Q1526/1527）
+      // 2 エリアの filter 一致ガッツを 1 枚ずつ入れ替える。
+      // Q1526：入れ替えるには両エリアとも対象ガッツを選べる必要がある（片方なければ不可）。
+      // Q1527：“1枚ずつまで”＝0〜1 枚、入れ替えないことも選べる → 両エリアに候補がある時は
+      //         「どのガッツを換えるか／換えないか」をプレイヤーに選ばせる（swapGutsA→swapGutsB の2段）。
       const gutsOf = (area: CourtArea) => {
         const stack = area === "block" ? ps.blockCenter : ps[area];
         return stack.slice(0, -1).filter((u) => !a.filter || matchFilter(db, state, u, a.filter, area));
@@ -1746,13 +1754,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       const ga = gutsOf(a.areaA);
       const gb = gutsOf(a.areaB);
       if (ga.length === 0 || gb.length === 0) break; // 両方選べない → 入れ替えない（Q1526）
-      const ua = ga[0]!, ub = gb[0]!;
-      const sa = a.areaA === "block" ? ps.blockCenter : ps[a.areaA];
-      const sb = a.areaB === "block" ? ps.blockCenter : ps[a.areaB];
-      sa.splice(sa.indexOf(ua), 1); sb.splice(sb.indexOf(ub), 1);
-      sa.unshift(ub); sb.unshift(ua); // ガッツ層（底）へ
-      ctx.anyExecuted = true;
-      log(state, p, `${a.areaA} と ${a.areaB} の Guts を入れ替え`);
+      // looked に areaB 側候補を載せて第2段へ引き継ぐ（state はまだ動かさない）
+      ctx.awaiting = {
+        kind: "cards", purpose: "swapGutsA", candidates: ga, min: 0, max: 1,
+        area: a.areaA, areaB: a.areaB, looked: gb,
+        prompt: `選擇要從「${areaLabelZh(a.areaA)}」互換的 Guts（可選 0 張＝不互換）`,
+      };
       break;
     }
     case "lookTopTwoPick": {
@@ -2220,6 +2227,30 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         fireHandAdds(state, ctx.player, uids.length);
         for (const u of looked.filter((x) => !uids.includes(x))) { ps.deck.splice(ps.deck.indexOf(u), 1); ps.deck.push(u); }
         log(state, ctx.player, "看過的卡置於牌組底");
+        break;
+      }
+      case "swapGutsA": {
+        // 第1段：areaA から換えるガッツを選ぶ（0 枚＝入れ替えない、Q1527）。
+        if (uids.length === 0) { log(state, ctx.player, "選擇不互換 Guts"); break; }
+        const gb = aw.looked ?? [];
+        ctx.awaiting = {
+          kind: "cards", purpose: "swapGutsB", candidates: gb, min: 1, max: 1,
+          area: aw.area, areaB: aw.areaB, looked: [uids[0]!], // looked＝第1段で選んだ areaA 側 uid
+          prompt: `選擇要從「${areaLabelZh(aw.areaB!)}」互換的 Guts`,
+        };
+        break;
+      }
+      case "swapGutsB": {
+        // 第2段：areaB 側を選び、第1段の areaA 側と入れ替える（ガッツ層＝底へ）。
+        const ua = (aw.looked ?? [])[0]!; // areaA 側
+        const ub = uids[0]!;              // areaB 側
+        const areaA = aw.area!, areaB = aw.areaB!;
+        const sa = areaA === "block" ? ps.blockCenter : ps[areaA];
+        const sb = areaB === "block" ? ps.blockCenter : ps[areaB];
+        sa.splice(sa.indexOf(ua), 1); sb.splice(sb.indexOf(ub), 1);
+        sa.unshift(ub); sb.unshift(ua);
+        ctx.anyExecuted = true;
+        log(state, ctx.player, `${areaLabelZh(areaA)} と ${areaLabelZh(areaB)} の Guts を入れ替え`);
         break;
       }
       case "moveToHand": {
