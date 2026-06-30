@@ -3,7 +3,7 @@ import type { Card } from "../data/types";
 import { effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 import type { CoachReport } from "../ai/coach";
-import { CardView, displayName } from "./CardView";
+import { CardView, displayName, cardRarity } from "./CardView";
 import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
 
 export const PHASE_NAME: Record<Phase, string> = {
@@ -502,7 +502,10 @@ export function CardCounter({ db, state }: { db: CardDb; state: GameState }) {
         <ul className="counter-list">
           {groups.map((row) => (
             <li key={row.id} className={row.count === 0 ? "counter-zero" : ""}>
-              <span className="counter-name">{displayName(row.card!)}</span>
+              <span className="counter-name">
+                {cardRarity(row.card!) && <span className="counter-rarity">{cardRarity(row.card!)}</span>}
+                {displayName(row.card!)}
+              </span>
               <span className="counter-count">
                 <b>{row.count}</b><span className="counter-slash">/</span>{row.total}
               </span>

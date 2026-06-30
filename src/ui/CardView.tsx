@@ -24,6 +24,17 @@ export function displayName(card: Card): string {
   return card.nameZh || card.nameJa;
 }
 
+// 卡片等級（稀有度）：取使用者所選卡面（與 cardImage 同一選擇邏輯）的 rarity，沒選則用首 printing。
+// 用於算牌面板等需要在同名角色間分辨「是哪張卡」的場合。
+export function cardRarity(card: Card): string {
+  const sel = printingOverride.get(card.id);
+  if (sel) {
+    const chosen = card.printings.find((p) => (p.imageEnd ?? p.rarity) === sel);
+    if (chosen) return chosen.rarity;
+  }
+  return card.printings[0]?.rarity ?? "";
+}
+
 const BACK_EXTENSIONS: Record<string, "png" | "jpg"> = {
   伊達工業: "png",
   梟谷: "png",
