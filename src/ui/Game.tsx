@@ -13,7 +13,7 @@ import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
 import type { CoachPanelState } from "./GamePanels";
-import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
+import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "./selection";
 import { ZONE_LABEL, groupCandidatesByZone } from "./zoneLocate";
@@ -42,9 +42,18 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
 type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
 type DragState = { uid: number; x: number; y: number; width: number; overArea: CourtArea | null; valid: boolean };
 
-function initialSpeed(): AiSpeed {
-  const stored = localStorage.getItem("breaktcg-ai-speed");
-  return stored === "0.5" || stored === "1" || stored === "2" || stored === "instant" ? stored : "1";
+function initialEngine(): OpponentEngine {
+  const stored = localStorage.getItem("breaktcg-opponent-engine");
+  if (stored === "strong" || stored === "heuristic") return stored;
+  // 從舊「AI 速度」設定遷移一次：instant→heuristic，其餘（0.5/1/2 都是強敵思考預算）→strong。
+  const legacy = localStorage.getItem("breaktcg-ai-speed");
+  if (legacy !== null) {
+    localStorage.removeItem("breaktcg-ai-speed");
+    const migrated: OpponentEngine = legacy === "instant" ? "heuristic" : "strong";
+    localStorage.setItem("breaktcg-opponent-engine", migrated);
+    return migrated;
+  }
+  return "strong";
 }
 
 function initialSfx(): boolean {
@@ -670,7 +679,7 @@ export function Game(props: {
   const [coach, setCoach] = useState<CoachPanelState>({ status: "idle" });
   const [mobilePanel, setMobilePanel] = useState<"log" | "detail" | null>(null);
   const [activeGutsKey, setActiveGutsKey] = useState<string | null>(null);
-  const [speed, setSpeed] = useState<AiSpeed>(initialSpeed);
+  const [engine, setEngine] = useState<OpponentEngine>(initialEngine);
   const [scoreBanner, setScoreBanner] = useState<SplashBanner | null>(null);
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
@@ -718,7 +727,7 @@ export function Game(props: {
   const effectMax = effectCards?.max ?? 1;
   const effectCardsInPlace = isMyDecision && !!effectCards
     && canUseInPlaceEffectSelection(state, HUMAN, effectCandidates);
-  const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: speed === "instant" || replayMode });
+  const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: engine === "heuristic" || replayMode });
 
   const visibleInspection = hovered ?? inspected;
   const canUndo = !replayMode && undoHistory.length > 0;
@@ -918,9 +927,9 @@ export function Game(props: {
     setReplayScan((scan) => scan.status === "running" ? { status: "stopped", done: scan.done, total: scan.total } : scan);
   }
 
-  function changeSpeed(next: AiSpeed) {
-    setSpeed(next);
-    localStorage.setItem("breaktcg-ai-speed", next);
+  function changeEngine(next: OpponentEngine) {
+    setEngine(next);
+    localStorage.setItem("breaktcg-opponent-engine", next);
   }
 
   function toggleSfx() {
@@ -934,7 +943,7 @@ export function Game(props: {
   // [Claude 2026-06-22] Phase F 塊2：把 PIMC 接成電腦對手的「腦」。
   // 預設＝強敵：用 coach-worker 跑 PIMC 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
   // 依盤面自適應 3–10 秒；瑣碎盤面想得短、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
-  // speed === "instant" 保留為快速測試模式：直接走 heuristic、不啟動 PIMC、不顯思考提示。
+  // engine === "heuristic" 為快速模式：直接走 heuristic、不啟動搜尋、不顯思考提示、不跑動畫/擬音。
   useEffect(() => {
     aiWorkerRef.current?.terminate();
     aiWorkerRef.current = null;
@@ -956,23 +965,21 @@ export function Game(props: {
       });
     }
 
-    if (speed === "instant") {
+    if (engine === "heuristic") {
       setAiThinking(null);
       const timer = window.setTimeout(() => applyAiDecision(heuristicAiDecision(db, state, aiProfile)), 0);
       return () => window.clearTimeout(timer);
     }
 
     const requestId = String(++aiRequestRef.current);
-    const budgetMs = estimateThinkBudgetMs(state);
-    // 0.5x/1x/2x 速度＝思考預算的乘除旋鈕（仍夾在 3–10 秒之間），讓速度設定對強敵有實際意義。
-    const speedFactor = Number(speed) || 1;
-    const timeLimitMs = Math.round(budgetMs / speedFactor);
-    // [Claude 2026-06-22] 出手節奏下限：S1 EV cut 讓 PIMC 常在 1 秒內想完，會搶在出手動畫（卡片飛行/落位 ~660ms、
-    // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，PIMC 思考時間計入此下限——想得久就不額外等、
-    // 想得快就補到下限讓動畫跑完。隨速度縮放（instant 不受影響、維持快速）。
+    // 強敵＝思考預算由 estimateThinkBudgetMs 依盤面自適應（3–10 秒），不再有速度旋鈕。
+    const timeLimitMs = estimateThinkBudgetMs(state);
+    // [Claude 2026-06-22] 出手節奏下限：S1 EV cut 讓搜尋常在 1 秒內想完，會搶在出手動畫（卡片飛行/落位 ~660ms、
+    // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，思考時間計入此下限——想得久就不額外等、
+    // 想得快就補到下限讓動畫跑完。
     const startedAt = Date.now();
-    // 900ms＝覆蓋最長的得分潑墨動畫（--splash-ms），讓出手動畫完整跑完；隨速度縮放。
-    const pacingMs = 900 / speedFactor;
+    // 900ms＝覆蓋最長的得分潑墨動畫（--splash-ms），讓出手動畫完整跑完。
+    const pacingMs = 900;
     function applyAiDecisionPaced(decision: Decision) {
       const remaining = pacingMs - (Date.now() - startedAt);
       if (remaining <= 0) {
@@ -1028,7 +1035,7 @@ export function Game(props: {
       aiWorkerRef.current?.terminate();
       aiWorkerRef.current = null;
     };
-  }, [aiProfile, db, pd, props.decks, props.deckMeta, replayMode, speed, state]);
+  }, [aiProfile, db, pd, props.decks, props.deckMeta, replayMode, engine, state]);
 
   useEffect(() => {
     coachWorkerRef.current?.terminate();
@@ -1146,11 +1153,11 @@ export function Game(props: {
           ? youWon ? "MATCH WIN!" : "MATCH LOST"
           : youWon ? "SET GET!" : "SET LOST",
       });
-      if (sfxEnabled && speed !== "instant") {
+      if (sfxEnabled && engine !== "heuristic") {
         const pool = youWon ? SFX_SCORE_YOU : SFX_SCORE_OPP;
         setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
       }
-    } else if (attack && sfxEnabled && speed !== "instant") {
+    } else if (attack && sfxEnabled && engine !== "heuristic") {
       const pool = attack.player === HUMAN ? SFX_ATTACK_YOU : SFX_ATTACK_OPP;
       setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
     }
@@ -1160,7 +1167,7 @@ export function Game(props: {
       setSfx(null);
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [state.log, sfxEnabled, speed]);
+  }, [state.log, sfxEnabled, engine]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1459,7 +1466,7 @@ export function Game(props: {
   const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
 
   return (
-    <div className="fit-shell" data-instant={speed === "instant" ? "true" : undefined}>
+    <div className="fit-shell" data-instant={engine === "heuristic" ? "true" : undefined}>
     <svg className="ink-defs" aria-hidden="true" focusable="false">
       <defs>
         <filter id="ink-rough" x="-20%" y="-20%" width="140%" height="140%">
@@ -1468,7 +1475,7 @@ export function Game(props: {
         </filter>
       </defs>
     </svg>
-    <div className="game" data-instant={speed === "instant" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
+    <div className="game" data-instant={engine === "heuristic" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
       <CompactHud
         state={viewState}
         onOpenLog={() => setMobilePanel("log")}
@@ -1479,8 +1486,8 @@ export function Game(props: {
       <LeftPanel
         state={viewState}
         deckMeta={props.deckMeta}
-        speed={speed}
-        onSpeedChange={changeSpeed}
+        engine={engine}
+        onEngineChange={changeEngine}
         sfxEnabled={sfxEnabled}
         onToggleSfx={toggleSfx}
         onExit={props.onExit}

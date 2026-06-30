@@ -4,7 +4,7 @@ import { effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 import type { CoachReport } from "../ai/coach";
 import { CardView, displayName } from "./CardView";
-import type { AiSpeed, DeckMeta, InspectedCard } from "./gameTypes";
+import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
 
 export const PHASE_NAME: Record<Phase, string> = {
   setup: "準備",
@@ -91,8 +91,8 @@ export function GameLog({ state }: { state: GameState }) {
 export function LeftPanel(props: {
   state: GameState;
   deckMeta: [DeckMeta, DeckMeta];
-  speed: AiSpeed;
-  onSpeedChange: (speed: AiSpeed) => void;
+  engine: OpponentEngine;
+  onEngineChange: (engine: OpponentEngine) => void;
   sfxEnabled: boolean;
   onToggleSfx: () => void;
   onExit: () => void;
@@ -131,11 +131,11 @@ export function LeftPanel(props: {
       <GameLog state={state} />
 
       <div className="speed-control">
-        <span>AI 速度</span>
-        <div role="group" aria-label="AI 速度">
-          {(["0.5", "1", "2", "instant"] as const).map((speed) => (
-            <button key={speed} className={props.speed === speed ? "is-active" : ""} onClick={() => props.onSpeedChange(speed)}>
-              {speed === "instant" ? "瞬間" : `${speed}×`}
+        <span>對手引擎</span>
+        <div role="group" aria-label="對手引擎">
+          {([["strong", "強敵"], ["heuristic", "快速"]] as const).map(([value, label]) => (
+            <button key={value} className={props.engine === value ? "is-active" : ""} onClick={() => props.onEngineChange(value)}>
+              {label}
             </button>
           ))}
         </div>
