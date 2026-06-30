@@ -10,3 +10,4 @@
 - [L0004](L0004-resource-burn-exchange-rate.md) — 資源燃燒看交換率，花費要換到對手身體或不可逆終結；tags: HV-P01-033, HV-P01-035, HV-P01-087, HV-PR-025, attack, 青葉城西
 - [L0005](L0005-defense-ceiling-and-triage.md) — 當對手爆發力超越防守天花板時，防守拖延是慢性自殺，贏線應轉向速攻或手牌控制；tags: HV-P01-041, HV-P01-042, receive, 青葉城西-二彈改, gameplan節奏
 - [L0006](L0006-defense-reserve-vs-grind.md) — 對 grind/堆墓型對手防守儲備不可歸零，付 Guts 撐場前先問「下一個對手 OP 還擋不擋得住」；手牌沖到 0 等於把生死交給牌庫頂；tags: HV-P02-029, HV-P01-041, receive, 青葉城西-二彈改, 資源誤投
+- [L0007](L0007-ai-declines-free-gate.md) — 【AI 行為】電腦 gate-confirm 在落後/拉鋸時系統性拒絕「免費增益技能」（攻+5/防守加點）→ OP 崩盤；根因＝價值函數對技能點數失明（Phase H W2/W3，非 H-W1 飽和）；tags: HV-P01-043, attack, 梟谷-爆發軸二, AI放水/gate誤拒
