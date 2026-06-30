@@ -42,6 +42,10 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
 type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
 type DragState = { uid: number; x: number; y: number; width: number; overArea: CourtArea | null; valid: boolean };
 
+// 出手節奏下限（ms）：覆蓋最長的得分潑墨動畫（--splash-ms 900ms），讓出手/得分動畫順順跑完。
+// 強敵與快速共用——強敵的思考時間計入此下限，快速無思考、固定等此節奏（不瞬間）。
+const AI_PACE_MS = 900;
+
 function initialEngine(): OpponentEngine {
   const stored = localStorage.getItem("breaktcg-opponent-engine");
   if (stored === "strong" || stored === "heuristic") return stored;
@@ -727,7 +731,7 @@ export function Game(props: {
   const effectMax = effectCards?.max ?? 1;
   const effectCardsInPlace = isMyDecision && !!effectCards
     && canUseInPlaceEffectSelection(state, HUMAN, effectCandidates);
-  const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: engine === "heuristic" || replayMode });
+  const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: replayMode });
 
   const visibleInspection = hovered ?? inspected;
   const canUndo = !replayMode && undoHistory.length > 0;
@@ -943,7 +947,8 @@ export function Game(props: {
   // [Claude 2026-06-22] Phase F 塊2：把 PIMC 接成電腦對手的「腦」。
   // 預設＝強敵：用 coach-worker 跑 PIMC 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
   // 依盤面自適應 3–10 秒；瑣碎盤面想得短、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
-  // engine === "heuristic" 為快速模式：直接走 heuristic、不啟動搜尋、不顯思考提示、不跑動畫/擬音。
+  // engine === "heuristic" 為快速模式：直接走 heuristic、不啟動搜尋、不顯思考提示，但保留出手節奏
+  // 與動畫/擬音（不瞬間）——即時運算後等 AI_PACE_MS 讓動畫順順跑完。
   useEffect(() => {
     aiWorkerRef.current?.terminate();
     aiWorkerRef.current = null;
@@ -967,8 +972,14 @@ export function Game(props: {
 
     if (engine === "heuristic") {
       setAiThinking(null);
-      const timer = window.setTimeout(() => applyAiDecision(heuristicAiDecision(db, state, aiProfile)), 0);
-      return () => window.clearTimeout(timer);
+      const decision = heuristicAiDecision(db, state, aiProfile); // 即時運算
+      aiPaceTimerRef.current = window.setTimeout(() => {
+        aiPaceTimerRef.current = null;
+        applyAiDecision(decision);
+      }, AI_PACE_MS); // 等動畫跑完才推進
+      return () => {
+        if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
+      };
     }
 
     const requestId = String(++aiRequestRef.current);
@@ -978,8 +989,7 @@ export function Game(props: {
     // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，思考時間計入此下限——想得久就不額外等、
     // 想得快就補到下限讓動畫跑完。
     const startedAt = Date.now();
-    // 900ms＝覆蓋最長的得分潑墨動畫（--splash-ms），讓出手動畫完整跑完。
-    const pacingMs = 900;
+    const pacingMs = AI_PACE_MS;
     function applyAiDecisionPaced(decision: Decision) {
       const remaining = pacingMs - (Date.now() - startedAt);
       if (remaining <= 0) {
@@ -1153,11 +1163,11 @@ export function Game(props: {
           ? youWon ? "MATCH WIN!" : "MATCH LOST"
           : youWon ? "SET GET!" : "SET LOST",
       });
-      if (sfxEnabled && engine !== "heuristic") {
+      if (sfxEnabled) {
         const pool = youWon ? SFX_SCORE_YOU : SFX_SCORE_OPP;
         setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
       }
-    } else if (attack && sfxEnabled && engine !== "heuristic") {
+    } else if (attack && sfxEnabled) {
       const pool = attack.player === HUMAN ? SFX_ATTACK_YOU : SFX_ATTACK_OPP;
       setSfx({ text: pool[Math.floor(Math.random() * pool.length)]!, key: Date.now() });
     }
@@ -1167,7 +1177,7 @@ export function Game(props: {
       setSfx(null);
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [state.log, sfxEnabled, engine]);
+  }, [state.log, sfxEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1466,7 +1476,7 @@ export function Game(props: {
   const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
 
   return (
-    <div className="fit-shell" data-instant={engine === "heuristic" ? "true" : undefined}>
+    <div className="fit-shell">
     <svg className="ink-defs" aria-hidden="true" focusable="false">
       <defs>
         <filter id="ink-rough" x="-20%" y="-20%" width="140%" height="140%">
@@ -1475,7 +1485,7 @@ export function Game(props: {
         </filter>
       </defs>
     </svg>
-    <div className="game" data-instant={engine === "heuristic" ? "true" : undefined} style={{ "--fit-scale": fitScale } as CSSProperties}>
+    <div className="game" style={{ "--fit-scale": fitScale } as CSSProperties}>
       <CompactHud
         state={viewState}
         onOpenLog={() => setMobilePanel("log")}

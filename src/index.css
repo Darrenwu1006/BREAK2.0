@@ -1761,11 +1761,6 @@ input {
   }
 }
 
-.fit-shell[data-instant="true"] .motion-layer,
-.fit-shell[data-instant="true"] .score-banner,
-.fit-shell[data-instant="true"] .focus-lines,
-.fit-shell[data-instant="true"] .sfx-burst { display: none; }
-
 /* Replay history in main menu */
 .menu-grid {
   display: flex;
