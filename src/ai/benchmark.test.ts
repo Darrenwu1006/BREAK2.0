@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { applyDecision, createGame, deployableUids, effParam } from "../engine/engine";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
 import { benchmarkPolicyDecision, configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
-import type { BenchmarkPolicyId, PlayQualityStats } from "./benchmark";
+import type { BenchmarkPolicyId, PlayQualityStats, SearchDecisionDiagnostics } from "./benchmark";
 import { BENCHMARK_REPORT_SCHEMA_VERSION, createBenchmarkReportEnvelope } from "./benchmark-report";
+import { ROLLOUT_VALUE_MODEL } from "./rollout-value";
 
 describe("M8 benchmark harness", () => {
   function blankPlayQualityStats(): PlayQualityStats {
@@ -278,8 +279,39 @@ describe("M8 benchmark harness", () => {
     expect(fromHidden).toEqual(fromClean);
   });
 
-  it("is-mcts-h2 / h2b / h2c policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
-    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10 });
+  it("mo-ismcts 可在 benchmark harness 產生合法決策與 search diagnostics", () => {
+    configureIsmctsBenchmark({ iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0, valueModel: ROLLOUT_VALUE_MODEL });
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 192, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+
+    const searchDiagnostics: SearchDecisionDiagnostics[] = [];
+    for (const policy of ["mo-ismcts", "mo-ismcts-h3"] satisfies BenchmarkPolicyId[]) {
+      searchDiagnostics.length = 0;
+      const decision = benchmarkPolicyDecision(
+        policy,
+        benchmarkDb,
+        state,
+        [seededRnd(1), seededRnd(2)],
+        [deckA.axes, deckB.axes],
+        [deckA.ids, deckB.ids],
+        searchDiagnostics,
+      );
+
+      expect(() => applyDecision(benchmarkDb, state, decision), policy).not.toThrow();
+      expect(searchDiagnostics).toHaveLength(1);
+      expect(searchDiagnostics[0]!.policy).toBe(policy);
+      expect(searchDiagnostics[0]!.completedIterations).toBeGreaterThan(0);
+      expect(searchDiagnostics[0]!.opponentProjectionBucketSize).toBeGreaterThanOrEqual(1);
+      expect(typeof searchDiagnostics[0]!.opponentProjectionCollapsed).toBe("boolean");
+    }
+  });
+
+  it("is-mcts h2/h3/h4 policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
+    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10, valueModel: ROLLOUT_VALUE_MODEL });
     const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
     const deckB = findBenchmarkDeck("青葉城西-第三彈測試");
     let state = createGame(benchmarkDb, { seed: 191, decks: [deckA.ids, deckB.ids] });
@@ -296,7 +328,7 @@ describe("M8 benchmark harness", () => {
     hiddenChanged.players[oppo].hand.reverse();
     hiddenChanged.players[oppo].deck.reverse();
     hiddenChanged.players[oppo].setArea.reverse();
-    for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c"] satisfies BenchmarkPolicyId[]) {
+    for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c", "is-mcts-h3", "is-mcts-h4"] satisfies BenchmarkPolicyId[]) {
       const decision = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
       expect(decision.type, policy).toBeTruthy();
       expect(() => applyDecision(benchmarkDb, state, decision), policy).not.toThrow();
@@ -304,5 +336,30 @@ describe("M8 benchmark harness", () => {
       const fromClean = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
       expect(fromHidden, policy).toEqual(fromClean);
     }
+  });
+
+  it("search policy benchmark summary 會輸出 I0 收斂診斷欄位", () => {
+    configureIsmctsBenchmark({ iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0 });
+    const report = runBenchmarkBatch({
+      db: benchmarkDb,
+      decks: [findBenchmarkDeck("烏野-預組"), findBenchmarkDeck("音駒-預組")],
+      policies: ["is-mcts", "random"],
+      seeds: [193],
+      maxSteps: 5000,
+    });
+
+    const diagnostics = report.summary.searchDiagnosticsByPolicy["is-mcts"];
+    expect(diagnostics).toBeTruthy();
+    expect(diagnostics!.decisions).toBeGreaterThan(0);
+    expect(diagnostics!.averageCompletedIterations).toBeGreaterThan(0);
+    expect(diagnostics!.timeoutRate).toBeGreaterThanOrEqual(0);
+    expect(diagnostics!.averageRootVisitEntropy).toBeGreaterThanOrEqual(0);
+    expect(diagnostics!.averageTopTwoVisitGap).toBeGreaterThanOrEqual(0);
+    expect(diagnostics!.averagePathLength).toBeNull();
+    expect(diagnostics!.projectionComparedDecisions).toBe(diagnostics!.decisions);
+    expect(diagnostics!.ambiguousProjectionRate).not.toBeNull();
+    expect(diagnostics!.averageOpponentProjectionBucketSize).toBeGreaterThanOrEqual(1);
+    expect(diagnostics!.decisionAgreementRate).toBeNull();
+    expect(report.matches[0]!.searchDiagnostics.length).toBe(diagnostics!.decisions);
   });
 });

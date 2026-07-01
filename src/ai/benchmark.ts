@@ -4,14 +4,31 @@ import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileI
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { heuristicV1AiDecision } from "./heuristic-v1";
 import { randomAiDecision } from "./random";
-import { createPimcCoachReport } from "./coach";
+import { createPimcCoachReport, enumerateCandidates } from "./coach";
+import type { CoachReport } from "./coach";
 import { createIsmctsReport } from "./ismcts";
+import { createMoIsmctsReport, observableProjection } from "./mo-ismcts";
 import type { DeckAxis } from "./benchmark-fixtures";
+import type { ValueModel } from "./rollout-value";
 
 // [Claude 2026-06-22] Phase F PIMC benchmark policy：pimc＝現況基準（無 EV cut）；
 // pimc-v2＝S1（EV cut@valueCutHorizon），已 A/B PASS、default-on。兩者共用同一 sample budget，方便同預算 A/B。
 // [Claude 2026-06-23] Phase G：is-mcts＝SO-ISMCTS。成本單位是 iteration（≠ PIMC sample），故 A/B 一律同 wall-clock。
-export type BenchmarkPolicyId = "random" | "heuristic-v1" | "pimc" | "pimc-v2" | "is-mcts" | "is-mcts-h2" | "is-mcts-h2b" | "is-mcts-h2c" | HeuristicV2ProfileId;
+// [Codex 2026-06-30] Phase I：mo-ismcts 只接 benchmark policy，尚不接 live opponent/UI。
+export type BenchmarkPolicyId =
+  | "random"
+  | "heuristic-v1"
+  | "pimc"
+  | "pimc-v2"
+  | "is-mcts"
+  | "is-mcts-h2"
+  | "is-mcts-h2b"
+  | "is-mcts-h2c"
+  | "is-mcts-h3"
+  | "is-mcts-h4"
+  | "mo-ismcts"
+  | "mo-ismcts-h3"
+  | HeuristicV2ProfileId;
 
 // [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
 // sample budget 是強度/速度的旋鈕（屬「模型能力」gate），先給保守可跑的初探預設，CLI 可覆寫。
@@ -54,6 +71,8 @@ export interface IsmctsBenchmarkConfig {
   pressureShapingEpsilon: number;
   /** [Codex 2026-06-29] Phase H H2B/H2C：root tie-break winRate delta。 */
   rootPressureTieBreakDelta: number;
+  /** [Codex 2026-06-30] Phase H H3：benchmark-only 候選 value model，僅 h3 policy 使用。 */
+  valueModel?: ValueModel;
 }
 
 const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
@@ -119,6 +138,7 @@ export interface MatchResult {
   lostBy: [number, number];
   lostReasonsByPlayer: [Partial<Record<LostReason, number>>, Partial<Record<LostReason, number>>];
   stats: MatchStats;
+  searchDiagnostics: SearchDecisionDiagnostics[];
   invariants: [PlayerInvariant, PlayerInvariant];
   error?: string;
   logTail: string[];
@@ -166,6 +186,39 @@ export interface DefenseSkillNonUseStats {
 export interface PlayQualityStats {
   lowPointDeploy: Record<"toss" | "attack", LowPointDeployStats>;
   defenseSkillNonUse: DefenseSkillNonUseStats;
+}
+
+export interface SearchDecisionDiagnostics {
+  policy: BenchmarkPolicyId;
+  player: PlayerId;
+  pendingType: Decision["type"];
+  completedIterations: number;
+  requestedIterations: number;
+  timedOut: boolean;
+  recommendationCount: number;
+  rootVisitEntropy: number;
+  topTwoVisitGap: number;
+  averagePathLength: number | null;
+  opponentProjectionBucketSize: number | null;
+  opponentProjectionCollapsed: boolean | null;
+  agreementPolicy?: BenchmarkPolicyId;
+  agreesWithPolicy?: boolean | null;
+}
+
+export interface SearchDiagnosticsSummary {
+  decisions: number;
+  completedIterations: number;
+  averageCompletedIterations: number;
+  timeoutRate: number;
+  averageRootVisitEntropy: number;
+  averageTopTwoVisitGap: number;
+  averagePathLength: number | null;
+  projectionComparedDecisions: number;
+  ambiguousProjectionRate: number | null;
+  averageOpponentProjectionBucketSize: number | null;
+  agreementPolicy?: BenchmarkPolicyId;
+  comparedDecisions: number;
+  decisionAgreementRate: number | null;
 }
 
 export interface ActionImpactStats {
@@ -232,6 +285,7 @@ export interface BatchSummary {
   setWinsByReason: Partial<Record<LostReason, number>>;
   lostReasons: Partial<Record<LostReason, number>>;
   playQualityByPlayer: [PlayQualitySummary, PlayQualitySummary];
+  searchDiagnosticsByPolicy: Partial<Record<BenchmarkPolicyId, SearchDiagnosticsSummary>>;
 }
 
 export interface PlayQualitySummary {
@@ -287,6 +341,7 @@ export interface MatrixSummary {
   setWinsByReason: Partial<Record<LostReason, number>>;
   lostReasons: Partial<Record<LostReason, number>>;
   playQualityByPlayer: [PlayQualitySummary, PlayQualitySummary];
+  searchDiagnosticsByPolicy: Partial<Record<BenchmarkPolicyId, SearchDiagnosticsSummary>>;
 }
 
 export interface MatrixReport {
@@ -317,6 +372,76 @@ function other(p: PlayerId): PlayerId {
   return p === 0 ? 1 : 0;
 }
 
+function rootVisitEntropy(report: CoachReport): number {
+  const counts = report.recommendations.map((item) => item.sampleCount).filter((count) => count > 0);
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total <= 0) return 0;
+  return counts.reduce((entropy, count) => {
+    const p = count / total;
+    return entropy - p * Math.log2(p);
+  }, 0);
+}
+
+function topTwoVisitGap(report: CoachReport): number {
+  const counts = report.recommendations.map((item) => item.sampleCount).sort((a, b) => b - a);
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  if (total <= 0) return 0;
+  if (counts.length === 1) return 1;
+  return ((counts[0] ?? 0) - (counts[1] ?? 0)) / total;
+}
+
+function searchDiagnosticsFromReport(
+  db: CardDb,
+  state: GameState,
+  policy: BenchmarkPolicyId,
+  player: PlayerId,
+  pendingType: Decision["type"],
+  report: CoachReport,
+  candidateLimit: number,
+): SearchDecisionDiagnostics {
+  const projection = opponentProjectionDiagnostics(db, state, player, report, candidateLimit);
+  return {
+    policy,
+    player,
+    pendingType,
+    completedIterations: report.completedSamples,
+    requestedIterations: report.requestedSamplesPerAction,
+    timedOut: report.timedOut,
+    recommendationCount: report.recommendations.length,
+    rootVisitEntropy: rootVisitEntropy(report),
+    topTwoVisitGap: topTwoVisitGap(report),
+    // SO report does not expose tree path length yet. Phase I I1b/MO can fill this without changing report shape.
+    averagePathLength: null,
+    opponentProjectionBucketSize: projection?.bucketSize ?? null,
+    opponentProjectionCollapsed: projection?.collapsed ?? null,
+  };
+}
+
+function opponentProjectionDiagnostics(
+  db: CardDb,
+  state: GameState,
+  actor: PlayerId,
+  report: CoachReport,
+  candidateLimit: number,
+): { bucketSize: number; collapsed: boolean } | null {
+  if (!state.pendingDecision) return null;
+  const viewer = other(actor);
+  let candidates: Decision[];
+  try {
+    candidates = enumerateCandidates(db, state, candidateLimit, report.fallbackDecision);
+  } catch {
+    return null;
+  }
+  const bestKey = observableProjection(report.bestAction.decision, { actor, viewer, before: state });
+  const selfKeys = new Set<string>();
+  for (const decision of candidates) {
+    const key = observableProjection(decision, { actor, viewer, before: state });
+    if (key === bestKey) selfKeys.add(JSON.stringify(decision));
+  }
+  const bucketSize = selfKeys.size;
+  return { bucketSize, collapsed: bucketSize > 1 };
+}
+
 export function benchmarkPolicyDecision(
   policy: BenchmarkPolicyId,
   db: CardDb,
@@ -324,10 +449,27 @@ export function benchmarkPolicyDecision(
   randomByPlayer: [() => number, () => number],
   deckAxesByPlayer: readonly [readonly DeckAxis[], readonly DeckAxis[]] = [[], []],
   knownDecksByPlayer?: readonly [readonly string[], readonly string[]],
+  searchDiagnostics?: SearchDecisionDiagnostics[],
 ): Decision {
   const pending = state.pendingDecision;
   if (!pending) throw new Error("目前沒有待決策，benchmark 無法推進");
   const player = pending.player as PlayerId;
+  if (policy === "mo-ismcts" || policy === "mo-ismcts-h3") {
+    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
+    const report = createMoIsmctsReport(db, state, {
+      perspectivePlayer: player,
+      knownDecks: knownDecksByPlayer,
+      iterations: ismctsBenchmarkConfig.iterations,
+      timeLimitMs: ismctsBenchmarkConfig.timeLimitMs,
+      explorationC: ismctsBenchmarkConfig.explorationC,
+      candidateLimit: ismctsBenchmarkConfig.candidateLimit,
+      leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
+      rolloutPolicy,
+      valueModel: policy === "mo-ismcts-h3" ? ismctsBenchmarkConfig.valueModel : undefined,
+    });
+    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));
+    return report.bestAction.decision;
+  }
   if (policy === "pimc" || policy === "pimc-v2") {
     const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
     const report = createPimcCoachReport(db, state, {
@@ -343,9 +485,10 @@ export function benchmarkPolicyDecision(
       // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。
       valueCutHorizon: policy === "pimc-v2" ? pimcBenchmarkConfig.valueCutHorizon : undefined,
     });
+    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, pimcBenchmarkConfig.candidateLimit));
     return report.bestAction.decision;
   }
-  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c") {
+  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4") {
     const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
     const report = createIsmctsReport(db, state, {
       perspectivePlayer: player,
@@ -357,10 +500,12 @@ export function benchmarkPolicyDecision(
       candidateLimit: ismctsBenchmarkConfig.candidateLimit,
       leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
       pressureShapingEpsilon: policy === "is-mcts-h2" ? ismctsBenchmarkConfig.pressureShapingEpsilon : 0,
-      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
-      rootPairQualityTieBreak: policy === "is-mcts-h2c",
+      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
+      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4",
+      valueModel: policy === "is-mcts-h3" || policy === "is-mcts-h4" ? ismctsBenchmarkConfig.valueModel : undefined,
       rolloutPolicy,
     });
+    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));
     return report.bestAction.decision;
   }
   if (policy === "heuristic-v2-personality") return heuristicAiDecision(db, state, heuristicProfileForDeckAxes(deckAxesByPlayer[player]));
@@ -685,7 +830,15 @@ function logTail(state: GameState, count = 8): string[] {
   });
 }
 
-function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOutcome, steps: number, error?: string, playQuality?: readonly [PlayQualityStats, PlayQualityStats]): MatchResult {
+function resultFromState(
+  config: MatchConfig,
+  state: GameState,
+  outcome: MatchOutcome,
+  steps: number,
+  error?: string,
+  playQuality?: readonly [PlayQualityStats, PlayQualityStats],
+  searchDiagnostics: SearchDecisionDiagnostics[] = [],
+): MatchResult {
   const winner = state.winner;
   const winnerPolicy = winner === null ? null : config.policies[winner];
   const lost = collectLostStats(state);
@@ -704,6 +857,7 @@ function resultFromState(config: MatchConfig, state: GameState, outcome: MatchOu
     lostBy: lost.lostBy,
     lostReasonsByPlayer: lost.lostReasonsByPlayer,
     stats: collectMatchStats(state, playQuality),
+    searchDiagnostics: [...searchDiagnostics],
     invariants: [
       playerInvariant(state, 0, config.decks[0].ids.length),
       playerInvariant(state, 1, config.decks[1].ids.length),
@@ -720,6 +874,7 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
     seededRnd(config.seed * 5 + 17),
   ];
   const playQuality: [PlayQualityStats, PlayQualityStats] = [blankPlayQualityStats(), blankPlayQualityStats()];
+  const searchDiagnostics: SearchDecisionDiagnostics[] = [];
 
   let state: GameState;
   try {
@@ -733,25 +888,33 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
       decks: [config.decks[0].ids, config.decks[1].ids],
       skipDeckValidation: true,
     });
-    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error), playQuality);
+    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error), playQuality, searchDiagnostics);
   }
 
   for (let step = 0; step < maxSteps; step++) {
-    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step, undefined, playQuality);
+    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step, undefined, playQuality, searchDiagnostics);
     const pending = state.pendingDecision;
-    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision", playQuality);
+    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision", playQuality, searchDiagnostics);
 
     try {
       const player = pending.player as PlayerId;
-      const decision = benchmarkPolicyDecision(config.policies[player], config.db, state, randomByPlayer, [config.decks[0].axes ?? [], config.decks[1].axes ?? []], [config.decks[0].ids, config.decks[1].ids]);
+      const decision = benchmarkPolicyDecision(
+        config.policies[player],
+        config.db,
+        state,
+        randomByPlayer,
+        [config.decks[0].axes ?? [], config.decks[1].axes ?? []],
+        [config.decks[0].ids, config.decks[1].ids],
+        searchDiagnostics,
+      );
       recordPlayQualityDecision(config.db, state, decision, playQuality[player]);
       state = applyDecision(config.db, state, decision);
     } catch (error) {
-      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error), playQuality);
+      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error), playQuality, searchDiagnostics);
     }
   }
 
-  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`, playQuality);
+  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`, playQuality, searchDiagnostics);
 }
 
 function wilson(successes: number, total: number): ConfidenceInterval {
@@ -794,6 +957,56 @@ function summarizePlayQuality(matches: MatchResult[], player: PlayerId): PlayQua
     averageOpPressure: op.count === 0 ? 0 : op.total / op.count,
     opPressureSamples: op.count,
   };
+}
+
+function summarizeSearchDiagnostics(matches: MatchResult[]): Partial<Record<BenchmarkPolicyId, SearchDiagnosticsSummary>> {
+  const byPolicy = new Map<BenchmarkPolicyId, SearchDecisionDiagnostics[]>();
+  for (const match of matches) {
+    for (const item of match.searchDiagnostics) {
+      const bucket = byPolicy.get(item.policy) ?? [];
+      bucket.push(item);
+      byPolicy.set(item.policy, bucket);
+    }
+  }
+
+  const summaries: Partial<Record<BenchmarkPolicyId, SearchDiagnosticsSummary>> = {};
+  for (const [policy, items] of byPolicy) {
+    const decisions = items.length;
+    const completedIterations = items.reduce((sum, item) => sum + item.completedIterations, 0);
+    const timedOut = items.filter((item) => item.timedOut).length;
+    const entropy = items.reduce((sum, item) => sum + item.rootVisitEntropy, 0);
+    const topTwoGap = items.reduce((sum, item) => sum + item.topTwoVisitGap, 0);
+    const pathItems = items.filter((item) => item.averagePathLength !== null);
+    const projectionItems = items.filter((item) => item.opponentProjectionBucketSize !== null);
+    const compared = items.filter((item) => item.agreesWithPolicy !== undefined && item.agreesWithPolicy !== null);
+    const agreementPolicy = compared.find((item) => item.agreementPolicy)?.agreementPolicy;
+    summaries[policy] = {
+      decisions,
+      completedIterations,
+      averageCompletedIterations: decisions === 0 ? 0 : completedIterations / decisions,
+      timeoutRate: decisions === 0 ? 0 : timedOut / decisions,
+      averageRootVisitEntropy: decisions === 0 ? 0 : entropy / decisions,
+      averageTopTwoVisitGap: decisions === 0 ? 0 : topTwoGap / decisions,
+      averagePathLength:
+        pathItems.length === 0
+          ? null
+          : pathItems.reduce((sum, item) => sum + (item.averagePathLength ?? 0), 0) / pathItems.length,
+      projectionComparedDecisions: projectionItems.length,
+      ambiguousProjectionRate:
+        projectionItems.length === 0
+          ? null
+          : projectionItems.filter((item) => item.opponentProjectionCollapsed === true).length / projectionItems.length,
+      averageOpponentProjectionBucketSize:
+        projectionItems.length === 0
+          ? null
+          : projectionItems.reduce((sum, item) => sum + (item.opponentProjectionBucketSize ?? 0), 0) / projectionItems.length,
+      ...(agreementPolicy ? { agreementPolicy } : {}),
+      comparedDecisions: compared.length,
+      decisionAgreementRate:
+        compared.length === 0 ? null : compared.filter((item) => item.agreesWithPolicy === true).length / compared.length,
+    };
+  }
+  return summaries;
 }
 
 export function summarizeMatches(matches: MatchResult[]): BatchSummary {
@@ -841,6 +1054,7 @@ export function summarizeMatches(matches: MatchResult[]): BatchSummary {
     setWinsByReason,
     lostReasons,
     playQualityByPlayer: [summarizePlayQuality(matches, 0), summarizePlayQuality(matches, 1)],
+    searchDiagnosticsByPolicy: summarizeSearchDiagnostics(matches),
   };
 }
 
@@ -912,6 +1126,7 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
   let rallyTotal = 0;
   let setTotal = 0;
   const playQualityMatches: [MatchResult[], MatchResult[]] = [[], []];
+  const allMatches: MatchResult[] = [];
 
   for (const pair of pairs) {
     totalGames += pair.summary.total;
@@ -930,6 +1145,7 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
       addCount(setWinsByReason, reason, count);
     }
     for (const match of pair.matches) {
+      allMatches.push(match);
       playQualityMatches[0].push(match);
       playQualityMatches[1].push(match);
       if (match.outcome !== "complete" || match.winner === null) continue;
@@ -960,6 +1176,7 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
       setWinsByReason,
       lostReasons,
       playQualityByPlayer: [summarizePlayQuality(playQualityMatches[0], 0), summarizePlayQuality(playQualityMatches[1], 1)],
+      searchDiagnosticsByPolicy: summarizeSearchDiagnostics(allMatches),
     },
     pairs,
   };

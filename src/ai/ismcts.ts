@@ -10,7 +10,7 @@ import {
   type CoachActionEstimate,
   type CoachReport,
 } from "./coach";
-import { evaluatePressureScore, evaluateShapedStateValue } from "./rollout-value";
+import { evaluatePressureScore, evaluateShapedStateValue, type ValueModel } from "./rollout-value";
 import { pickDeployName } from "./util";
 
 /**
@@ -57,15 +57,17 @@ export interface IsmctsOptions {
    * 預設 0（off），待行為閘＋強度守門閘 A/B PASS 後才可 default-on。
    */
   pressureShapingEpsilon?: number;
+  /** [Codex 2026-06-30] Phase H H3：benchmark-only 候選 value model，不傳則沿用 live model。 */
+  valueModel?: ValueModel;
   /**
-   * [Codex 2026-06-29] Phase H H2B：root 最終選手 tie-break。
-   * 0（預設＝off）；>0 時，只在候選 winRate 距 robust best 不超過此 delta 時，
-   * 用公開壓制力／攻擊點數品質打破平手。
+   * [Codex 2026-07-01] Phase H H4：root 最終選手 tie-break。
+   * 預設 0.04（live SO default-on）；benchmark baseline 會顯式傳 0 以保留舊 SO 對照。
+   * >0 時，只在候選 winRate 距 robust best 不超過此 delta 時，用公開壓制力／攻擊點數品質打破平手。
    */
   rootPressureTieBreakDelta?: number;
   /**
-   * [Codex 2026-06-29] Phase H H2C：root tie-break 的拖球候選改看「拖球＋後續最佳攻擊」組合品質。
-   * 只在 rootPressureTieBreakDelta 開啟時生效；用於避免把攻擊高的牌誤放到拖球區。
+   * [Codex 2026-07-01] Phase H H4：root tie-break 的拖球候選改看「拖球＋後續最佳攻擊」組合品質。
+   * 預設 true（live SO default-on）；只在 rootPressureTieBreakDelta 開啟時生效。
    */
   rootPairQualityTieBreak?: boolean;
   /**
@@ -84,6 +86,8 @@ export interface IsmctsOptions {
 const DEFAULT_ITERATIONS = 800;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
 const DEFAULT_CANDIDATE_LIMIT = 8;
+const DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA = 0.04;
+const DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK = true;
 const ROOT_TIE_BREAK_MIN_VISIT_RATIO = 0.5;
 /** 每 iteration 換 world 的 seed 間距（大質數，避免抽樣相關）。 */
 const SEED_STRIDE = 1000003;
@@ -150,9 +154,10 @@ function leafEval(
   rolloutPolicy: HeuristicV2ProfileId,
   horizon: number,
   pressureShapingEpsilon: number,
+  valueModel: ValueModel | undefined,
 ): number {
   if (cur.phase === "gameOver") return cur.winner === perspective ? 1 : 0;
-  if (horizon <= 0) return clamp01(evaluateShapedStateValue(db, cur, perspective, pressureShapingEpsilon));
+  if (horizon <= 0) return clamp01(evaluateShapedStateValue(db, cur, perspective, pressureShapingEpsilon, valueModel));
   let s = cur;
   for (let step = 0; step < horizon; step++) {
     if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
@@ -164,7 +169,7 @@ function leafEval(
     }
   }
   if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
-  return clamp01(evaluateShapedStateValue(db, s, perspective, pressureShapingEpsilon));
+  return clamp01(evaluateShapedStateValue(db, s, perspective, pressureShapingEpsilon, valueModel));
 }
 
 interface LegalEntry {
@@ -313,6 +318,7 @@ function iterate(
   leafRolloutHorizon: number,
   opponentModel: "heuristic" | "adversarial",
   pressureShapingEpsilon: number,
+  valueModel: ValueModel | undefined,
 ): number {
   let node = root;
   let cur = world;
@@ -371,7 +377,7 @@ function iterate(
   }
 
   // ---- Leaf evaluation（方案 A＝純 V；方案 B＝淺 rollout 後 V）----
-  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon, pressureShapingEpsilon);
+  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon, pressureShapingEpsilon, valueModel);
 
   // ---- Backup（統計掛在子節點：path 上每條 edge 的目標節點）----
   for (const step of path) {
@@ -438,8 +444,9 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const leafRolloutHorizon = Math.max(0, Math.floor(options.leafRolloutHorizon ?? 0));
   const opponentModel = options.opponentModel ?? "heuristic";
   const pressureShapingEpsilon = Math.max(0, options.pressureShapingEpsilon ?? 0);
-  const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? 0);
-  const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? false;
+  const valueModel = options.valueModel;
+  const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA);
+  const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
   // 沒 timeLimitMs 才退回固定 DEFAULT_ITERATIONS（純迭代模式，測試用）。避免 800 上限在 ~0.5s 就吃掉 think budget。
@@ -461,7 +468,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
       break;
     }
     const world = determinizeHiddenState(state, perspective, knownDecks, baseSeed + iter * SEED_STRIDE);
-    iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel, pressureShapingEpsilon);
+    iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel, pressureShapingEpsilon, valueModel);
     completed++;
   }
 

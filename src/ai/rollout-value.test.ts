@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameState, PlayerId } from "../engine/types";
 import { benchmarkDb } from "./benchmark-fixtures";
-import { evaluatePressureScore, evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, VALUE_FEATURE_DIM } from "./rollout-value";
+import { evaluatePressureScore, evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, VALUE_FEATURE_DIM, VALUE_FEATURE_NAMES } from "./rollout-value";
 
 // [Claude 2026-06-22] S1a：價值函數只讀公開 scalar，用最小 fixture 聚焦特徵→值映射與公平性。
 function fake(patch: {
@@ -28,6 +28,22 @@ function fake(patch: {
     dp: patch.dp ?? null,
     servingPlayer: patch.serving ?? 0,
     turnPlayer: patch.turn ?? 0,
+  } as unknown as GameState;
+}
+
+function pointState(attackUid: number, attackCardId: string): GameState {
+  const court = { serve: [], blockCenter: [], blockSides: [], receive: [], toss: [], attack: [], drop: [], eventArea: [] };
+  return {
+    players: [
+      { ...court, attack: [attackUid], setArea: [10], hand: [], deck: [] },
+      { ...court, setArea: [20], hand: [], deck: [] },
+    ],
+    cards: { [attackUid]: attackCardId },
+    modifiers: [],
+    op: null,
+    dp: null,
+    servingPlayer: 0,
+    turnPlayer: 0,
   } as unknown as GameState;
 }
 
@@ -62,6 +78,15 @@ describe("rollout-value 價值函數", () => {
     const base = fake({ s0: 1, s1: 2, h0: 5, h1: 4, d0: 30, d1: 28, oppHand: [9, 8, 7, 6], oppDeck: [1, 2, 3], oppSet: [11, 12] });
     const flipped = fake({ s0: 1, s1: 2, h0: 5, h1: 4, d0: 30, d1: 28, oppHand: [6, 7, 8, 9], oppDeck: [3, 2, 1], oppSet: [12, 11] });
     expect(evaluateStateValue(flipped, 0)).toBe(evaluateStateValue(base, 0));
+  });
+
+  it("Phase H 點數特徵會看見攻擊區有效攻擊點數", () => {
+    const attackPoint = VALUE_FEATURE_NAMES.indexOf("attackPointDiff");
+    const attackLine = VALUE_FEATURE_NAMES.indexOf("attackLinePointDiff");
+    const low = extractValueFeatures(pointState(1, "HV-P01-043"), 0, benchmarkDb);
+    const high = extractValueFeatures(pointState(2, "HV-D01-006"), 0, benchmarkDb);
+    expect(high[attackPoint]).toBeGreaterThan(low[attackPoint]!);
+    expect(high[attackLine]).toBeGreaterThan(low[attackLine]!);
   });
 
   it("Phase H 壓制力分數不讀對手隱藏內容", () => {

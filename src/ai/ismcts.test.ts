@@ -74,6 +74,19 @@ describe("M8 Phase G SO-ISMCTS", () => {
     expect(createIsmctsReport(benchmarkDb, hiddenChanged, opts).recommendations).toEqual(first.recommendations);
   });
 
+  it("Phase H H4 live default 等同 root pair tie-break delta 0.04", () => {
+    const { state, decks } = setupServeDecision();
+    const base = { ...baseOptions(814), knownDecks: decks };
+    const implicit = createIsmctsReport(benchmarkDb, state, base);
+    const explicit = createIsmctsReport(benchmarkDb, state, {
+      ...base,
+      rootPressureTieBreakDelta: 0.04,
+      rootPairQualityTieBreak: true,
+    });
+    expect(implicit.bestAction).toEqual(explicit.bestAction);
+    expect(implicit.recommendations).toEqual(explicit.recommendations);
+  });
+
   it("Phase H root tie-break score 會偏好更高攻擊點的登場", () => {
     const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
     const deckB = findBenchmarkDeck("青葉城西-第三彈測試");

@@ -1,11 +1,12 @@
 import process from "node:process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
 import type { BatchReport, BenchmarkPolicyId, MatrixMode, MatrixReport } from "./benchmark";
 import { configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
 import { createBenchmarkReportEnvelope } from "./benchmark-report";
 import { isHeuristicV2ProfileId } from "./heuristic";
+import type { ValueModel } from "./rollout-value";
 
 const DEFAULTS = {
   deckA: "烏野-預組",
@@ -41,8 +42,33 @@ function numberArg(name: string, fallback: number): number {
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
   if (raw === undefined) return fallback;
-  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || raw === "is-mcts-h2" || raw === "is-mcts-h2b" || raw === "is-mcts-h2c" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、is-mcts-h2、is-mcts-h2b、is-mcts-h2c、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || raw === "is-mcts-h2" || raw === "is-mcts-h2b" || raw === "is-mcts-h2c" || raw === "is-mcts-h3" || raw === "is-mcts-h4" || raw === "mo-ismcts" || raw === "mo-ismcts-h3" || isHeuristicV2ProfileId(raw)) return raw;
+  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、is-mcts-h2、is-mcts-h2b、is-mcts-h2c、is-mcts-h3、is-mcts-h4、mo-ismcts、mo-ismcts-h3、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+}
+
+function isObject(value: unknown): value is { model?: unknown } {
+  return typeof value === "object" && value !== null;
+}
+
+function isValueModel(value: unknown): value is ValueModel {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as ValueModel).weights) &&
+    typeof (value as ValueModel).bias === "number"
+  );
+}
+
+function readValueModel(path: string | undefined): ValueModel | undefined {
+  if (!path) return undefined;
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  const model = isValueModel(parsed)
+    ? parsed
+    : isObject(parsed) && isValueModel(parsed.model)
+      ? parsed.model
+      : undefined;
+  if (!model) throw new Error(`--value-model-file 不是可用的 ValueModel JSON: ${path}`);
+  return model;
 }
 
 function matrixModeArg(): MatrixMode | null {
@@ -60,6 +86,21 @@ function formatPlayQuality(label: string, quality: BatchReport["summary"]["playQ
   return `${label}: M-Throw1 ${formatPercent(quality.lowPointDeployRate)} (${quality.lowPointDeploys}/${quality.lowPointDeployOpportunities}, avg deficit ${quality.averageLowPointDeficit.toFixed(2)}), ` +
     `M-Throw2 ${formatPercent(quality.defenseSkillNonUseRate)} (${quality.defenseSkillNonUses}/${quality.defenseSkillOpportunities}), ` +
     `M-Throw3 OP ${quality.averageOpPressure.toFixed(2)} (${quality.opPressureSamples} samples)`;
+}
+
+function formatSearchDiagnostics(summary: BatchReport["summary"]["searchDiagnosticsByPolicy"]): string[] {
+  return Object.entries(summary).map(([policy, item]) => {
+    const path = item.averagePathLength === null ? "n/a" : item.averagePathLength.toFixed(2);
+    const agreement =
+      item.decisionAgreementRate === null
+        ? "n/a"
+        : `${formatPercent(item.decisionAgreementRate)} (${item.comparedDecisions} decisions vs ${item.agreementPolicy ?? "baseline"})`;
+    const ambiguous =
+      item.ambiguousProjectionRate === null
+        ? "n/a"
+        : `${formatPercent(item.ambiguousProjectionRate)} (avg bucket ${item.averageOpponentProjectionBucketSize?.toFixed(2) ?? "n/a"})`;
+    return `${policy}: decisions=${item.decisions}, avg iterations=${item.averageCompletedIterations.toFixed(1)}, timeout=${formatPercent(item.timeoutRate)}, entropy=${item.averageRootVisitEntropy.toFixed(2)}, top2 gap=${item.averageTopTwoVisitGap.toFixed(2)}, avg path=${path}, ambiguous projection=${ambiguous}, SO agreement=${agreement}`;
+  });
 }
 
 function printDecks(): void {
@@ -101,7 +142,7 @@ function run(): void {
     });
   }
   // [Claude 2026-06-23] Phase G：IS-MCTS 旋鈕（iterations／同 wall-clock 的 time-ms／UCB c／候選寬度）。
-  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c")) {
+  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "mo-ismcts" || p === "mo-ismcts-h3")) {
     configureIsmctsBenchmark({
       ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
       ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
@@ -109,6 +150,7 @@ function run(): void {
       ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
       ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
       ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
+      ...(argValue("value-model-file") !== undefined ? { valueModel: readValueModel(argValue("value-model-file")) } : {}),
       ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
       ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
     });
@@ -149,6 +191,11 @@ function run(): void {
     console.log("Phase H play quality:");
     console.log(formatPlayQuality("P0", report.summary.playQualityByPlayer[0]));
     console.log(formatPlayQuality("P1", report.summary.playQualityByPlayer[1]));
+    const searchDiagnostics = formatSearchDiagnostics(report.summary.searchDiagnosticsByPolicy);
+    if (searchDiagnostics.length > 0) {
+      console.log("Search diagnostics:");
+      for (const line of searchDiagnostics) console.log(line);
+    }
     const failedPairs = report.pairs.filter((pair) => pair.summary.errored > 0 || pair.summary.maxSteps > 0);
     if (failedPairs.length > 0) {
       console.log("Failed pairs:");
@@ -191,6 +238,11 @@ function run(): void {
   console.log("Phase H play quality:");
   console.log(formatPlayQuality("P0", summary.playQualityByPlayer[0]));
   console.log(formatPlayQuality("P1", summary.playQualityByPlayer[1]));
+  const searchDiagnostics = formatSearchDiagnostics(summary.searchDiagnosticsByPolicy);
+  if (searchDiagnostics.length > 0) {
+    console.log("Search diagnostics:");
+    for (const line of searchDiagnostics) console.log(line);
+  }
 
   const failed = report.matches.filter((match) => match.outcome !== "complete");
   if (failed.length > 0) {

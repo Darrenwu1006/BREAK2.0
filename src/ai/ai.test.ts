@@ -277,6 +277,34 @@ describe("M5 Heuristic v2 決策品質", () => {
     expect(heuristicAiDecision(db, s, "heuristic-v2-block")).toEqual({ type: "effect-confirm", accept: true });
   });
 
+  it("會接受零成本且直接提高當前攻擊點數的 gate", () => {
+    const s = bareState(["HV-P01-043", "HV-P01-050", "HV-P01-046"]);
+    const source = s.players[0].hand[0]!;
+    removeEverywhere(s, 0, source);
+    s.players[0].attack = [source];
+    s.phase = "attack";
+    s.pendingDecision = { player: 0, type: "effect-confirm" };
+    s.effectCtx = {
+      player: 0,
+      source,
+      frames: [],
+      lastTarget: null,
+      triggerUid: null,
+      turn1: false,
+      anyExecuted: false,
+      awaiting: {
+        kind: "confirm",
+        what: "gate",
+        costs: [],
+        then: [{ op: "addParam", target: "self", param: "attack", amount: 5 }],
+        prompt: "use free attack buff",
+      },
+      desc: "木兎 光太郎 的登場技能",
+    };
+
+    expect(heuristicAiDecision(db, s, "heuristic-v2-burst")).toEqual({ type: "effect-confirm", accept: true });
+  });
+
   it("14 副牌組皆可用 heuristic v2 跑完整場且維持 40 張不變量", () => {
     for (let i = 0; i < allDecks.length; i++) {
       const a = allDecks[i]!;

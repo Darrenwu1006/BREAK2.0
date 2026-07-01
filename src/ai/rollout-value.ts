@@ -28,13 +28,33 @@ export const VALUE_FEATURE_NAMES = [
   "courtDiff", // 我 − 對手 場上總在場張數（serve/receive/toss/attack/block 合計）
   "dropDiff", // 我 − 對手 棄牌區張數（資源消耗）
   "eventDiff", // 我 − 對手 事件區張數（持續性佈局）
+  // [Codex 2026-06-30] Phase H H-W2/W3：補公開場面有效點數，避免 leaf 只看「張數」看不到攻防品質。
+  "attackPointDiff", // 我 − 對手 攻擊區頂端有效攻擊點數
+  "attackLinePointDiff", // 我 − 對手 托球+攻擊線有效點數
+  "defensePointDiff", // 我 − 對手 接球+攔網有效防守點數
 ] as const;
 
 export type ValueFeatureName = (typeof VALUE_FEATURE_NAMES)[number];
 export const VALUE_FEATURE_DIM = VALUE_FEATURE_NAMES.length;
 
+function top(stack: readonly number[]): number | null {
+  return stack.length > 0 ? stack[stack.length - 1]! : null;
+}
+
+function topParam(db: CardDb | undefined, state: GameState, player: PlayerState, area: "block" | "receive" | "toss" | "attack"): number {
+  if (!db) return 0;
+  if (area === "block") {
+    const center = top(player.blockCenter);
+    const centerValue = center === null ? 0 : effParam(db, state, center, "block") ?? 0;
+    const sideValue = player.blockSides.reduce((sum, uid) => sum + (effParam(db, state, uid, "block") ?? 0), 0);
+    return centerValue + sideValue;
+  }
+  const uid = top(player[area]);
+  return uid === null ? 0 : effParam(db, state, uid, area) ?? 0;
+}
+
 /** 抽取價值函數特徵向量（順序對齊 VALUE_FEATURE_NAMES）。只讀公開 scalar。 */
-export function extractValueFeatures(state: GameState, perspective: PlayerId): number[] {
+export function extractValueFeatures(state: GameState, perspective: PlayerId, db?: CardDb): number[] {
   const me = perspective;
   const opp = (perspective === 0 ? 1 : 0) as PlayerId;
   const mine = state.players[me];
@@ -48,6 +68,12 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId): n
   const blockCount = (p: typeof mine) => p.blockCenter.length + p.blockSides.length;
   const courtCount = (p: typeof mine) =>
     p.serve.length + p.receive.length + p.toss.length + p.attack.length + blockCount(p);
+  const mineAttack = topParam(db, state, mine, "attack");
+  const theirAttack = topParam(db, state, their, "attack");
+  const mineAttackLine = topParam(db, state, mine, "toss") + mineAttack;
+  const theirAttackLine = topParam(db, state, their, "toss") + theirAttack;
+  const mineDefense = topParam(db, state, mine, "receive") + topParam(db, state, mine, "block");
+  const theirDefense = topParam(db, state, their, "receive") + topParam(db, state, their, "block");
 
   return [
     mine.setArea.length - their.setArea.length,
@@ -62,6 +88,9 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId): n
     courtCount(mine) - courtCount(their),
     mine.drop.length - their.drop.length,
     mine.eventArea.length - their.eventArea.length,
+    mineAttack - theirAttack,
+    mineAttackLine - theirAttackLine,
+    mineDefense - theirDefense,
   ];
 }
 
@@ -74,30 +103,32 @@ export interface ValueModel {
 }
 
 /**
- * [Claude 2026-06-23] 凍結係數。由 `npm run fit:rollout-value -- --games 400 --sample-every 4` 擬合產生並貼回。
- * setLifeDiff 主導（1.06，正向），blockDiff（0.38，攔網佈署）與 handDiff（0.19）次之，皆符合直覺；
- * 加入場上發展特徵後 AUC 0.78→0.81、acc 69.4%→71.8%。重擬合請更新本區塊與 provenance。
+ * [Codex 2026-07-01] Phase H H4 default-on 係數。
+ * 來源＝H3 candidate（is-mcts outcome row cache g80）＋SO-H4 root pair tie-break 大守門 PASS。
+ * 注意：H4 的上線範圍只包含 live SO-ISMCTS；MO 仍是 benchmark-only，待 Phase I I4 用當下 live model 重跑自己的雙閘。
  */
 export const ROLLOUT_VALUE_MODEL: ValueModel = {
-  weights: [1.0557, 0.1429, 0.0147, 0.1874, 0.0332, 0.0257, 0.0976, 0.1196, 0.3760, -0.1203, -0.0728, 0.1256],
-  bias: 0.0,
-  provenance: "fit games=400 samples=32664 logloss=0.5297 acc=71.8% auc=0.8061 [Claude 2026-06-23]",
+  weights: [
+    1.6047480620171253,
+    0.13933774202857876,
+    0,
+    0.28120472769083127,
+    -0.06160478069224429,
+    -0.22083047076638376,
+    -0.02064792168222764,
+    -0.35911542999440854,
+    -0.3052494204120485,
+    0.02934524962116886,
+    -0.12561231052949046,
+    -0.10651494510836863,
+    0,
+    0.2220708438893249,
+    0.02687112911904538,
+  ],
+  bias: -3.252606517456513e-17,
+  provenance:
+    "Phase H H4 default-on: H3 fit outcomePolicy=is-mcts outcomeGames=80 rows=3300 logloss=0.5645 acc=70.1% auc=0.7747 pairAcc=67.5%; SO-H4 rootPairQualityTieBreak delta=0.04 gate PASS (mirror vs current SO 21/40, M-Throw1 5.4% vs 11.3%, M-Throw2 18.6% vs 30.0%, OP 3.26 vs 2.31; vs heuristic 27/40) [Codex 2026-07-01]",
 };
-
-function top(stack: readonly number[]): number | null {
-  return stack.length > 0 ? stack[stack.length - 1]! : null;
-}
-
-function topParam(db: CardDb, state: GameState, player: PlayerState, area: "block" | "receive" | "toss" | "attack"): number {
-  if (area === "block") {
-    const center = top(player.blockCenter);
-    const centerValue = center === null ? 0 : effParam(db, state, center, "block") ?? 0;
-    const sideValue = player.blockSides.reduce((sum, uid) => sum + (effParam(db, state, uid, "block") ?? 0), 0);
-    return centerValue + sideValue;
-  }
-  const uid = top(player[area]);
-  return uid === null ? 0 : effParam(db, state, uid, area) ?? 0;
-}
 
 /**
  * Phase H objective shaping 用的公開壓制力分數。
@@ -135,7 +166,7 @@ export function evaluateShapedStateValue(
   epsilon: number,
   model: ValueModel = ROLLOUT_VALUE_MODEL,
 ): number {
-  const winProb = evaluateStateValue(state, perspective, model);
+  const winProb = evaluateStateValue(state, perspective, model, db);
   if (epsilon <= 0) return winProb;
   return shapeStateValue(winProb, evaluatePressureScore(db, state, perspective), epsilon);
 }
@@ -154,8 +185,9 @@ export function evaluateStateValue(
   state: GameState,
   perspective: PlayerId,
   model: ValueModel = ROLLOUT_VALUE_MODEL,
+  db?: CardDb,
 ): number {
-  const features = extractValueFeatures(state, perspective);
+  const features = extractValueFeatures(state, perspective, db);
   let z = model.bias;
   for (let i = 0; i < features.length; i++) z += features[i]! * (model.weights[i] ?? 0);
   return sigmoid(z);

@@ -865,7 +865,50 @@ function chooseFreeAction(db: CardDb, state: GameState, p: PlayerId, weights: He
 function gateAcceptScore(db: CardDb, state: GameState, p: PlayerId, aw: Extract<Awaiting, { kind: "confirm" }>, weights: HeuristicV2Weights): number {
   if (aw.what === "draw") return (aw.count ?? 1) * 1.8 * weights.drawValue - deckRisk(state, p, weights);
   if (aw.what === "mill") return actionsScore(db, state, p, aw.then, weights) - 1.2 * weights.costValue;
-  return actionsScore(db, state, p, aw.then, weights) - costsScore(aw.costs, weights);
+  const immediatePointGain = immediatePointGainScore(state, aw.then, weights);
+  return actionsScore(db, state, p, aw.then, weights) + immediatePointGain - costsScore(aw.costs, weights);
+}
+
+function immediatePointGainScore(state: GameState, actions: Action[] | undefined, weights: HeuristicV2Weights): number {
+  const ctx = state.effectCtx;
+  if (!ctx) return 0;
+  let score = 0;
+  const visit = (items: Action[] | undefined) => {
+    for (const action of items ?? []) {
+      switch (action.op) {
+        case "addParam": {
+          if (action.amount <= 0) break;
+          const param = action.param === "choose" ? currentNeed(state) : action.param;
+          if (!param) break;
+          let targetUid: number | null = null;
+          if (action.target === "self") targetUid = ctx.source;
+          else if (action.target === "target") targetUid = ctx.lastTarget;
+          else if (action.target === "trigger") targetUid = ctx.triggerUid;
+          if (targetUid !== null && paramContributorAt(state, targetUid, param)) {
+            const demand = phaseParamDemand(state, ctx.player, param, weights);
+            score += action.amount * Math.max(1.8, demand);
+          }
+          break;
+        }
+        case "if":
+          visit(action.then);
+          break;
+        case "gate":
+          visit(action.then);
+          break;
+        case "chooseOne":
+          score += Math.max(0, ...action.options.map((option) => immediatePointGainScore(state, option.actions, weights)));
+          break;
+        case "watch":
+          score += immediatePointGainScore(state, action.actions, weights) * 0.25;
+          break;
+        default:
+          break;
+      }
+    }
+  };
+  visit(actions);
+  return score;
 }
 
 /**

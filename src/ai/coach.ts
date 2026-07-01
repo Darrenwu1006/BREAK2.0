@@ -47,7 +47,7 @@ export interface CoachActionEstimate {
 export interface CoachReport {
   // [Claude 2026-06-23] Phase G：IS-MCTS 報告刻意沿用同一介面（worker/UI/benchmark 零改動），
   // 僅用 kind 區分來源以便除錯。沒有 consumer 對 kind 做 exhaustive switch。
-  kind: "pimc-coach-v1" | "ismcts-coach-v1";
+  kind: "pimc-coach-v1" | "ismcts-coach-v1" | "mo-ismcts-coach-v1";
   perspectivePlayer: PlayerId;
   actingPlayer: PlayerId;
   pendingType: Decision["type"];
@@ -499,7 +499,7 @@ function rollout(
       return {
         outcome: "value-cut",
         winner: null,
-        value: evaluateStateValue(current, perspective),
+        value: evaluateStateValue(current, perspective, undefined, db),
         line: current.log.slice(-6).map(logLine),
       };
     }

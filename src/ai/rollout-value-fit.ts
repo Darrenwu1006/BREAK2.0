@@ -61,8 +61,8 @@ function collect(games: number, seedStart: number, sampleEvery: number, maxSteps
       if (step >= maxSteps) { ok = false; break; }
       if (step % sampleEvery === 0) {
         snapshots.push({
-          x0: extractValueFeatures(state, 0 as PlayerId),
-          x1: extractValueFeatures(state, 1 as PlayerId),
+          x0: extractValueFeatures(state, 0 as PlayerId, benchmarkDb),
+          x1: extractValueFeatures(state, 1 as PlayerId, benchmarkDb),
         });
       }
       const player = state.pendingDecision.player as PlayerId;
