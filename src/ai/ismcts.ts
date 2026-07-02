@@ -71,6 +71,18 @@ export interface IsmctsOptions {
    */
   rootPairQualityTieBreak?: boolean;
   /**
+   * [Claude 2026-07-02] Phase H H5：certainty-conditioned 資源節省 tie-break（benchmark-only，不設預設＝off）。
+   * H4 的 tie-break 方向固定「近似平手→偏高壓制力」，這是修「該打滿卻沒打滿（放水）」的正解；但
+   * 當 robust best 的 winRate 已達 ≥ 此門檻（贏面已近乎確定，非只是分不出高低），同一個「偏壓制力」
+   * 方向會反過來逼出「贏定了還硬用不需要的強牌」——用真實構造盤面驗證過（rich 該升級用強牌 vs
+   * poor 用弱牌就夠贏，SO 在 poor 側 0/5 全錯，見 WORKLOG 2026-07-01「在乾淨場景上實測 SO/MO」）。
+   * 達門檻時方向反轉＝在「近似平手」的候選集裡改選壓制力**最低**者（用最少資源打贏這球，把多餘資源
+   * 留給未來）；未達門檻（贏面仍有不確定性）維持 H4 原方向（偏壓制力，呼應「不確定就打滿」的合理避險）。
+   * 確定性訊號來自 MCTS 自身跨 determinize 樣本聚合出的 winRate，不是外部硬規則——這就是「靠搜尋自己
+   * 的信心分辨確定性」而非硬性規定省牌。只在 rootPressureTieBreakDelta 開啟時生效。
+   */
+  rootConservationWinRateThreshold?: number;
+  /**
    * [Claude 2026-06-23] 對手節點模型（G2 診斷後新增）：
    *   "heuristic"（預設）：對手節點 = 環境，直接套用 heuristic 決策、不建樹分支。
    *     ＝資訊集樹只在「我方多步決策」上展開，對手/隱藏由 determinize＋heuristic 模擬。
@@ -291,6 +303,7 @@ function chooseRootTieBreakBest(
   perspective: PlayerId,
   winRateDelta: number,
   pairAware: boolean,
+  conservationWinRateThreshold?: number,
 ): CoachActionEstimate | null {
   if (winRateDelta <= 0 || recommendations.length <= 1) return null;
   const robustBest = recommendations[0]!;
@@ -299,9 +312,18 @@ function chooseRootTieBreakBest(
     (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
   );
   if (close.length <= 1) return null;
+  // [Claude 2026-07-02] Phase H H5：贏面已近乎確定（robust best winRate 達門檻）時，「近似平手」的候選
+  // 集裡不再偏高壓制力（那是修放水用的方向），改偏「用最少資源就夠贏」——方向反轉，見 IsmctsOptions
+  // 的 rootConservationWinRateThreshold 說明。
+  const conservationActive =
+    conservationWinRateThreshold !== undefined && robustBest.winRate >= conservationWinRateThreshold;
   return close
     .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware }) }))
-    .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+    .sort((a, b) =>
+      conservationActive
+        ? a.pressure - b.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate
+        : b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate,
+    )[0]!.item;
 }
 
 /**
@@ -447,6 +469,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const valueModel = options.valueModel;
   const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA);
   const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK;
+  const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
   // 沒 timeLimitMs 才退回固定 DEFAULT_ITERATIONS（純迭代模式，測試用）。避免 800 上限在 ~0.5s 就吃掉 think budget。
@@ -486,7 +509,15 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     (a, b) => b.sampleCount - a.sampleCount || b.winRate - a.winRate || b.confidence - a.confidence,
   );
 
-  const tieBreakBest = chooseRootTieBreakBest(db, state, recommendations, perspective, rootPressureTieBreakDelta, rootPairQualityTieBreak);
+  const tieBreakBest = chooseRootTieBreakBest(
+    db,
+    state,
+    recommendations,
+    perspective,
+    rootPressureTieBreakDelta,
+    rootPairQualityTieBreak,
+    rootConservationWinRateThreshold,
+  );
   if (tieBreakBest) {
     const index = recommendations.indexOf(tieBreakBest);
     if (index > 0) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDecision, createGame, deployableUids, effParam } from "../engine/engine";
-import type { GameState } from "../engine/types";
+import type { GameState, PlayerId } from "../engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
 import { createIsmctsReport, rootDecisionPressureScore, ucbScore } from "./ismcts";
 
@@ -153,5 +153,113 @@ describe("M8 Phase G SO-ISMCTS", () => {
     expect(ucbScore(4, 2, 9, true, c)).not.toBeCloseTo(wrongWithNodeVisits, 6);
     // 對手節點 exploit 取 (1 − mean)＝樹內對抗。
     expect(ucbScore(4, 2, 9, false, c)).toBeCloseTo(1 - 0.5 + c * Math.sqrt(Math.log(9) / 4), 12);
+  });
+});
+
+// [Claude 2026-07-02] Phase H H5：certainty-conditioned 資源節省 tie-break。
+// 場景配方＝驗證過的「橫跨門檻」構造盤面（見 WORKLOG 2026-07-01「驗證可行的橫跨門檻 R4 替代場景」／
+// 「在乾淨場景上實測 SO/MO」）：P0 有 weak(atk1)／strong(atk3) 兩張攻擊候選；P1 已知手牌小，
+// rich（2 張已知，maxDP=4）需要 strong 才突破，poor（1 張已知，maxDP=2）weak 就夠贏、strong 是浪費。
+// 用窮舉法驗證過這兩個門檻是真實存在的（不是 heuristic-rollout 近似），故可放心當單元測試的 ground truth。
+const H5_FILLER = "HV-D01-005"; // 西谷夕，block/atk 皆低，純填充
+
+function h5MoveToHand(state: GameState, p: PlayerId, cardId: string, used: Set<number>): number {
+  const zones: (keyof GameState["players"][number])[] = ["hand", "deck", "setArea", "drop"];
+  for (const zone of zones) {
+    const arr = state.players[p][zone] as number[];
+    const idx = arr.findIndex((uid) => !used.has(uid) && state.cards[uid] === cardId);
+    if (idx < 0) continue;
+    const [uid] = arr.splice(idx, 1);
+    used.add(uid!);
+    state.players[p].hand.push(uid!);
+    return uid!;
+  }
+  throw new Error(`H5 test fixture: 找不到 ${cardId}`);
+}
+function h5MoveToToss(state: GameState, p: PlayerId, cardId: string, used: Set<number>): number {
+  const uid = h5MoveToHand(state, p, cardId, used);
+  state.players[p].hand.pop();
+  state.players[p].toss.push(uid);
+  return uid;
+}
+function h5KeepOnlyHand(state: GameState, p: PlayerId, uids: number[]) {
+  const keep = new Set(uids);
+  for (let i = state.players[p].hand.length - 1; i >= 0; i--) {
+    const uid = state.players[p].hand[i]!;
+    if (!keep.has(uid)) state.players[p].deck.push(state.players[p].hand.splice(i, 1)[0]!);
+  }
+}
+
+/** 建構「橫跨門檻」場景：p1RichCount=2 → rich（maxDP=4，需要 strong）；=1 → poor（maxDP=2，weak 就夠）。 */
+function buildH5StraddleScenario(seed: number, p1RichCount: 1 | 2) {
+  const p0Toss = "HV-P03-022"; // 宮侑
+  const p0Weak = "HV-D01-002"; // 影山飛雄 atk1
+  const p0Strong = "HV-D01-006"; // 田中龍之介 atk3
+  const p1Rich = ["HV-D01-006", "HV-D01-001"]; // 田中(block2)＋日向(block2)，不同名避開同名攔網限制
+  const decks: [string[], string[]] = [
+    Array(40)
+      .fill(H5_FILLER)
+      .map((f, i) => (i < 3 ? [p0Toss, p0Weak, p0Strong][i]! : f)),
+    Array(40)
+      .fill(H5_FILLER)
+      .map((f, i) => (i < p1Rich.length ? p1Rich[i]! : f)),
+  ];
+  let state = createGame(benchmarkDb, { seed, decks, skipDeckValidation: true });
+  state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+  state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+  state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+
+  const used = new Set<number>();
+  h5MoveToToss(state, 0, p0Toss, used);
+  const weakUid = h5MoveToHand(state, 0, p0Weak, used);
+  const strongUid = h5MoveToHand(state, 0, p0Strong, used);
+  h5KeepOnlyHand(state, 0, [weakUid, strongUid]);
+
+  const richUids = p1Rich.map((c) => h5MoveToHand(state, 1, c, used));
+  h5KeepOnlyHand(state, 1, p1RichCount === 2 ? richUids : [richUids[0]!]);
+
+  state.turnPlayer = 0;
+  state.phase = "attack";
+  state.sub = 0;
+  state.op = null;
+  state.dp = null;
+  state.defenseChoice = null;
+  state.pendingDecision = { player: 0, type: "deploy-attack", prompt: "H5 test fixture" };
+  state.effectCtx = null;
+  state.pendingQueue = [];
+  return { state, weakUid, strongUid, decks };
+}
+
+describe("M8 Phase H H5 certainty-conditioned 資源節省 tie-break", () => {
+  // iterations=800：300 時 poor 場景兩候選 winRate 太接近門檻（0.850 vs 0.824，雜訊大），800 才穩定收斂
+  // （debug 實測 poor 側 weak winRate=0.880 > strong 0.863，見 WORKLOG 2026-07-01/02）。
+  const h5Options = (seed: number, decks: readonly [readonly string[], readonly string[]], extra: Record<string, unknown> = {}) => ({
+    perspectivePlayer: 0 as const,
+    knownDecks: decks,
+    seed,
+    iterations: 800,
+    candidateLimit: 8,
+    leafRolloutHorizon: 4,
+    ...extra,
+  });
+
+  it("rich（贏面不確定，需要 strong 才突破）：conservation 開關與否都選 strong，不受影響", () => {
+    const { state, strongUid, decks } = buildH5StraddleScenario(970, 2);
+    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
+    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, { rootConservationWinRateThreshold: 0.85 }));
+    expect(off.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
+    expect(on.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
+  });
+
+  it("poor（贏面已確定，weak 就夠）：預設（conservation off）沿用 H4 偏壓制力，會選不必要的 strong", () => {
+    const { state, strongUid, decks } = buildH5StraddleScenario(970, 1);
+    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
+    expect(off.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
+  });
+
+  it("poor（贏面已確定，weak 就夠）：開啟 rootConservationWinRateThreshold 後改選 weak，省下 strong", () => {
+    const { state, weakUid, decks } = buildH5StraddleScenario(970, 1);
+    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, { rootConservationWinRateThreshold: 0.85 }));
+    expect(on.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: weakUid });
   });
 });
