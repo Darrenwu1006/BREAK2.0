@@ -243,23 +243,62 @@ describe("M8 Phase H H5 certainty-conditioned 資源節省 tie-break", () => {
     ...extra,
   });
 
-  it("rich（贏面不確定，需要 strong 才突破）：conservation 開關與否都選 strong，不受影響", () => {
+  // [Claude 2026-07-02] H5 v2 已 default-on（threshold=0.85，見 DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD）。
+  // `disabled` 用 Number.POSITIVE_INFINITY 明確關閉 conservation（winRate 最大只會是 1，永遠達不到），
+  // 當「H5 之前」的對照組；`h5Options(...)` 不帶 extra 就是 live 預設（0.85 現在會自動生效）。
+  const disabled = { rootConservationWinRateThreshold: Number.POSITIVE_INFINITY };
+
+  it("rich（贏面不確定，需要 strong 才突破）：conservation 關閉／預設(0.85) 都選 strong，不受影響", () => {
     const { state, strongUid, decks } = buildH5StraddleScenario(970, 2);
-    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
-    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, { rootConservationWinRateThreshold: 0.85 }));
+    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, disabled));
+    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
     expect(off.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
     expect(on.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
   });
 
-  it("poor（贏面已確定，weak 就夠）：預設（conservation off）沿用 H4 偏壓制力，會選不必要的 strong", () => {
+  it("poor（贏面已確定，weak 就夠）：關閉 conservation 沿用純 H4 偏壓制力，會選不必要的 strong", () => {
     const { state, strongUid, decks } = buildH5StraddleScenario(970, 1);
-    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
+    const off = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, disabled));
     expect(off.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: strongUid });
   });
 
-  it("poor（贏面已確定，weak 就夠）：開啟 rootConservationWinRateThreshold 後改選 weak，省下 strong", () => {
+  it("poor（贏面已確定，weak 就夠）：live 預設（0.85）改選 weak，省下 strong", () => {
     const { state, weakUid, decks } = buildH5StraddleScenario(970, 1);
-    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, { rootConservationWinRateThreshold: 0.85 }));
+    const on = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
     expect(on.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: weakUid });
+  });
+
+  it("Phase H H5 live default 等同 threshold=0.85（[使用者 2026-07-02] 拍板上線）", () => {
+    const { state, decks } = buildH5StraddleScenario(970, 1);
+    const implicit = createIsmctsReport(benchmarkDb, state, h5Options(970, decks));
+    const explicit = createIsmctsReport(benchmarkDb, state, h5Options(970, decks, { rootConservationWinRateThreshold: 0.85 }));
+    expect(implicit.bestAction).toEqual(explicit.bestAction);
+    expect(implicit.recommendations).toEqual(explicit.recommendations);
+  });
+
+  it("v1 回歸守則：conservation 只能動 deploy-attack，deploy-toss(pairAware) 關閉／極低門檻結果必須相同", () => {
+    // v1（見 IsmctsOptions 文件註解）錯在把整條 rootDecisionPressureScore（含 pairAware 拖攻配對品質項）
+    // 反轉、套用到所有決策類型；對 deploy-toss 而言，反轉方向在數學上等同「刻意選較差的拖攻配對」，是
+    // 40 場 ship-gate no-go 的根因之一。此測試鎖死：即使 conservation 門檻極低（幾乎必然 active），
+    // deploy-toss 這個決策點的 bestAction 也不能因為開啟 conservation 而改變。
+    const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
+    const deckB = findBenchmarkDeck("青葉城西-第三彈測試");
+    let state = createGame(benchmarkDb, { seed: 815, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state.turnPlayer = 0;
+    state.phase = "attack";
+    state.pendingDecision = { player: 0, type: "deploy-toss" };
+    const setterUid = state.players[0].hand[0]!;
+    const dualThreatUid = state.players[0].hand[1]!;
+    state.players[0].hand = [setterUid, dualThreatUid];
+    state.cards[setterUid] = "HV-P01-033"; // 及川 徹：拖球 1 / 攻擊 0
+    state.cards[dualThreatUid] = "HV-P02-018"; // 宮 侑：拖球 2 / 攻擊 3
+
+    const decks: [readonly string[], readonly string[]] = [deckA.ids, deckB.ids];
+    const off = createIsmctsReport(benchmarkDb, state, h5Options(815, decks, disabled));
+    const on = createIsmctsReport(benchmarkDb, state, h5Options(815, decks, { rootConservationWinRateThreshold: 0.01 }));
+    expect(on.bestAction.decision).toMatchObject(off.bestAction.decision);
   });
 });

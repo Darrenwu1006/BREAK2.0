@@ -71,15 +71,24 @@ export interface IsmctsOptions {
    */
   rootPairQualityTieBreak?: boolean;
   /**
-   * [Claude 2026-07-02] Phase H H5：certainty-conditioned 資源節省 tie-break（benchmark-only，不設預設＝off）。
-   * H4 的 tie-break 方向固定「近似平手→偏高壓制力」，這是修「該打滿卻沒打滿（放水）」的正解；但
-   * 當 robust best 的 winRate 已達 ≥ 此門檻（贏面已近乎確定，非只是分不出高低），同一個「偏壓制力」
-   * 方向會反過來逼出「贏定了還硬用不需要的強牌」——用真實構造盤面驗證過（rich 該升級用強牌 vs
-   * poor 用弱牌就夠贏，SO 在 poor 側 0/5 全錯，見 WORKLOG 2026-07-01「在乾淨場景上實測 SO/MO」）。
-   * 達門檻時方向反轉＝在「近似平手」的候選集裡改選壓制力**最低**者（用最少資源打贏這球，把多餘資源
-   * 留給未來）；未達門檻（贏面仍有不確定性）維持 H4 原方向（偏壓制力，呼應「不確定就打滿」的合理避險）。
-   * 確定性訊號來自 MCTS 自身跨 determinize 樣本聚合出的 winRate，不是外部硬規則——這就是「靠搜尋自己
-   * 的信心分辨確定性」而非硬性規定省牌。只在 rootPressureTieBreakDelta 開啟時生效。
+   * [Claude 2026-07-02] Phase H H5 v2：certainty-conditioned 資源節省 tie-break。**已 default-on**
+   * （見 DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD，[使用者 2026-07-02] 拍板上線）。H4 的 tie-break
+   * 方向固定「近似平手→偏高壓制力」，這是修「該打滿卻沒打滿（放水）」的正解；但當 robust best 的
+   * winRate 已達 ≥ 此門檻（贏面已近乎確定，非只是分不出高低），同一個「偏壓制力」方向會反過來逼出
+   * 「贏定了還硬用不需要的強牌」——用真實構造盤面驗證過（rich 該升級用強牌 vs poor 用弱牌就夠贏，SO
+   * 在 poor 側 0/5 全錯，見 WORKLOG 2026-07-01「在乾淨場景上實測 SO/MO」）。
+   *
+   * **v1（僅比 rootDecisionPressureScore 整條複合分數、套用到所有決策類型）已於 2026-07-02 40 場
+   * ship-gate no-go 兩輪**（threshold 0.85/0.95 皆敗）。根因＝該複合分數混了防守/手牌等無關維度，且對
+   * deploy-toss(pairAware) 反轉方向在數學上等同「刻意選較差的拖攻配對」。**v2 把作用範圍限縮到唯一
+   * 語意清楚、也是單元測試唯一驗證過的情境：deploy-attack 本身的 attack 點數花費**——達門檻時只在
+   * deploy-attack 的「近似平手」候選集裡改選「攻擊點數花最少」者，其餘決策類型（deploy-toss／
+   * deploy-serve／deploy-receive／deploy-block／effect-confirm 等）一律回退 H4 原行為，不受影響。
+   * 未達門檻（贏面仍有不確定性）同樣維持 H4 原方向。確定性訊號來自 MCTS 自身跨 determinize 樣本聚合
+   * 出的 winRate，不是外部硬規則——這是「靠搜尋自己的信心分辨確定性」而非硬性規定省牌。只在
+   * rootPressureTieBreakDelta 開啟時生效。**v2 兩輪獨立 40 場 mirror A/B（通用原型池 57.5%、使用者
+   * 指定常用牌組 55.0%，合併 80 場 56.2%／95% CI 45.3–66.6%）**驗證通過使用者評估、正式上線。詳見
+   * WORKLOG 2026-07-02、`docs/M8_PHASE_H_PLAY_QUALITY_SPEC.md` §7.3。
    */
   rootConservationWinRateThreshold?: number;
   /**
@@ -100,6 +109,14 @@ const DEFAULT_EXPLORATION_C = Math.SQRT2;
 const DEFAULT_CANDIDATE_LIMIT = 8;
 const DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA = 0.04;
 const DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK = true;
+/**
+ * [Claude 2026-07-02] Phase H H5 v2 live default（[使用者 2026-07-02] 拍板上線）。
+ * 兩輪 40 場獨立 mirror A/B（通用 5 原型池 57.5%／使用者 5 副常用牌組池 55.0%）合併 80 場＝
+ * candidate 45/80＝56.2%（95% Wilson CI 45.3%–66.6%）。嚴格說 CI 下界未過 50%，但兩輪獨立複製一致、
+ * 與 v1（40 場兩輪皆全面下滑，37.5%／40.0%）模式完全相反、根因機制已確認（限縮只作用於
+ * deploy-attack），判斷已足夠降低不確定性，使用者拍板上線。詳見 WORKLOG 2026-07-02。
+ */
+const DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD = 0.85;
 const ROOT_TIE_BREAK_MIN_VISIT_RATIO = 0.5;
 /** 每 iteration 換 world 的 seed 間距（大質數，避免抽樣相關）。 */
 const SEED_STRIDE = 1000003;
@@ -312,18 +329,33 @@ function chooseRootTieBreakBest(
     (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
   );
   if (close.length <= 1) return null;
-  // [Claude 2026-07-02] Phase H H5：贏面已近乎確定（robust best winRate 達門檻）時，「近似平手」的候選
-  // 集裡不再偏高壓制力（那是修放水用的方向），改偏「用最少資源就夠贏」——方向反轉，見 IsmctsOptions
-  // 的 rootConservationWinRateThreshold 說明。
+  // [Claude 2026-07-02] Phase H H5 v2：贏面已近乎確定（robust best winRate 達門檻）時，「近似平手」的
+  // deploy-attack 候選集裡改偏「用最少攻擊點數就夠贏」，把多餘資源留給未來——但**只對 deploy-attack
+  // 生效**，且只比「這手實際花的攻擊點數」這一個乾淨維度，不碰 rootDecisionPressureScore。
+  //
+  // v1（ship-gate 40 場 x2 輪皆 no-go，見 WORKLOG 2026-07-02）錯在把整條 rootDecisionPressureScore
+  // 複合分數（混了 opSigned／attackLineDiff／defensePressure／resourcePressure，還有 pairAware 的拖攻
+  // 配對品質項）整條反轉、套用到**所有**決策類型——對 deploy-toss(pairAware) 而言，反轉配對品質項在
+  // 數學上等同「刻意選較差的拖攻配對」；對 deploy-serve/receive/block/effect-confirm 等其他決策類型，
+  // 「偏好較差的壓制力/局面」根本沒有「省資源」的語意，純粹是雜訊甚至傷害。v2 把作用範圍限縮到唯一
+  // 語意清楚、也是單元測試唯一驗證過的情境：deploy-attack 本身的 attack 點數花費。
   const conservationActive =
     conservationWinRateThreshold !== undefined && robustBest.winRate >= conservationWinRateThreshold;
+  if (conservationActive) {
+    const attackClose = close.filter((item) => item.decision.type === "deploy-attack");
+    if (attackClose.length > 1) {
+      return attackClose
+        .map((item) => ({
+          item,
+          spent: item.decision.type === "deploy-attack" && item.decision.uid !== null ? effParam(db, state, item.decision.uid, "attack") ?? 0 : 0,
+        }))
+        .sort((a, b) => a.spent - b.spent || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+    }
+    // 非 deploy-attack（或只有 1 個可比候選）：conservation 不適用，回退 H4 原行為。
+  }
   return close
     .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware }) }))
-    .sort((a, b) =>
-      conservationActive
-        ? a.pressure - b.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate
-        : b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate,
-    )[0]!.item;
+    .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
 }
 
 /**
@@ -469,7 +501,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const valueModel = options.valueModel;
   const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA);
   const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK;
-  const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold;
+  const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold ?? DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
   // 沒 timeLimitMs 才退回固定 DEFAULT_ITERATIONS（純迭代模式，測試用）。避免 800 上限在 ~0.5s 就吃掉 think budget。
