@@ -10,6 +10,11 @@ import { nextRandom } from "./rng";
 // ---------- 共用工具 ----------
 
 export const other = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
+const logSuppressedStates = new WeakSet<GameState>();
+
+export function suppressLogsForState(state: GameState): void {
+  logSuppressedStates.add(state);
+}
 
 export function cardOf(db: CardDb, state: GameState, uid: number): Card {
   const c = db.get(state.cards[uid]!);
@@ -20,6 +25,7 @@ export function cardOf(db: CardDb, state: GameState, uid: number): Card {
 export const topChara = (stack: number[]): number | null => (stack.length ? stack[stack.length - 1]! : null);
 
 export function log(state: GameState, player: PlayerId | null, text: string, event?: GameEvent): void {
+  if (logSuppressedStates.has(state)) return;
   state.log.push({ setNo: state.setNo, turnNo: state.turnNo, player, text, ...(event ? { event } : {}) });
 }
 

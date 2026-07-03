@@ -317,63 +317,76 @@ export function GameBoard(props: GameBoardProps) {
   const p0 = state.players[0];
   const p1 = state.players[1];
 
+  // [Claude 2026-07-03] net info 歸屬：有 DP → 防守方側（判定在防守方結算）；否則 OP 持有方（攻擊方）側。
+  // 兩個錨點同一時間只 render 一側（wireframe 需求：我方/對方 net info 不同時出現）。
+  const netOwner: PlayerId | null = state.dp ? state.dp.owner : state.op ? state.op.owner : null;
+
   return (
-    <div className="arena">
-      <div className="opponent-hand" data-zone-anchor="p1-hand" aria-label={`對方手牌 ${p1.hand.length} 張`}>
-        <span>對方手牌</span>
-        <div className="opponent-hand-cards">
-          {p1.hand.map((uid) => <CardBack key={uid} width={24} school={props.deckMeta[1].school} />)}
+    <div className="battlefield">
+      {/* [Claude 2026-07-03] wireframe V3：3 欄 grid（左 gutter｜直式球場｜右 gutter），
+          外圍元件與對手呈 180° 旋轉對稱——對手牌組左上⇄我方右下、發球/事件貼球場上/下緣、SET 堆對角。 */}
+      <div className="battlefield-net" aria-hidden="true" />
+
+      <div className="bf-cell bf-left-top">
+        <RailDeckDrop db={props.db} state={state} player={1} meta={props.deckMeta[1]} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
+        <div className="side-band">
+          {eventPile(1)}
+          {zone(1, "serve", p1.serve)}
         </div>
-        <strong>{p1.hand.length}</strong>
       </div>
 
-      <div className="mat">
-        <div className="mat-rail rail-set">
-          <SetPileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
-          <SetPileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
+      <div className="bf-cell bf-left-bottom">
+        <SetPileGroup db={props.db} state={state} player={0} meta={props.deckMeta[0]} canPickSet={props.canPickSet} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
+      </div>
+
+      <div className="mat-play">
+        {/* 對手半場（鏡像排版、文字正向；雙方攔網皆貼網） */}
+        <div className="mat-row mat-trio mat-opp">
+          {zone(1, "attack", p1.attack)}
+          {zone(1, "toss", p1.toss)}
+          {zone(1, "receive", p1.receive)}
+        </div>
+        <div className="mat-row mat-blockrow mat-opp">
+          {zone(1, "block", p1.blockCenter, p1.blockSides)}
         </div>
 
-        <div className="mat-play">
-          {/* 對手半場（鏡像排版、文字正向） */}
-          <div className="mat-row mat-back mat-opp">
-            {eventPile(1)}
-            {zone(1, "serve", p1.serve)}
-          </div>
-          <div className="mat-row mat-trio mat-opp">
-            {zone(1, "attack", p1.attack)}
-            {zone(1, "toss", p1.toss)}
-            {zone(1, "receive", p1.receive)}
-          </div>
-          <div className="mat-row mat-blockrow mat-opp">
-            {zone(1, "block", p1.blockCenter, p1.blockSides)}
-          </div>
+        <div className="mat-net" aria-hidden="true" />
 
-          <div className="mat-net" aria-hidden="true" />
-
-          {/* 我方半場 */}
-          <div className="mat-row mat-blockrow">
-            {zone(0, "block", p0.blockCenter, p0.blockSides)}
-          </div>
-          <div className="mat-row mat-trio">
-            {zone(0, "receive", p0.receive)}
-            {zone(0, "toss", p0.toss)}
-            {zone(0, "attack", p0.attack)}
-          </div>
-          <div className="mat-row mat-back">
-            {zone(0, "serve", p0.serve)}
-            {eventPile(0)}
-          </div>
-
-          {/* OP/DP＋judge：移出中軸，浮在 play 右側留白、貼近網高 */}
-          <div className="net-anchor">
-            <NetScore state={state} />
-          </div>
+        {/* 我方半場 */}
+        <div className="mat-row mat-blockrow">
+          {zone(0, "block", p0.blockCenter, p0.blockSides)}
         </div>
-
-        <div className="mat-rail rail-res">
-          <RailDeckDrop db={props.db} state={state} player={1} meta={props.deckMeta[1]} onOpenDrop={() => props.onOpenDrop(1)} onHover={props.onHover} onInspect={inspect} />
-          <RailDeckDrop db={props.db} state={state} player={0} meta={props.deckMeta[0]} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+        <div className="mat-row mat-trio">
+          {zone(0, "receive", p0.receive)}
+          {zone(0, "toss", p0.toss)}
+          {zone(0, "attack", p0.attack)}
         </div>
+      </div>
+
+      <div className="bf-cell bf-right-top">
+        <div className="opponent-hand" data-zone-anchor="p1-hand" aria-label={`對方手牌 ${p1.hand.length} 張`}>
+          <span>對方手牌</span>
+          <div className="opponent-hand-cards">
+            {p1.hand.map((uid) => <CardBack key={uid} width={24} school={props.deckMeta[1].school} />)}
+          </div>
+          <strong>{p1.hand.length}</strong>
+        </div>
+        <SetPileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
+      </div>
+
+      <div className="bf-cell bf-right-bottom">
+        <div className="side-band">
+          {zone(0, "serve", p0.serve)}
+          {eventPile(0)}
+        </div>
+        <RailDeckDrop db={props.db} state={state} player={0} meta={props.deckMeta[0]} onOpenDrop={() => props.onOpenDrop(0)} onHover={props.onHover} onInspect={inspect} />
+      </div>
+
+      <div className="bf-net-anchor bf-net-left">
+        {netOwner === 1 && <NetScore state={state} />}
+      </div>
+      <div className="bf-net-anchor bf-net-right">
+        {netOwner === 0 && <NetScore state={state} />}
       </div>
     </div>
   );

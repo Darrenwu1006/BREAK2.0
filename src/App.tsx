@@ -222,6 +222,10 @@ export function App() {
         <p className="menu-kicker">Deck testing simulator</p>
         <h1>排球少年 バボカ!!BREAK</h1>
         <p className="dim">卡池 {db.size} 張・牌組 {decks.length} 副</p>
+        <p className="menu-disclaimer">
+          本程式為個人製作的非官方模擬器，僅供牌組測試與學習研究之用。
+          『ハイキュー!!』『バボカ!!BREAK』之著作權・商標均屬 ©古舘春一／集英社・「ハイキュー!!」製作委員会・©TOMY 所有，與官方無任何關聯。請支持官方正版產品。
+        </p>
       </section>
 
       <div className="menu-grid">

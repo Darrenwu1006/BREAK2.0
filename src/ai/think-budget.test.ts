@@ -22,12 +22,16 @@ function fakeState(patch: {
 
 describe("estimateThinkBudgetMs", () => {
   it("沒有待決策時回傳下限（沒有要想的事）", () => {
-    expect(estimateThinkBudgetMs(fakeState({ noDecision: true }))).toBe(3000);
+    expect(estimateThinkBudgetMs(fakeState({ noDecision: true }))).toBe(500);
   });
 
   it("瑣碎決策＋零壓力＋首局＝落在下限", () => {
     // serve-rights 權重 0，無 OP/DP，set1 → weight 0 → minMs。
-    expect(estimateThinkBudgetMs(fakeState({ type: "serve-rights", setNo: 1 }))).toBe(3000);
+    expect(estimateThinkBudgetMs(fakeState({ type: "serve-rights", setNo: 1 }))).toBe(500);
+  });
+
+  it("普通自由步驟＋零壓力＋首局＝落在 1 秒內", () => {
+    expect(estimateThinkBudgetMs(fakeState({ type: "free", setNo: 1 }))).toBeLessThanOrEqual(1000);
   });
 
   it("最複雜＋高壓＋決勝局＝逼近上限", () => {
@@ -41,7 +45,7 @@ describe("estimateThinkBudgetMs", () => {
       for (const op of [0, 3, 7, 12]) {
         for (const setNo of [1, 3, 5]) {
           const ms = estimateThinkBudgetMs(fakeState({ type, op, setNo }));
-          expect(ms).toBeGreaterThanOrEqual(3000);
+          expect(ms).toBeGreaterThanOrEqual(500);
           expect(ms).toBeLessThanOrEqual(10000);
         }
       }

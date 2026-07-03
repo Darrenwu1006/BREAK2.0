@@ -11,7 +11,7 @@ import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
-import { CardCounter, CardDetails, CoachPanel, CompactHud, DropBrowser, GameLog, LeftPanel, MatchSummary, PHASE_NAME } from "./GamePanels";
+import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER } from "./GamePanels";
 import type { CoachPanelState } from "./GamePanels";
 import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
@@ -39,7 +39,7 @@ const DEPLOY_LABEL: Record<Exclude<CourtArea, "block">, string> = {
   attack: "攻擊",
 };
 
-type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
+type ToolMode = { type: "detail" } | { type: "coach" } | { type: "counter" } | { type: "settings" } | { type: "drop"; player: PlayerId } | { type: "event"; player: PlayerId };
 type DragState = { uid: number; x: number; y: number; width: number; overArea: CourtArea | null; valid: boolean };
 
 // 出手節奏下限（ms）：覆蓋最長的得分潑墨動畫（--splash-ms 900ms），讓出手/得分動畫順順跑完。
@@ -62,6 +62,12 @@ function initialEngine(): OpponentEngine {
 
 function initialSfx(): boolean {
   return localStorage.getItem("breaktcg-sfx") !== "off";
+}
+
+// [Claude 2026-07-03] Readability V2：手牌卡寬依視窗高自適應（84–108px），
+// 取代固定畫布時代的定值；矮視窗自動縮，避免手牌吃掉球場垂直預算。
+function handCardFor(viewportHeight: number): number {
+  return Math.round(Math.min(100, Math.max(80, viewportHeight * 0.14)));
 }
 
 const SFX_SCORE_YOU = ["決まった！", "キメた！", "ナイスキル！"];
@@ -491,6 +497,80 @@ function PostMatchModal(props: {
   );
 }
 
+/* [Claude 2026-07-03] wireframe V3：Game meta 移入右欄頂部（頂部狀態列廢除）。 */
+function SideMeta(props: {
+  state: GameState;
+  deckMeta: [DeckMeta, DeckMeta];
+}) {
+  const { state, deckMeta } = props;
+  const phaseIndex = PHASE_ORDER.indexOf(state.phase);
+  return (
+    <section className="side-meta" aria-label="對戰狀態">
+      <div className="side-meta-status">
+        <span className="top-counter">SET <b>{state.setNo}</b></span>
+        <span className="top-counter">TURN <b>{state.turnNo}</b></span>
+        <strong>{PHASE_NAME[state.phase]}</strong>
+        <small className={state.turnPlayer === HUMAN ? "tone-me" : "tone-op"}>
+          {state.turnPlayer === HUMAN ? "你的回合" : "電腦回合"}
+        </small>
+      </div>
+      <ol className="phase-pips" aria-label={`回合階段：目前 ${PHASE_NAME[state.phase]}`}>
+        {PHASE_ORDER.map((phase, index) => (
+          <li
+            key={phase}
+            className={state.phase === phase ? "on" : index < phaseIndex ? "done" : ""}
+            title={PHASE_NAME[phase]}
+          />
+        ))}
+      </ol>
+      <div className="side-meta-decks">
+        <span className="player-tone-0"><b>你</b> {deckMeta[0].school}／{deckMeta[0].name}</span>
+        <span className="player-tone-1"><b>電腦</b> {deckMeta[1].school}／{deckMeta[1].name}</span>
+      </div>
+    </section>
+  );
+}
+
+function SettingsPanel(props: {
+  engine: OpponentEngine;
+  sfxEnabled: boolean;
+  onEngineChange: (engine: OpponentEngine) => void;
+  onToggleSfx: () => void;
+  onExit: () => void;
+}) {
+  return (
+    <div className="settings-panel">
+      <div className="panel-heading">
+        <div>
+          <b>設定</b>
+          <span>對手與演出偏好</span>
+        </div>
+      </div>
+      <section className="settings-section">
+        <b>對手引擎</b>
+        <div className="segmented-control" role="group" aria-label="對手引擎">
+          {([["strong", "強敵"], ["heuristic", "快速"]] as const).map(([value, label]) => (
+            <button key={value} className={props.engine === value ? "is-active" : ""} onClick={() => props.onEngineChange(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="settings-section">
+        <b>演出</b>
+        <label className="settings-check">
+          <input type="checkbox" checked={props.sfxEnabled} onChange={props.onToggleSfx} />
+          擬音字
+        </label>
+      </section>
+      {/* [使用者 2026-07-03] 離開對戰收進設定，避免誤觸 */}
+      <div className="settings-actions">
+        <button className="btn-secondary" onClick={props.onExit}>離開對戰</button>
+      </div>
+    </div>
+  );
+}
+
 function ReplayStepSummary(props: {
   state: GameState;
   entry: ReplayEntry | null;
@@ -708,7 +788,7 @@ export function Game(props: {
   const savedReplayRef = useRef(false);
   const replayCritiquesRef = useRef<ReplayCritiqueCache>({});
   const [handWidth, setHandWidth] = useState(0);
-  const [fitScale, setFitScale] = useState(1);
+  const [handCard, setHandCard] = useState(() => handCardFor(window.innerHeight));
   const [replayCritique, setReplayCritique] = useState<ReplayCritiqueState>({ status: "idle" });
   const [replayCritiques, setReplayCritiques] = useState<ReplayCritiqueCache>({});
   const [replayScan, setReplayScan] = useState<ReplayScanState>({ status: "idle" });
@@ -945,8 +1025,8 @@ export function Game(props: {
   }
 
   // [Claude 2026-06-22] Phase F 塊2：把 PIMC 接成電腦對手的「腦」。
-  // 預設＝強敵：用 coach-worker 跑 PIMC 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
-  // 依盤面自適應 3–10 秒；瑣碎盤面想得短、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
+  // 預設＝強敵：用 coach-worker 跑 SO-ISMCTS 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
+  // 依盤面自適應約 0.5–10 秒；瑣碎盤面快、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
   // engine === "heuristic" 為快速模式：直接走 heuristic、不啟動搜尋、不顯思考提示，但保留出手節奏
   // 與動畫/擬音（不瞬間）——即時運算後等 AI_PACE_MS 讓動畫順順跑完。
   useEffect(() => {
@@ -983,7 +1063,7 @@ export function Game(props: {
     }
 
     const requestId = String(++aiRequestRef.current);
-    // 強敵＝思考預算由 estimateThinkBudgetMs 依盤面自適應（3–10 秒），不再有速度旋鈕。
+    // 強敵＝思考預算由 estimateThinkBudgetMs 依盤面自適應（約 0.5–10 秒），不再有速度旋鈕。
     const timeLimitMs = estimateThinkBudgetMs(state);
     // [Claude 2026-06-22] 出手節奏下限：S1 EV cut 讓搜尋常在 1 秒內想完，會搶在出手動畫（卡片飛行/落位 ~660ms、
     // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，思考時間計入此下限——想得久就不額外等、
@@ -1212,9 +1292,9 @@ export function Game(props: {
     return () => observer.disconnect();
   }, []);
 
-  // 固定設計畫布 1600×900，等比縮放置中（封頂 1.0：夠大的瀏覽器尺寸與間距一律相同）
+  // [Claude 2026-07-03] Readability V2：固定畫布已廢除；只剩手牌卡寬跟著視窗高走。
   useLayoutEffect(() => {
-    const update = () => setFitScale(Math.min(1, window.innerWidth / 1600, window.innerHeight / 1040));
+    const update = () => setHandCard(handCardFor(window.innerHeight));
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
@@ -1395,7 +1475,7 @@ export function Game(props: {
             key={uid}
             card={cardOf(uid)}
             uid={uid}
-            width={64}
+            width={Math.max(64, handCard - 26)}
             selected={multiSel.includes(uid)}
             onHover={(card) => setHoverUid(card ? uid : null)}
             onLongPress={() => inspectUid(uid)}
@@ -1462,9 +1542,9 @@ export function Game(props: {
   }
 
   // 手牌間距：「分開為主，擁擠才靠近」——夠放就留正向間隔，放不下才漸進收攏成重疊
-  const HAND_CARD = 84;
-  const HAND_GAP = 12;
-  const HAND_MIN_VISIBLE = 34;
+  const HAND_CARD = handCard;
+  const HAND_GAP = 14;
+  const HAND_MIN_VISIBLE = 40;
   const handCount = viewState.players[HUMAN].hand.length;
   let handStep = HAND_GAP;
   if (handCount > 1 && handWidth > 0) {
@@ -1485,24 +1565,7 @@ export function Game(props: {
         </filter>
       </defs>
     </svg>
-    <div className="game" style={{ "--fit-scale": fitScale } as CSSProperties}>
-      <CompactHud
-        state={viewState}
-        onOpenLog={() => setMobilePanel("log")}
-        onOpenDetail={() => setMobilePanel("detail")}
-        onExit={props.onExit}
-      />
-
-      <LeftPanel
-        state={viewState}
-        deckMeta={props.deckMeta}
-        engine={engine}
-        onEngineChange={changeEngine}
-        sfxEnabled={sfxEnabled}
-        onToggleSfx={toggleSfx}
-        onExit={props.onExit}
-      />
-
+    <div className="game" style={{ "--hand-card": `${handCard}px` } as CSSProperties}>
       <main className="center-panel">
         <GameBoard
           db={db}
@@ -1538,6 +1601,9 @@ export function Game(props: {
 
         <section className="hand-section" aria-label={`你的手牌 ${viewState.players[HUMAN].hand.length} 張`}>
           <div className="hand-heading"><span>{replayMode ? "覆盤手牌" : "你的手牌"}</span><strong>{viewState.players[HUMAN].hand.length}</strong></div>
+          {!replayMode && (
+            <button className="btn-quiet undo-button hand-undo" disabled={!canUndo} title="回到上一個我方決策前" onClick={undoLastDecision}>返回上一步</button>
+          )}
           <div className="hand" style={handStyle} data-zone-anchor="p0-hand" ref={handRef}>
             {viewState.players[HUMAN].hand.length === 0 && <span className="hand-empty">沒有手牌</span>}
             {viewState.players[HUMAN].hand.map((uid) => {
@@ -1548,7 +1614,7 @@ export function Game(props: {
                   key={uid}
                   card={cardOf(uid)}
                   uid={uid}
-                  width={84}
+                  width={HAND_CARD}
                   className={[recentUids.has(uid) ? "card-entering" : "", settledUids.has(uid) ? "card-settle" : ""].filter(Boolean).join(" ") || undefined}
                   selected={selectedIndex >= 0}
                   selectable={effectCardsInPlace && effectCandidates.includes(uid)}
@@ -1577,73 +1643,88 @@ export function Game(props: {
           <b>面板</b>
           <button className="btn-quiet" onClick={() => setMobilePanel(null)}>關閉</button>
         </div>
-        <div className="tool-actions">
-          <button className="btn-quiet undo-button" disabled={!canUndo} title="回到上一個我方決策前" onClick={undoLastDecision}>返回上一步</button>
-        </div>
-        <div className="tool-tabs" role="tablist" aria-label="右欄工具">
-          <button role="tab" aria-selected={toolMode.type === "detail"} className={toolMode.type === "detail" ? "is-active" : ""} onClick={() => setToolMode({ type: "detail" })}>詳情</button>
-          <button role="tab" aria-selected={toolMode.type === "coach"} className={toolMode.type === "coach" ? "is-active" : ""} onClick={() => setToolMode({ type: "coach" })}>教練</button>
-          <button role="tab" aria-selected={toolMode.type === "counter"} className={toolMode.type === "counter" ? "is-active" : ""} onClick={() => setToolMode({ type: "counter" })}>算牌</button>
-          <button role="tab" aria-selected={toolMode.type === "drop"} className={toolMode.type === "drop" ? "is-active" : ""} onClick={() => setToolMode({ type: "drop", player: HUMAN })}>棄牌</button>
-        </div>
-        <div className="tool-content">
-          {replayMode ? (
-            visibleInspection ? (
-              <CardDetails db={db} state={viewState} inspected={visibleInspection} />
-            ) : (
-              <ReplayStepSummary
-                state={viewState}
-                entry={replayEntry}
-                step={replayStep}
-                total={replay.entries.length}
+        <SideMeta state={viewState} deckMeta={props.deckMeta} />
+        <div className="info-upper">
+          <div className="tool-tabs" role="tablist" aria-label="右欄工具">
+            <button role="tab" aria-selected={toolMode.type === "detail"} className={toolMode.type === "detail" ? "is-active" : ""} onClick={() => setToolMode({ type: "detail" })}>詳情</button>
+            <button role="tab" aria-selected={toolMode.type === "coach"} className={toolMode.type === "coach" ? "is-active" : ""} onClick={() => setToolMode({ type: "coach" })}>教練</button>
+            <button role="tab" aria-selected={toolMode.type === "counter"} className={toolMode.type === "counter" ? "is-active" : ""} onClick={() => setToolMode({ type: "counter" })}>算牌</button>
+            <button role="tab" aria-selected={toolMode.type === "drop"} className={toolMode.type === "drop" ? "is-active" : ""} onClick={() => setToolMode({ type: "drop", player: HUMAN })}>棄牌</button>
+            <button role="tab" aria-selected={toolMode.type === "settings"} className={toolMode.type === "settings" ? "is-active" : ""} onClick={() => setToolMode({ type: "settings" })}>設定</button>
+          </div>
+          <div className="tool-content">
+            {replayMode ? (
+              visibleInspection ? (
+                <CardDetails db={db} state={viewState} inspected={visibleInspection} />
+              ) : (
+                <ReplayStepSummary
+                  state={viewState}
+                  entry={replayEntry}
+                  step={replayStep}
+                  total={replay.entries.length}
+                  analytics={replayAnalytics}
+                  keyEntries={replayKeyEntries}
+                  critique={replayCritique}
+                  critiqueCache={replayCritiques}
+                  scan={replayScan}
+                  onEvaluate={evaluateReplayStep}
+                  onScan={scanReplayDecisions}
+                  onStopScan={stopReplayScan}
+                  onJump={setReplayStep}
+                />
+              )
+            ) : toolMode.type === "drop" || toolMode.type === "event" ? (
+              <DropBrowser
+                db={db}
+                state={state}
+                player={toolMode.player}
+                source={toolMode.type === "event" ? "event" : "drop"}
+                onClose={() => setToolMode({ type: "detail" })}
+                onSelect={(uid) => {
+                  inspectUid(uid);
+                  setToolMode({ type: "detail" });
+                }}
+                onHover={setHoverUid}
+              />
+            ) : toolMode.type === "coach" ? (
+              <CoachPanel db={db} state={state} coach={coach} onApply={decide} />
+            ) : toolMode.type === "counter" ? (
+              <CardCounter db={db} state={state} />
+            ) : toolMode.type === "settings" ? (
+              <SettingsPanel
+                engine={engine}
+                sfxEnabled={sfxEnabled}
+                onEngineChange={changeEngine}
+                onToggleSfx={toggleSfx}
+                onExit={props.onExit}
+              />
+            ) : state.phase === "gameOver" && !visibleInspection ? (
+              <PostMatchReport
                 analytics={replayAnalytics}
+                lostSets={replayReview.lostSets}
+                effectiveness={replayReview.actionEffectiveness}
+                cardDetails={replayReview.actionCardDetails}
+                narrative={replayReview.narrative}
                 keyEntries={replayKeyEntries}
-                critique={replayCritique}
                 critiqueCache={replayCritiques}
                 scan={replayScan}
-                onEvaluate={evaluateReplayStep}
                 onScan={scanReplayDecisions}
                 onStopScan={stopReplayScan}
-                onJump={setReplayStep}
+                onReplay={enterReplayMode}
               />
-            )
-          ) : toolMode.type === "drop" || toolMode.type === "event" ? (
-            <DropBrowser
-              db={db}
-              state={state}
-              player={toolMode.player}
-              source={toolMode.type === "event" ? "event" : "drop"}
-              onClose={() => setToolMode({ type: "detail" })}
-              onSelect={(uid) => {
-                inspectUid(uid);
-                setToolMode({ type: "detail" });
-              }}
-              onHover={setHoverUid}
-            />
-          ) : toolMode.type === "coach" ? (
-            <CoachPanel db={db} state={state} coach={coach} onApply={decide} />
-          ) : toolMode.type === "counter" ? (
-            <CardCounter db={db} state={state} />
-          ) : state.phase === "gameOver" && !visibleInspection ? (
-            <PostMatchReport
-              analytics={replayAnalytics}
-              lostSets={replayReview.lostSets}
-              effectiveness={replayReview.actionEffectiveness}
-              cardDetails={replayReview.actionCardDetails}
-              narrative={replayReview.narrative}
-              keyEntries={replayKeyEntries}
-              critiqueCache={replayCritiques}
-              scan={replayScan}
-              onScan={scanReplayDecisions}
-              onStopScan={stopReplayScan}
-              onReplay={enterReplayMode}
-            />
-          ) : visibleInspection ? (
-            <CardDetails db={db} state={state} inspected={visibleInspection} />
-          ) : (
-            <MatchSummary state={state} replayEntries={replay.entries.length} />
-          )}
+            ) : visibleInspection ? (
+              <CardDetails db={db} state={state} inspected={visibleInspection} />
+            ) : (
+              <MatchSummary state={state} replayEntries={replay.entries.length} />
+            )}
+          </div>
         </div>
+        <section className="info-log" aria-label="對戰紀錄">
+          <div className="info-log-heading">
+            <b>對戰紀錄</b>
+          </div>
+          <GameLog state={viewState} />
+        </section>
       </aside>
 
       <aside className={`mobile-log-panel${mobilePanel === "log" ? " is-open" : ""}`}>
@@ -1652,7 +1733,6 @@ export function Game(props: {
       </aside>
 
       {mobilePanel && <button className="panel-backdrop" aria-label="關閉面板" onClick={() => setMobilePanel(null)} />}
-      {activeGutsKey && <button className="guts-backdrop" aria-label="關閉 Guts" onClick={() => setActiveGutsKey(null)} />}
     </div>
 
     {scoreBanner && <div className="focus-lines" aria-hidden="true" />}

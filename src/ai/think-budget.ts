@@ -2,18 +2,19 @@ import type { GameState } from "../engine/types";
 
 /**
  * [Claude 2026-06-22] Phase F：自適應思考預算。
- * 使用者要求——強敵 AI 預設想 3 秒，遇關鍵／複雜盤面自動加到 10 秒（瑣碎決策不浪費玩家時間，難局才多想）。
+ * [Codex 2026-07-03] Phase J J4c：J1–J3 後搜尋吞吐已過 hard target，重掃 live budget。
+ * 使用者回報瑣碎手等待感偏重，因此下限降到 AI pacing 可吸收的區間；高壓／決勝／多分支仍保留 10 秒上限。
  * 用 GameState 直接可得的訊號估「這手有多需要深思」：①決策型別複雜度 ②場上 OP/DP 壓力 ③比賽進程（越後面的 set 越接近決勝）。
- * 輸出給 PIMC 當 `timeLimitMs`。設計成多數手落在 3–5 秒，只有「最複雜＋高壓＋決勝局」才逼近 10 秒。
+ * 輸出給 live SO-ISMCTS 當 `timeLimitMs`。設計成瑣碎手接近 UI pacing，只有「最複雜＋高壓＋決勝局」才逼近 10 秒。
  */
 export interface ThinkBudgetOptions {
-  /** 瑣碎盤面的下限（預設 3000ms） */
+  /** 瑣碎盤面的下限（預設 500ms；UI 仍以 AI_PACE_MS 維持出手節奏） */
   minMs?: number;
   /** 關鍵／複雜盤面的上限（預設 10000ms） */
   maxMs?: number;
 }
 
-const DEFAULT_MIN_MS = 3000;
+const DEFAULT_MIN_MS = 500;
 const DEFAULT_MAX_MS = 10000;
 
 // 決策型別的「複雜度基礎權重」0..1：要評估的分支越多／影響越大者越高。
@@ -21,7 +22,7 @@ const DEFAULT_MAX_MS = 10000;
 const TYPE_WEIGHT: Partial<Record<GameState["pendingDecision"] extends null ? never : string, number>> = {
   "deploy-block": 0.4, // 多選 uids + center，分支最多
   "effect-cards": 0.4, // 選卡組合多
-  "free": 0.35, // skill/event/pass/lost，主動權關鍵
+  "free": 0.05, // J4c：不再讓普通自由步驟預設吃長預算；交給壓力/決勝局訊號拉高
   "deploy-attack": 0.3,
   "effect-option": 0.3,
   "deploy-serve": 0.3,

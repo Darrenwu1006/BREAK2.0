@@ -276,6 +276,23 @@ describe("M8 Phase H H5 certainty-conditioned 資源節省 tie-break", () => {
     expect(implicit.recommendations).toEqual(explicit.recommendations);
   });
 
+  it("Phase J J4b 早停後仍照常套 H5 tie-break，不會被 robust visits 排序吃掉", () => {
+    const { state, weakUid, decks } = buildH5StraddleScenario(970, 1);
+    const common = h5Options(970, decks, {
+      iterations: 1200,
+      rootConservationWinRateThreshold: 0.85,
+    });
+    const full = createIsmctsReport(benchmarkDb, state, {
+      ...common,
+      enableConvergenceEarlyStop: false,
+    });
+    const early = createIsmctsReport(benchmarkDb, state, common);
+
+    expect(early.completedSamples).toBeLessThan(full.completedSamples);
+    expect(full.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: weakUid });
+    expect(early.bestAction.decision).toMatchObject({ type: "deploy-attack", uid: weakUid });
+  });
+
   it("v1 回歸守則：conservation 只能動 deploy-attack，deploy-toss(pairAware) 關閉／極低門檻結果必須相同", () => {
     // v1（見 IsmctsOptions 文件註解）錯在把整條 rootDecisionPressureScore（含 pairAware 拖攻配對品質項）
     // 反轉、套用到所有決策類型；對 deploy-toss 而言，反轉方向在數學上等同「刻意選較差的拖攻配對」，是

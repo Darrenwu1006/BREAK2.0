@@ -3,6 +3,7 @@
  *
  * 用法：
  *   npx vite-node tools/ab-ismcts.ts -- --games 20 --time-ms 3000 --leaf-horizon 40 [--policy is-mcts|mo-ismcts] [--opp pimc-v2|heuristic-v2] [--mirror]
+ *   npx vite-node tools/ab-ismcts.ts -- --budget=iterations --ismcts-iters=400 --games 2 --leaf-horizon 0 --policy mo-ismcts --opp is-mcts --mirror
  *
  * 兩種結構：
  * - 預設（cross-matchup）：4 對戰 deckA vs deckB × P0/P1 換座位 × games 局。座位互換已平衡牌組強度「偏差」，
@@ -37,11 +38,14 @@ function argValue(name: string, fallback: string): string {
 }
 
 const games = Number(argValue("games", "20"));
+const budget = argValue("budget", "wall-clock");
 const timeMs = Number(argValue("time-ms", "300"));
+const ismctsIters = Number(argValue("ismcts-iters", "400"));
 const policy = argValue("policy", "is-mcts") as BenchmarkPolicyId;
 const opp = argValue("opp", "pimc-v2") as BenchmarkPolicyId;
 const leafHorizon = Number(argValue("leaf-horizon", "40"));
-const rootTiebreakDelta = Number(argValue("root-tiebreak-delta", argValue("ismcts-root-tiebreak-delta", "0.03")));
+const limitUnits = Number(argValue("limit-units", "0"));
+const rootTiebreakDelta = Number(argValue("root-tiebreak-delta", argValue("ismcts-root-tiebreak-delta", "0.04")));
 const valueModelPath = argValue("value-model-file", "");
 const outPath = argValue("out", "");
 const mirror = process.argv.includes("--mirror");
@@ -64,7 +68,8 @@ const MIRROR_DECKS = [
 ];
 
 // units＝要跑的對戰單位（[deckP0source, deckP1source]）。mirror 模式下兩邊同牌組。
-const units: [string, string][] = mirror ? MIRROR_DECKS.map((d) => [d, d] as [string, string]) : MATCHUPS;
+const allUnits: [string, string][] = mirror ? MIRROR_DECKS.map((d) => [d, d] as [string, string]) : MATCHUPS;
+const units: [string, string][] = limitUnits > 0 ? allUnits.slice(0, limitUnits) : allUnits;
 
 function deck(name: string): BenchmarkDeckInput {
   const d = findBenchmarkDeck(name);
@@ -140,6 +145,12 @@ function summarizeDiagnostics(items: readonly SearchDecisionDiagnostics[]) {
 const usesIsmctsFamily = (p: BenchmarkPolicyId) =>
   p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "mo-ismcts" || p === "mo-ismcts-h3";
 const usesPimcFamily = (p: BenchmarkPolicyId) => p === "pimc-v2" || p === "pimc";
+if (budget !== "wall-clock" && budget !== "iterations") {
+  throw new Error("--budget 只支援 wall-clock 或 iterations");
+}
+if (budget === "iterations" && (!usesIsmctsFamily(policy) || !usesIsmctsFamily(opp))) {
+  throw new Error("--budget=iterations 目前只支援 ISMCTS/MO policy 對照，避免把 PIMC sample budget 混入研究閘");
+}
 
 interface QualityAcc {
   lowPointDeployOpportunities: number;
@@ -196,10 +207,11 @@ function formatQuality(label: string, acc: QualityAcc): string {
     `M-Throw3 OP ${summary.averageOpPressure.toFixed(2)} (${summary.opPressureSamples} samples)`;
 }
 
-// 同 wall-clock：搜尋 policy 與對手都吃同一個 timeLimitMs。
+// wall-clock＝上線強度尺；iterations＝Phase I R1 研究尺（排除 MO per-iteration 成本干擾）。
 if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
   configureIsmctsBenchmark({
-    timeLimitMs: timeMs,
+    iterations: budget === "iterations" ? ismctsIters : 1_000_000,
+    timeLimitMs: budget === "iterations" ? undefined : timeMs,
     leafRolloutHorizon: leafHorizon,
     rootPressureTieBreakDelta: rootTiebreakDelta,
     ...(valueModelPath ? { valueModel: readValueModel(valueModelPath) } : {}),
@@ -207,7 +219,8 @@ if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
 }
 if (usesPimcFamily(policy) || usesPimcFamily(opp)) configurePimcBenchmark({ timeLimitMs: timeMs });
 
-console.log(`Phase I A/B — ${policy}(leaf=${leafHorizon}) vs ${opp} @ same wall-clock ${timeMs}ms${mirror ? "  [MIRROR 同牌組]" : ""}`);
+const budgetLabel = budget === "iterations" ? `iteration-matched ${ismctsIters} iters` : `same wall-clock ${timeMs}ms`;
+console.log(`Phase I A/B — ${policy}(leaf=${leafHorizon}) vs ${opp} @ ${budgetLabel}${mirror ? "  [MIRROR 同牌組]" : ""}`);
 if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
   console.log(`ISMCTS knobs: root-tiebreak-delta=${rootTiebreakDelta}${valueModelPath ? `, value-model=${valueModelPath}` : ""}`);
 }
@@ -288,7 +301,7 @@ if (outPath) {
     `${JSON.stringify(
       {
         kind: "phase-i-ab-ismcts",
-        args: { policy, opp, games, timeMs, leafHorizon, mirror, rootTiebreakDelta, valueModelPath: valueModelPath || null },
+        args: { policy, opp, games, budget, timeMs: budget === "wall-clock" ? timeMs : null, ismctsIters: budget === "iterations" ? ismctsIters : null, leafHorizon, mirror, limitUnits: limitUnits > 0 ? limitUnits : null, rootTiebreakDelta, valueModelPath: valueModelPath || null },
         structure: { units: units.length, totalGames: units.length * 2 * games },
         combined: { wins: policyWins, completed, ci },
         playQuality: {

@@ -68,6 +68,14 @@ describe("梟谷：登場被動", () => {
     expect(effParam(db, s, bokuto, "attack")).toBe(6); // +5
   });
 
+  it("P01-047：站在發球區時被梟谷キャラ蓋上不觸發（技能限定攻擊區）", () => {
+    let s = setup(deckWith("HV-P01-047", "HV-P01-043"), deckWith("HV-D01-002"), 0);
+    placeOnStack(s, 0, "serve", "HV-P01-047"); // 既存發球區キャラ＝木葉
+    const bokuto = grab(s, 0, "HV-P01-043");
+    s = feed(s, { type: "deploy-serve", uid: bokuto }); // 蓋上 → 不應觸發木葉的被蓋技能
+    expect(s.pendingDecision?.type).toBe("free"); // 沒有 effect-confirm 待機，直接回到自由階段
+  });
+
   it("P01-051＋Q255/Q257：OP≥4＋デッキ頂棄1（梟谷）→ワンタッチ(3)；跳過後未解決技能消滅", () => {
     let s = setup(deckWith("HV-P01-051", "HV-D01-003", "HV-P01-044", "HV-P01-050"), deckWith("HV-D01-008", "HV-D01-009", "HV-D01-006"), 0);
     s = serveWith(s, FILLER);

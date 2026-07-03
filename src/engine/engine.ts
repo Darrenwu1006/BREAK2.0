@@ -35,9 +35,11 @@ import {
   removeFromHand,
   startPendingItem,
   stepEffect,
+  suppressLogsForState,
   topChara,
   useSkill,
 } from "./effects";
+import { cloneStateForSearch } from "./search-clone";
 
 export { freeOptions, blockDeployMax, deployNames, charasOf, effParam, nameOf } from "./effects";
 
@@ -131,8 +133,14 @@ export function createGame(db: CardDb, opts: CreateGameOptions): GameState {
 
 // ---------- 決策套用 ----------
 
-export function applyDecision(db: CardDb, prev: GameState, decision: Decision): GameState {
-  const state = structuredClone(prev) as GameState;
+export interface ApplyDecisionOptions {
+  execMode?: "live" | "search";
+}
+
+export function applyDecision(db: CardDb, prev: GameState, decision: Decision, options: ApplyDecisionOptions = {}): GameState {
+  const searchMode = options.execMode === "search";
+  const state = searchMode ? cloneStateForSearch(prev) : (structuredClone(prev) as GameState);
+  if (searchMode) suppressLogsForState(state);
   const pending = state.pendingDecision;
   if (!pending) throw new Error("目前不需要決策");
   if (pending.type !== decision.type) throw new Error(`需要 ${pending.type}，收到 ${decision.type}`);

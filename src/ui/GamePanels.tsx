@@ -4,7 +4,7 @@ import { effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 import type { CoachReport } from "../ai/coach";
 import { CardView, displayName, cardRarity } from "./CardView";
-import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
+import type { DeckMeta, InspectedCard } from "./gameTypes";
 
 export const PHASE_NAME: Record<Phase, string> = {
   setup: "準備",
@@ -21,7 +21,7 @@ export const PHASE_NAME: Record<Phase, string> = {
   gameOver: "比賽結束",
 };
 
-const PHASE_ORDER: Phase[] = ["serve", "start", "block", "draw", "receive", "toss", "attack", "end"];
+export const PHASE_ORDER: Phase[] = ["serve", "start", "block", "draw", "receive", "toss", "attack", "end"];
 
 interface DisplayLogEntry extends LogEntry {
   summary?: boolean;
@@ -88,65 +88,8 @@ export function GameLog({ state }: { state: GameState }) {
   );
 }
 
-export function LeftPanel(props: {
-  state: GameState;
-  deckMeta: [DeckMeta, DeckMeta];
-  engine: OpponentEngine;
-  onEngineChange: (engine: OpponentEngine) => void;
-  sfxEnabled: boolean;
-  onToggleSfx: () => void;
-  onExit: () => void;
-}) {
-  const { state, deckMeta } = props;
-  const phaseIndex = PHASE_ORDER.indexOf(state.phase);
-  return (
-    <aside className="left-panel">
-      <div className="match-bar">
-        <div className="match-line">
-          <span className="match-counter-inline">SET <b>{state.setNo}</b></span>
-          <span className="match-counter-inline">TURN <b>{state.turnNo}</b></span>
-          <button className="btn-quiet match-exit" onClick={props.onExit}>離開</button>
-        </div>
-        <div className="phase-row">
-          <strong>{PHASE_NAME[state.phase]}</strong>
-          <small className={state.turnPlayer === 0 ? "tone-me" : "tone-op"}>
-            {state.turnPlayer === 0 ? "你的回合" : "電腦回合"}
-          </small>
-        </div>
-        <ol className="phase-pips" aria-label={`回合階段：目前 ${PHASE_NAME[state.phase]}`}>
-          {PHASE_ORDER.map((phase, index) => (
-            <li
-              key={phase}
-              className={state.phase === phase ? "on" : index < phaseIndex ? "done" : ""}
-              title={PHASE_NAME[phase]}
-            />
-          ))}
-        </ol>
-        <div className="match-decks">
-          <span className="player-tone-0"><b>你</b> {deckMeta[0].school}／{deckMeta[0].name}</span>
-          <span className="player-tone-1"><b>電腦</b> {deckMeta[1].school}／{deckMeta[1].name}</span>
-        </div>
-      </div>
-
-      <GameLog state={state} />
-
-      <div className="speed-control">
-        <span>對手引擎</span>
-        <div role="group" aria-label="對手引擎">
-          {([["strong", "強敵"], ["heuristic", "快速"]] as const).map(([value, label]) => (
-            <button key={value} className={props.engine === value ? "is-active" : ""} onClick={() => props.onEngineChange(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="sfx-toggle">
-          <input type="checkbox" checked={props.sfxEnabled} onChange={props.onToggleSfx} />
-          擬音字
-        </label>
-      </div>
-    </aside>
-  );
-}
+/* [Claude 2026-07-03] Readability V2：左欄整併——狀態資訊移入頂欄（TopBar in Game.tsx）、
+   Log 常駐右欄底部、引擎/擬音字設定併入右欄「設定」tab。LeftPanel 移除。 */
 
 function ParamsTable(props: { card: Card; state: GameState; db: CardDb; uid?: number }) {
   if (!props.card.params) return null;

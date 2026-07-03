@@ -1,4 +1,4 @@
-import { applyDecision, deployableUids, effParam } from "../engine/engine";
+import { applyDecision, deployableUids, effParam, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
@@ -91,6 +91,11 @@ export interface IsmctsOptions {
    * WORKLOG 2026-07-02、`docs/M8_PHASE_H_PLAY_QUALITY_SPEC.md` §7.3。
    */
   rootConservationWinRateThreshold?: number;
+  /**
+   * [Codex 2026-07-03] Phase J J4b：robust child 的 visits 領先已大到剩餘 iteration
+   * 全給 second-best 也追不上時，提前收斂。預設開啟；測試/診斷可關閉做 A/B。
+   */
+  enableConvergenceEarlyStop?: boolean;
   /**
    * [Claude 2026-06-23] 對手節點模型（G2 診斷後新增）：
    *   "heuristic"（預設）：對手節點 = 環境，直接套用 heuristic 決策、不建樹分支。
@@ -192,7 +197,7 @@ function leafEval(
     if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
     if (!s.pendingDecision) break;
     try {
-      s = applyDecision(db, s, heuristicAiDecision(db, s, rolloutPolicy));
+      s = applyDecision(db, s, heuristicAiDecision(db, s, rolloutPolicy), { execMode: "search" });
     } catch {
       break;
     }
@@ -384,7 +389,7 @@ function iterate(
     // opponentModel="heuristic"：對手節點＝環境，直接套 heuristic、不建樹分支（樹只在我方決策展開）。
     if (cur.pendingDecision.player !== perspective && opponentModel === "heuristic") {
       try {
-        cur = applyDecision(db, cur, heuristicAiDecision(db, cur, rolloutPolicy));
+        cur = applyDecision(db, cur, heuristicAiDecision(db, cur, rolloutPolicy), { execMode: "search" });
       } catch {
         break;
       }
@@ -404,7 +409,7 @@ function iterate(
       const chosen = unexpanded[0]!;
       const child = newNode();
       node.children.set(chosen.key, child);
-      cur = applyDecision(db, cur, chosen.decision);
+      cur = applyDecision(db, cur, chosen.decision, { execMode: "search" });
       path.push({ node, key: chosen.key });
       node = child;
       break;
@@ -425,7 +430,7 @@ function iterate(
         bestDecision = entry.decision;
       }
     }
-    cur = applyDecision(db, cur, bestDecision);
+    cur = applyDecision(db, cur, bestDecision, { execMode: "search" });
     path.push({ node, key: bestKey });
     node = node.children.get(bestKey)!;
   }
@@ -479,6 +484,52 @@ function fallbackEstimate(db: CardDb, state: GameState, decision: Decision): Coa
   };
 }
 
+function directEstimate(db: CardDb, state: GameState, decision: Decision, reason: string): CoachActionEstimate {
+  return {
+    decision,
+    label: decisionLabel(db, state, decision),
+    winRate: 0,
+    confidence: 0,
+    sampleCount: 0,
+    wins: 0,
+    errors: 0,
+    maxSteps: 0,
+    principalLine: [],
+    explanation: `IS-MCTS：${reason}，依 Phase J J4 直接出手，未啟動搜尋。`,
+  };
+}
+
+function directRootDecision(db: CardDb, state: GameState, rootLegal: readonly LegalEntry[]): { decision: Decision; reason: string } | null {
+  if (rootLegal.length === 1) return { decision: rootLegal[0]!.decision, reason: "root 僅 1 個合法候選" };
+  const pd = state.pendingDecision;
+  if (pd?.type !== "free") return null;
+  const opts = freeOptions(db, state);
+  if (opts.skills.length > 0 || opts.events.length > 0) return null;
+  const pass = rootLegal.find((entry) => entry.decision.type === "free" && entry.decision.action === "pass");
+  return pass ? { decision: pass.decision, reason: "自由步驟無可宣告技能/事件，保留 Pass 節奏" } : null;
+}
+
+function estimatedRemainingIterations(iterationCap: number, completed: number, deadline: number, startedAt: number): number {
+  const remainingByCap = Math.max(0, iterationCap - completed);
+  if (!Number.isFinite(deadline)) return remainingByCap;
+  if (completed <= 0) return remainingByCap;
+  const now = Date.now();
+  const remainingMs = Math.max(0, deadline - now);
+  const elapsedMs = Math.max(1, now - startedAt);
+  const projectedByTime = Math.floor((completed / elapsedMs) * remainingMs);
+  return Math.min(remainingByCap, Math.max(0, projectedByTime));
+}
+
+function shouldStopForRootConvergence(root: IsmctsNode, rootLegal: readonly LegalEntry[], remainingIterations: number): boolean {
+  if (rootLegal.length <= 1) return true;
+  const visits = rootLegal
+    .map((entry) => root.children.get(entry.key)?.visits ?? 0)
+    .sort((a, b) => b - a);
+  const best = visits[0] ?? 0;
+  const second = visits[1] ?? 0;
+  return best > second + Math.max(0, remainingIterations);
+}
+
 /**
  * SO-ISMCTS 主入口。刻意回 `CoachReport`，讓 coach-worker／benchmark／UI 取 `bestAction.decision` 零改動重用。
  */
@@ -502,6 +553,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA);
   const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK;
   const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold ?? DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD;
+  const enableConvergenceEarlyStop = options.enableConvergenceEarlyStop ?? true;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
   // 沒 timeLimitMs 才退回固定 DEFAULT_ITERATIONS（純迭代模式，測試用）。避免 800 上限在 ~0.5s 就吃掉 think budget。
@@ -513,10 +565,29 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
         : DEFAULT_ITERATIONS;
   const deadline = options.timeLimitMs === undefined ? Infinity : Date.now() + Math.max(0, options.timeLimitMs);
   const fallbackDecision = heuristicAiDecision(db, state, rolloutPolicy);
+  const rootLegal = legalEntries(db, state, candidateLimit, rolloutPolicy);
+  const direct = directRootDecision(db, state, rootLegal);
+  if (direct) {
+    const bestAction = directEstimate(db, state, direct.decision, direct.reason);
+    return {
+      kind: "ismcts-coach-v1",
+      perspectivePlayer: perspective,
+      actingPlayer,
+      pendingType: pd.type,
+      rolloutPolicy,
+      requestedSamplesPerAction: iterationCap,
+      completedSamples: 0,
+      timedOut: false,
+      fallbackDecision,
+      bestAction,
+      recommendations: [bestAction],
+    };
+  }
 
   const root = newNode();
   let completed = 0;
   let timedOut = false;
+  const startedAt = Date.now();
   for (let iter = 0; iter < iterationCap; iter++) {
     if (Date.now() >= deadline) {
       timedOut = true;
@@ -525,12 +596,17 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     const world = determinizeHiddenState(state, perspective, knownDecks, baseSeed + iter * SEED_STRIDE);
     iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel, pressureShapingEpsilon, valueModel);
     completed++;
+    if (
+      enableConvergenceEarlyStop &&
+      shouldStopForRootConvergence(root, rootLegal, estimatedRemainingIterations(iterationCap, completed, deadline, startedAt))
+    ) {
+      break;
+    }
   }
 
   // root 子節點 → 候選估計，依 visits（robust child）排序、tie-break mean → confidence。
   const recommendations: CoachActionEstimate[] = [];
   // 用真實盤面（root state）的合法集列舉決策物件，對應 root 已建的子節點 key。
-  const rootLegal = legalEntries(db, state, candidateLimit, rolloutPolicy);
   const legalByKey = new Map(rootLegal.map((entry) => [entry.key, entry.decision] as const));
   for (const [key, child] of root.children) {
     const decision = legalByKey.get(key);
@@ -577,5 +653,6 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
 export const __ismctsTest = {
   newNode,
   iterate,
+  shouldStopForRootConvergence,
   confidenceFromRate,
 };

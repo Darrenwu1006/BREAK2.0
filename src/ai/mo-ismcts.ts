@@ -187,7 +187,7 @@ function leafStateAfterRollout(
     if (s.phase === "gameOver") return s;
     if (!s.pendingDecision) break;
     try {
-      s = applyDecision(db, s, heuristicAiDecision(db, s, rolloutPolicy));
+      s = applyDecision(db, s, heuristicAiDecision(db, s, rolloutPolicy), { execMode: "search" });
     } catch {
       break;
     }
@@ -256,7 +256,7 @@ function iterate(
     const before = cur;
     let after: GameState;
     try {
-      after = applyDecision(db, cur, chosen.decision);
+      after = applyDecision(db, cur, chosen.decision, { execMode: "search" });
     } catch {
       break;
     }

@@ -1882,6 +1882,9 @@
     "kind": "passive",
     "trigger": {
      "on": "covered",
+     "area": [
+      "attack"
+     ],
      "by": {
       "affiliation": "梟谷"
      }
