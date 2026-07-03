@@ -10,6 +10,16 @@
 - 如果任務涉及 AI / MCTS / 牌組分析，先讀 `docs/BLUEPRINT.md` 的 M5 與 M8。
 - `docs/` 是本地協作文件，可能不在 git status 中出現；不要因此忽略它。
 
+## Model Roles（[使用者 2026-07-03] 定案）
+
+跨模型分工如下，各角色仍遵守本檔全部既有規則（作者標記、WORKLOG 反序、guardrails）：
+
+- **Claude（Fable 5）＝ Orchestrator / Tech Lead**：全盤現況體檢、瓶頸排序、spec 開案規劃與優先序、跨線（AI／UI／工程）協調、上線收案的技術把關。產出以架構判斷、決策文件與 spec 骨架為主。
+- **Gemini ＝ 助理 / Reviewer**：review、與使用者快速討論構想、挑戰既有架構、撰寫紀錄與建議。**99% 的場景不碰程式碼撰寫。**
+- **Codex（GPT-5.5）／ Claude Opus 4.8 ＝ 主要執行者**：依任務狀態以不同推理層級執行 spec 的撰寫與實作。
+
+角色分工不取代下方「Planning / Reasoning Budget」的等級判準；執行者接件時仍依該表選層。
+
 ## Planning / Reasoning Budget
 
 - 當使用者提出需求，且本輪會產出規劃、spec、架構判斷或跨模型交接文件時，agent 必須附上「推理等級建議」。
