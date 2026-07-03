@@ -85,7 +85,7 @@ const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
   // 對手模型預設＝heuristic（createIsmctsReport 預設）——adversarial 對固定 heuristic 對手有害。
   leafRolloutHorizon: 40,
   pressureShapingEpsilon: 0.05,
-  rootPressureTieBreakDelta: 0.03,
+  rootPressureTieBreakDelta: 0.04,
 };
 
 let ismctsBenchmarkConfig: IsmctsBenchmarkConfig = { ...DEFAULT_ISMCTS_BENCHMARK_CONFIG };
