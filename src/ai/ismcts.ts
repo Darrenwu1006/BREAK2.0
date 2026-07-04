@@ -11,6 +11,7 @@ import {
   type CoachReport,
 } from "./coach";
 import { evaluatePressureScore, evaluateShapedStateValue, type ValueModel } from "./rollout-value";
+import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
 
 /**
@@ -189,9 +190,10 @@ function leafEval(
   horizon: number,
   pressureShapingEpsilon: number,
   valueModel: ValueModel | undefined,
+  knownDecks: KnownDecks | undefined,
 ): number {
   if (cur.phase === "gameOver") return cur.winner === perspective ? 1 : 0;
-  if (horizon <= 0) return clamp01(evaluateShapedStateValue(db, cur, perspective, pressureShapingEpsilon, valueModel));
+  if (horizon <= 0) return clamp01(evaluateShapedStateValue(db, cur, perspective, pressureShapingEpsilon, valueModel, knownDecks));
   let s = cur;
   for (let step = 0; step < horizon; step++) {
     if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
@@ -203,7 +205,7 @@ function leafEval(
     }
   }
   if (s.phase === "gameOver") return s.winner === perspective ? 1 : 0;
-  return clamp01(evaluateShapedStateValue(db, s, perspective, pressureShapingEpsilon, valueModel));
+  return clamp01(evaluateShapedStateValue(db, s, perspective, pressureShapingEpsilon, valueModel, knownDecks));
 }
 
 interface LegalEntry {
@@ -378,6 +380,7 @@ function iterate(
   opponentModel: "heuristic" | "adversarial",
   pressureShapingEpsilon: number,
   valueModel: ValueModel | undefined,
+  knownDecks: KnownDecks | undefined,
 ): number {
   let node = root;
   let cur = world;
@@ -436,7 +439,7 @@ function iterate(
   }
 
   // ---- Leaf evaluation（方案 A＝純 V；方案 B＝淺 rollout 後 V）----
-  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon, pressureShapingEpsilon, valueModel);
+  const value = leafEval(db, cur, perspective, rolloutPolicy, leafRolloutHorizon, pressureShapingEpsilon, valueModel, knownDecks);
 
   // ---- Backup（統計掛在子節點：path 上每條 edge 的目標節點）----
   for (const step of path) {
@@ -594,7 +597,20 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
       break;
     }
     const world = determinizeHiddenState(state, perspective, knownDecks, baseSeed + iter * SEED_STRIDE);
-    iterate(db, root, world, perspective, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, opponentModel, pressureShapingEpsilon, valueModel);
+    iterate(
+      db,
+      root,
+      world,
+      perspective,
+      explorationC,
+      candidateLimit,
+      rolloutPolicy,
+      leafRolloutHorizon,
+      opponentModel,
+      pressureShapingEpsilon,
+      valueModel,
+      knownDecks,
+    );
     completed++;
     if (
       enableConvergenceEarlyStop &&

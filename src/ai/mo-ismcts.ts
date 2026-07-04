@@ -12,6 +12,7 @@ import {
 } from "./coach";
 import { ucbScore } from "./ismcts";
 import { evaluateShapedStateValue, type ValueModel } from "./rollout-value";
+import type { KnownDecks } from "./remaining-pool";
 
 export interface ObservableProjectionContext {
   actor: PlayerId;
@@ -195,9 +196,9 @@ function leafStateAfterRollout(
   return s;
 }
 
-function leafEvalFor(db: CardDb, cur: GameState, perspective: PlayerId, valueModel: ValueModel | undefined): number {
+function leafEvalFor(db: CardDb, cur: GameState, perspective: PlayerId, valueModel: ValueModel | undefined, knownDecks: KnownDecks | undefined): number {
   if (cur.phase === "gameOver") return cur.winner === perspective ? 1 : 0;
-  return clamp01(evaluateShapedStateValue(db, cur, perspective, 0, valueModel));
+  return clamp01(evaluateShapedStateValue(db, cur, perspective, 0, valueModel, knownDecks));
 }
 
 function leafEvalVector(
@@ -206,9 +207,10 @@ function leafEvalVector(
   rolloutPolicy: HeuristicV2ProfileId,
   leafRolloutHorizon: number,
   valueModel: ValueModel | undefined,
+  knownDecks: KnownDecks | undefined,
 ): [number, number] {
   const leaf = leafStateAfterRollout(db, cur, rolloutPolicy, leafRolloutHorizon);
-  return [leafEvalFor(db, leaf, 0, valueModel), leafEvalFor(db, leaf, 1, valueModel)];
+  return [leafEvalFor(db, leaf, 0, valueModel, knownDecks), leafEvalFor(db, leaf, 1, valueModel, knownDecks)];
 }
 
 function iterate(
@@ -220,6 +222,7 @@ function iterate(
   rolloutPolicy: HeuristicV2ProfileId,
   leafRolloutHorizon: number,
   valueModel: ValueModel | undefined,
+  knownDecks: KnownDecks | undefined,
 ): [number, number] {
   const cursors: [MoNode, MoNode] = [roots[0], roots[1]];
   const path: Array<{ node: MoNode; key: string }> = [];
@@ -275,7 +278,7 @@ function iterate(
     cur = after;
   }
 
-  const value = leafEvalVector(db, cur, rolloutPolicy, leafRolloutHorizon, valueModel);
+  const value = leafEvalVector(db, cur, rolloutPolicy, leafRolloutHorizon, valueModel, knownDecks);
   for (const step of path) {
     const child = step.node.children.get(step.key)!;
     child.visits++;
@@ -357,7 +360,7 @@ export function createMoIsmctsReport(db: CardDb, state: GameState, options: MoIs
       break;
     }
     const world = determinizeHiddenState(state, perspective, knownDecks, baseSeed + iter * SEED_STRIDE);
-    iterate(db, roots, world, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, valueModel);
+    iterate(db, roots, world, explorationC, candidateLimit, rolloutPolicy, leafRolloutHorizon, valueModel, knownDecks);
     completed++;
   }
 

@@ -8,10 +8,11 @@ import {
   type BenchmarkPolicyId,
 } from "../src/ai/benchmark";
 import { evaluatePressureScore, extractValueFeatures, VALUE_FEATURE_NAMES } from "../src/ai/rollout-value";
-import { fitPhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
+import { fitPhaseHValueModel, scorePhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
 import { createFreeAttackGateState } from "../src/ai/phase-h-gate-control";
 import { auditReplaySession, summarizeGateValuePairs } from "../src/ai/phase-h-value-audit";
 import type { ReplaySession } from "../src/ui/replayHistory";
+import type { KnownDecks } from "../src/ai/remaining-pool";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -71,6 +72,13 @@ interface OutcomeRowCache {
   rows: CachedOutcomeRow[];
   games: OutcomeCacheGame[];
   updatedAt: string;
+}
+
+interface OutcomeRowSplit {
+  trainRows: CachedOutcomeRow[];
+  holdoutRows: CachedOutcomeRow[];
+  trainGames: number[];
+  holdoutGames: number[];
 }
 
 function argValue(name: string, fallback: string): string {
@@ -161,6 +169,7 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
     heuristicProfileForDeckAxes(deckA.axes),
     heuristicProfileForDeckAxes(deckB.axes),
   ];
+  const knownDecks: KnownDecks = [deckA.ids, deckB.ids];
   let state = createGame(benchmarkDb, { seed, decks: [deckA.ids, deckB.ids] });
   const snapshots: { x0: number[]; x1: number[] }[] = [];
   let ok = true;
@@ -173,8 +182,8 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
     }
     if (step % config.sampleEvery === 0) {
       snapshots.push({
-        x0: extractValueFeatures(state, 0 as PlayerId, benchmarkDb),
-        x1: extractValueFeatures(state, 1 as PlayerId, benchmarkDb),
+        x0: extractValueFeatures(state, 0 as PlayerId, benchmarkDb, { knownDecks }),
+        x1: extractValueFeatures(state, 1 as PlayerId, benchmarkDb, { knownDecks }),
       });
     }
     try {
@@ -202,10 +211,10 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
   };
 }
 
-function collectOutcomeRows(games: number, config: OutcomeSourceConfig): PhaseHOutcomeRow[] {
-  const rows: PhaseHOutcomeRow[] = [];
+function collectOutcomeRows(games: number, config: OutcomeSourceConfig): CachedOutcomeRow[] {
+  const rows: CachedOutcomeRow[] = [];
   for (let g = 0; g < games; g++) {
-    rows.push(...collectOutcomeRowsForGame(g, config).rows.map(stripCachedRow));
+    rows.push(...collectOutcomeRowsForGame(g, config).rows);
   }
   return rows;
 }
@@ -232,8 +241,44 @@ function normalizedCacheConfig(config: OutcomeSourceConfig): OutcomeSourceConfig
   };
 }
 
+function configWithoutFeatureNames(config: OutcomeSourceConfig): Omit<OutcomeSourceConfig, "valueFeatureNames"> {
+  const { valueFeatureNames: _valueFeatureNames, ...rest } = normalizedCacheConfig(config);
+  return rest;
+}
+
+function featureNamesArePrefix(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length <= expected.length && actual.every((name, index) => name === expected[index]);
+}
+
 function cacheConfigMatches(actual: OutcomeSourceConfig, expected: OutcomeSourceConfig): boolean {
-  return JSON.stringify(normalizedCacheConfig(actual)) === JSON.stringify(normalizedCacheConfig(expected));
+  return (
+    JSON.stringify(configWithoutFeatureNames(actual)) === JSON.stringify(configWithoutFeatureNames(expected)) &&
+    featureNamesArePrefix(actual.valueFeatureNames, expected.valueFeatureNames)
+  );
+}
+
+function normalizeCachedFeatureDim(cache: OutcomeRowCache, config: OutcomeSourceConfig, path: string): OutcomeRowCache {
+  const actualNames = cache.config.valueFeatureNames;
+  const expectedNames = config.valueFeatureNames;
+  if (actualNames.length === expectedNames.length) return cache;
+  if (!featureNamesArePrefix(actualNames, expectedNames)) {
+    throw new Error(`row cache ${path} has incompatible feature names`);
+  }
+  console.log(
+    `row cache ${path} uses legacy feature dim ${actualNames.length}; padding cached rows to ${expectedNames.length}`,
+  );
+  const paddedRows = cache.rows.map((row) => {
+    if (row.x.length === expectedNames.length) return row;
+    if (row.x.length !== actualNames.length) {
+      throw new Error(`row cache ${path} row feature dim ${row.x.length} does not match cache feature dim ${actualNames.length}`);
+    }
+    return { ...row, x: [...row.x, ...new Array(expectedNames.length - actualNames.length).fill(0)] };
+  });
+  return {
+    ...cache,
+    config,
+    rows: paddedRows,
+  };
 }
 
 function readOutcomeCache(path: string, config: OutcomeSourceConfig): OutcomeRowCache {
@@ -256,7 +301,7 @@ function readOutcomeCache(path: string, config: OutcomeSourceConfig): OutcomeRow
       `row cache ${path} was produced with different outcome-source config; use a new --row-cache path for this run`,
     );
   }
-  return cache;
+  return normalizeCachedFeatureDim(cache, config, path);
 }
 
 function writeOutcomeCache(path: string, cache: OutcomeRowCache): void {
@@ -265,7 +310,7 @@ function writeOutcomeCache(path: string, cache: OutcomeRowCache): void {
   writeFileSync(path, `${JSON.stringify(cache, null, 2)}\n`);
 }
 
-function collectOutcomeRowsWithCache(games: number, config: OutcomeSourceConfig, path: string): PhaseHOutcomeRow[] {
+function collectOutcomeRowsWithCache(games: number, config: OutcomeSourceConfig, path: string): CachedOutcomeRow[] {
   const cache = readOutcomeCache(path, config);
   const completed = new Set(cache.games.map((game) => game.gameIndex));
   const cachedGamesInScope = cache.games.filter((game) => game.gameIndex < games).length;
@@ -280,8 +325,31 @@ function collectOutcomeRowsWithCache(games: number, config: OutcomeSourceConfig,
   }
   return cache.rows
     .filter((row) => row.gameIndex < games)
-    .sort((a, b) => a.gameIndex - b.gameIndex)
-    .map(stripCachedRow);
+    .sort((a, b) => a.gameIndex - b.gameIndex);
+}
+
+function splitOutcomeRowsByGame(rows: readonly CachedOutcomeRow[], holdoutEvery: number, holdoutOffset: number): OutcomeRowSplit {
+  const normalizedOffset = holdoutEvery > 0 ? ((holdoutOffset % holdoutEvery) + holdoutEvery) % holdoutEvery : 0;
+  const trainRows: CachedOutcomeRow[] = [];
+  const holdoutRows: CachedOutcomeRow[] = [];
+  const trainGames = new Set<number>();
+  const holdoutGames = new Set<number>();
+  for (const row of rows) {
+    const isHoldout = holdoutEvery > 1 && row.gameIndex % holdoutEvery === normalizedOffset;
+    if (isHoldout) {
+      holdoutRows.push(row);
+      holdoutGames.add(row.gameIndex);
+    } else {
+      trainRows.push(row);
+      trainGames.add(row.gameIndex);
+    }
+  }
+  return {
+    trainRows,
+    holdoutRows,
+    trainGames: [...trainGames].sort((a, b) => a - b),
+    holdoutGames: [...holdoutGames].sort((a, b) => a - b),
+  };
 }
 
 function omittedFeatures(): ValueFeatureName[] {
@@ -338,7 +406,7 @@ function isGateConfirmState(state: GameState): boolean {
   return state.pendingDecision?.type === "effect-confirm" && state.effectCtx?.awaiting?.kind === "confirm" && state.effectCtx.awaiting.what === "gate";
 }
 
-function gatePairFromState(state: GameState, minPressureDelta: number): PhaseHGatePairRow | null {
+function gatePairFromState(state: GameState, minPressureDelta: number, knownDecks?: KnownDecks): PhaseHGatePairRow | null {
   if (!isGateConfirmState(state)) return null;
   try {
     const player = state.pendingDecision!.player as PlayerId;
@@ -348,8 +416,8 @@ function gatePairFromState(state: GameState, minPressureDelta: number): PhaseHGa
       evaluatePressureScore(benchmarkDb, accept, player) -
       evaluatePressureScore(benchmarkDb, decline, player);
     if (pressureDelta <= minPressureDelta) return null;
-    const acceptX = extractValueFeatures(accept, player, benchmarkDb);
-    const declineX = extractValueFeatures(decline, player, benchmarkDb);
+    const acceptX = extractValueFeatures(accept, player, benchmarkDb, { knownDecks });
+    const declineX = extractValueFeatures(decline, player, benchmarkDb, { knownDecks });
     return { positiveX: acceptX, negativeX: declineX };
   } catch {
     return null;
@@ -364,8 +432,9 @@ function collectGatePairs(sessions: readonly ReplaySession[], includeSynthetic: 
     if (synthetic) pairs.push({ ...synthetic, weight: argNum("synthetic-weight", 8) });
   }
   for (const session of sessions) {
+    const knownDecks: KnownDecks = [session.decks[0].cardIds, session.decks[1].cardIds];
     for (const entry of session.entries) {
-      const pair = gatePairFromState(entry.before, minPressureDelta);
+      const pair = gatePairFromState(entry.before, minPressureDelta, knownDecks);
       if (pair) pairs.push(pair);
     }
   }
@@ -416,6 +485,8 @@ const omitted = omittedFeatures();
 const nonNegative = nonNegativeFeatures();
 const minOutcomeRows = argNum("min-outcome-rows", 100);
 const skipGatePairs = hasFlag("no-gate-pairs");
+const holdoutEvery = Math.max(0, Math.floor(argNum("holdout-every", 0)));
+const holdoutOffset = Math.floor(argNum("holdout-offset", Math.max(0, holdoutEvery - 1)));
 
 console.log(
   `Phase-H-Value-Fit: outcome policy=${outcomePolicy}, deckPairMode=${deckPairMode}, games=${games}, replayFiles=${files.length}, ` +
@@ -427,12 +498,20 @@ if (nonNegative.length > 0) console.log(`nonNegativeFeatures=${nonNegative.join(
 const outcomeRows = rowCache
   ? collectOutcomeRowsWithCache(games, outcomeConfig, rowCache)
   : collectOutcomeRows(games, outcomeConfig);
+const split = splitOutcomeRowsByGame(outcomeRows, holdoutEvery, holdoutOffset);
+const trainOutcomeRows = split.trainRows.map(stripCachedRow);
+const holdoutOutcomeRows = split.holdoutRows.map(stripCachedRow);
 const gatePairs = skipGatePairs ? [] : collectGatePairs(sessions, !hasFlag("no-synthetic"));
-console.log(`outcomeRows=${outcomeRows.length}, gatePairs=${gatePairs.length}`);
+console.log(
+  `outcomeRows=${outcomeRows.length}, trainRows=${trainOutcomeRows.length}, holdoutRows=${holdoutOutcomeRows.length}, ` +
+    `holdoutGames=${split.holdoutGames.length}, gatePairs=${gatePairs.length}`,
+);
 if (outcomeRows.length < minOutcomeRows) throw new Error(`outcome rows too few: ${outcomeRows.length} < ${minOutcomeRows}`);
+if (trainOutcomeRows.length === 0) throw new Error("train outcome rows too few: 0");
 if (gatePairs.length === 0 && !hasFlag("allow-no-gate-pairs") && !skipGatePairs) throw new Error("gate pairs too few");
 
-const result = fitPhaseHValueModel(outcomeRows, gatePairs, {
+const fitLabel = outcomePolicy === "mixed-k0" ? "Phase K K1 candidate fit" : "Phase H candidate fit";
+const result = fitPhaseHValueModel(trainOutcomeRows, gatePairs, {
   epochs: argNum("epochs", 4000),
   lr: argNum("lr", 0.5),
   l2: argNum("l2", 1e-4),
@@ -440,20 +519,28 @@ const result = fitPhaseHValueModel(outcomeRows, gatePairs, {
   omittedFeatures: omitted,
   nonNegativeFeatures: nonNegative,
   provenance:
-    `Phase H candidate fit outcomePolicy=${outcomePolicy} outcomeGames=${games} ` +
-    `deckPairMode=${deckPairMode} seedStart=${seedStart} outcomeRows=${outcomeRows.length} decks=${DECKS.join("|")} ` +
+    `${fitLabel} outcomePolicy=${outcomePolicy} outcomeGames=${games} ` +
+    `deckPairMode=${deckPairMode} seedStart=${seedStart} outcomeRows=${outcomeRows.length} trainRows=${trainOutcomeRows.length} ` +
+    `holdoutRows=${holdoutOutcomeRows.length} holdoutEvery=${holdoutEvery} holdoutOffset=${holdoutOffset} decks=${DECKS.join("|")} ` +
     `search(iter=${iterations},timeMs=${timeMs},leaf=${leafHorizon},candidate=${candidateLimit}) ` +
     `rowCache=${rowCache || "none"} ` +
     `gatePairs=${gatePairs.length} pairWeight=${argNum("pair-weight", 4)} ` +
     `omitted=${omitted.join("|") || "none"} nonNegative=${nonNegative.join("|") || "none"} ` +
-    `engine=${engineVersion} [Codex 2026-07-03]`,
+    `engine=${engineVersion} [Codex 2026-07-04]`,
 });
 const { model, metrics } = result;
+const holdoutMetrics = holdoutOutcomeRows.length > 0 ? scorePhaseHValueModel(model, holdoutOutcomeRows, []) : null;
 console.log(
-  `metrics: logloss=${metrics.logloss.toFixed(4)} acc=${(metrics.accuracy * 100).toFixed(1)}% ` +
+  `train metrics: logloss=${metrics.logloss.toFixed(4)} acc=${(metrics.accuracy * 100).toFixed(1)}% ` +
     `auc=${metrics.auc.toFixed(4)} pairAcc=${(metrics.pairAccuracy * 100).toFixed(1)}% ` +
     `avgPairMargin=${metrics.averagePairMargin.toFixed(4)}`,
 );
+if (holdoutMetrics) {
+  console.log(
+    `holdout metrics: logloss=${holdoutMetrics.logloss.toFixed(4)} acc=${(holdoutMetrics.accuracy * 100).toFixed(1)}% ` +
+      `auc=${holdoutMetrics.auc.toFixed(4)}`,
+  );
+}
 console.log("\nfeatures: " + VALUE_FEATURE_NAMES.join(", "));
 console.log("\nCandidate ValueModel:");
 console.log(`  weights: [${model.weights.map((value) => value.toFixed(4)).join(", ")}],`);
@@ -473,8 +560,18 @@ if (out) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify({
     metrics,
+    trainMetrics: metrics,
+    holdoutMetrics,
     model,
     auditSummary,
+    holdout: {
+      every: holdoutEvery,
+      offset: holdoutEvery > 0 ? ((holdoutOffset % holdoutEvery) + holdoutEvery) % holdoutEvery : null,
+      trainGames: split.trainGames.length,
+      holdoutGames: split.holdoutGames.length,
+      trainRows: trainOutcomeRows.length,
+      holdoutRows: holdoutOutcomeRows.length,
+    },
     config: {
       outcomePolicy,
       deckPairMode,
@@ -488,6 +585,8 @@ if (out) {
       leafHorizon,
       candidateLimit,
       rowCache: rowCache || null,
+      holdoutEvery,
+      holdoutOffset,
       omittedFeatures: omitted,
       nonNegativeFeatures: nonNegative,
       decks: DECKS,

@@ -7,6 +7,7 @@ import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
 import { evaluateStateValue } from "./rollout-value";
+import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
 import { evaluateGameplanState, evaluateGameplanTransition, resolveGameplanProfile, type GameplanStateReport, type GameplanTransitionReport } from "./gameplan";
 
@@ -595,6 +596,7 @@ function rollout(
   maxSteps: number,
   // [Claude 2026-06-22] S1b：EV cut horizon（rollout 步數）。Infinity＝關閉（打到終局，行為同現況）。
   valueCutHorizon: number = Infinity,
+  knownDecks?: KnownDecks,
 ): RolloutResult {
   let current: GameState;
   const baseLogLength = state.log.length;
@@ -619,7 +621,7 @@ function rollout(
       return {
         outcome: "value-cut",
         winner: null,
-        value: evaluateStateValue(current, perspective, undefined, db),
+        value: evaluateStateValue(current, perspective, undefined, db, knownDecks),
         line: current.log.slice(-6).map(logLine),
       };
     }
@@ -698,7 +700,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
   const runOneSample = (item: MutableStats, index: number): void => {
     const sampleSeed = seed + (item.samples + item.maxSteps + item.errors) * 1009 + index * 7919 + 23;
     const sampledState = determinizeHiddenState(state, perspective, knownDecks, sampleSeed);
-    const result = rollout(db, sampledState, item.decision, perspective, rolloutPolicy, rolloutMaxSteps, valueCutHorizon);
+    const result = rollout(db, sampledState, item.decision, perspective, rolloutPolicy, rolloutMaxSteps, valueCutHorizon, knownDecks);
     if (result.outcome === "complete") {
       item.samples++;
       item.valueSum += result.value ?? (result.winner === perspective ? 1 : 0);

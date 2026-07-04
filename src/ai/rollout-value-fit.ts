@@ -53,6 +53,7 @@ function collect(games: number, seedStart: number, sampleEvery: number, maxSteps
       heuristicProfileForDeckAxes(deckA.axes),
       heuristicProfileForDeckAxes(deckB.axes),
     ];
+    const knownDecks = [deckA.ids, deckB.ids] as const;
     let state = createGame(benchmarkDb, { seed: seedStart + g, decks: [deckA.ids, deckB.ids] });
     const snapshots: { x0: number[]; x1: number[] }[] = [];
     let step = 0;
@@ -61,8 +62,8 @@ function collect(games: number, seedStart: number, sampleEvery: number, maxSteps
       if (step >= maxSteps) { ok = false; break; }
       if (step % sampleEvery === 0) {
         snapshots.push({
-          x0: extractValueFeatures(state, 0 as PlayerId, benchmarkDb),
-          x1: extractValueFeatures(state, 1 as PlayerId, benchmarkDb),
+          x0: extractValueFeatures(state, 0 as PlayerId, benchmarkDb, { knownDecks }),
+          x1: extractValueFeatures(state, 1 as PlayerId, benchmarkDb, { knownDecks }),
         });
       }
       const player = state.pendingDecision.player as PlayerId;

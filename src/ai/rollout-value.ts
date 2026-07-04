@@ -1,5 +1,11 @@
 import { effParam } from "../engine/engine";
 import type { CardDb, GameState, PlayerId, PlayerState } from "../engine/types";
+import {
+  opponentRemainingHighAttackExpected,
+  opponentRemainingHighBlockExpected,
+  ownRemainingHighAttackExpected,
+  type KnownDecks,
+} from "./remaining-pool";
 
 /**
  * [Claude 2026-06-22] Phase F 第二槓桿 S1a：rollout 終局 EV cut 用的狀態價值函數。
@@ -32,6 +38,21 @@ export const VALUE_FEATURE_NAMES = [
   "attackPointDiff", // 我 − 對手 攻擊區頂端有效攻擊點數
   "attackLinePointDiff", // 我 − 對手 托球+攻擊線有效點數
   "defensePointDiff", // 我 − 對手 接球+攔網有效防守點數
+  // [Codex 2026-07-04] Phase K K1：手牌品質、剩餘資源、資源經濟與少量非線性／交互特徵。
+  "myHandBestAttack", // 自己手牌最高攻擊點數（自己手牌內容合法可讀）
+  "myHandBestBlock", // 自己手牌最高攔網點數
+  "myHandBestReceive", // 自己手牌最高接球點數
+  "myHandDeployablePower", // 自己手牌角色卡可用點數總和的粗估
+  "myHandEventCount", // 自己手牌事件卡張數
+  "oppRemainingHighAttackRate", // 對手未見卡池高攻率 × 對手 hand+deck 張數
+  "oppRemainingHighBlockRate", // 對手未見卡池高攔率 × 對手 hand+deck 張數
+  "myRemainingHighAttackCount", // 自己手牌實值 + 自己牌庫期望高攻存量
+  "gutsTotalDiff", // 雙方場上 Guts 總數差
+  "overkillMargin", // OP-DP 勝出餘裕，依 perspective 簽名且 capped
+  "setLifeLeadOne", // Set 殘量領先 1
+  "setLifeLeadTwoPlus", // Set 殘量領先 2+
+  "setLifeDiffProgress", // Set 殘量差 × 已完成 Set 數
+  "attackLineVsOppDefensePotential", // 攻線差 × 對手防守潛力
 ] as const;
 
 export type ValueFeatureName = (typeof VALUE_FEATURE_NAMES)[number];
@@ -53,8 +74,63 @@ function topParam(db: CardDb | undefined, state: GameState, player: PlayerState,
   return uid === null ? 0 : effParam(db, state, uid, area) ?? 0;
 }
 
+export interface ValueFeatureContext {
+  knownDecks?: KnownDecks;
+}
+
+function cardParam(db: CardDb | undefined, state: GameState, uid: number, area: "block" | "receive" | "toss" | "attack" | "serve"): number {
+  if (!db) return 0;
+  const id = state.cards[uid];
+  const value = id ? db.get(id)?.params?.[area] : null;
+  return typeof value === "number" ? value : 0;
+}
+
+function handBestParam(db: CardDb | undefined, state: GameState, player: PlayerState, area: "block" | "receive" | "attack"): number {
+  return player.hand.reduce((best, uid) => Math.max(best, cardParam(db, state, uid, area)), 0);
+}
+
+function handDeployablePower(db: CardDb | undefined, state: GameState, player: PlayerState): number {
+  if (!db) return 0;
+  return player.hand.reduce((sum, uid) => {
+    const id = state.cards[uid];
+    const params = id ? db.get(id)?.params : null;
+    if (!params) return sum;
+    const best = Math.max(
+      params.serve ?? 0,
+      params.block ?? 0,
+      params.receive ?? 0,
+      params.toss ?? 0,
+      params.attack ?? 0,
+    );
+    return sum + best;
+  }, 0);
+}
+
+function handEventCount(db: CardDb | undefined, state: GameState, player: PlayerState): number {
+  if (!db) return 0;
+  return player.hand.reduce((count, uid) => {
+    const id = state.cards[uid];
+    return count + (id && db.get(id)?.type === "EVENT" ? 1 : 0);
+  }, 0);
+}
+
+function stackGuts(stack: readonly number[]): number {
+  return Math.max(0, stack.length - 1);
+}
+
+function playerGutsTotal(player: PlayerState): number {
+  return stackGuts(player.serve) + stackGuts(player.blockCenter) + stackGuts(player.receive) + stackGuts(player.toss) + stackGuts(player.attack);
+}
+
+function signedOverkillMargin(state: GameState, perspective: PlayerId): number {
+  if (!state.op || !state.dp) return 0;
+  const margin = Math.min(3, Math.max(0, state.op.value - state.dp.value));
+  if (state.op.owner === perspective) return margin;
+  return -margin;
+}
+
 /** 抽取價值函數特徵向量（順序對齊 VALUE_FEATURE_NAMES）。只讀公開 scalar。 */
-export function extractValueFeatures(state: GameState, perspective: PlayerId, db?: CardDb): number[] {
+export function extractValueFeatures(state: GameState, perspective: PlayerId, db?: CardDb, context: ValueFeatureContext = {}): number[] {
   const me = perspective;
   const opp = (perspective === 0 ? 1 : 0) as PlayerId;
   const mine = state.players[me];
@@ -74,9 +150,18 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId, db
   const theirAttackLine = topParam(db, state, their, "toss") + theirAttack;
   const mineDefense = topParam(db, state, mine, "receive") + topParam(db, state, mine, "block");
   const theirDefense = topParam(db, state, their, "receive") + topParam(db, state, their, "block");
+  const setLifeDiff = mine.setArea.length - their.setArea.length;
+  const attackPointDiff = mineAttack - theirAttack;
+  const attackLinePointDiff = mineAttackLine - theirAttackLine;
+  const defensePointDiff = mineDefense - theirDefense;
+  const oppRemainingHighAttack = db ? opponentRemainingHighAttackExpected(db, state, me, context.knownDecks) : 0;
+  const oppRemainingHighBlock = db ? opponentRemainingHighBlockExpected(db, state, me, context.knownDecks) : 0;
+  const myRemainingHighAttack = db ? ownRemainingHighAttackExpected(db, state, me, context.knownDecks) : 0;
+  const completedSets = Math.max(0, (state.setNo ?? 1) - 1);
+  const oppDefensePotential = theirDefense + oppRemainingHighBlock;
 
   return [
-    mine.setArea.length - their.setArea.length,
+    setLifeDiff,
     opSigned,
     dpSigned,
     mine.hand.length - their.hand.length,
@@ -88,9 +173,23 @@ export function extractValueFeatures(state: GameState, perspective: PlayerId, db
     courtCount(mine) - courtCount(their),
     mine.drop.length - their.drop.length,
     mine.eventArea.length - their.eventArea.length,
-    mineAttack - theirAttack,
-    mineAttackLine - theirAttackLine,
-    mineDefense - theirDefense,
+    attackPointDiff,
+    attackLinePointDiff,
+    defensePointDiff,
+    handBestParam(db, state, mine, "attack"),
+    handBestParam(db, state, mine, "block"),
+    handBestParam(db, state, mine, "receive"),
+    handDeployablePower(db, state, mine),
+    handEventCount(db, state, mine),
+    oppRemainingHighAttack,
+    oppRemainingHighBlock,
+    myRemainingHighAttack,
+    playerGutsTotal(mine) - playerGutsTotal(their),
+    signedOverkillMargin(state, me),
+    setLifeDiff === 1 ? 1 : 0,
+    setLifeDiff >= 2 ? 1 : 0,
+    setLifeDiff * completedSets,
+    attackLinePointDiff * oppDefensePotential,
   ];
 }
 
@@ -165,8 +264,9 @@ export function evaluateShapedStateValue(
   perspective: PlayerId,
   epsilon: number,
   model: ValueModel = ROLLOUT_VALUE_MODEL,
+  knownDecks?: KnownDecks,
 ): number {
-  const winProb = evaluateStateValue(state, perspective, model, db);
+  const winProb = evaluateStateValue(state, perspective, model, db, knownDecks);
   if (epsilon <= 0) return winProb;
   return shapeStateValue(winProb, evaluatePressureScore(db, state, perspective), epsilon);
 }
@@ -186,8 +286,9 @@ export function evaluateStateValue(
   perspective: PlayerId,
   model: ValueModel = ROLLOUT_VALUE_MODEL,
   db?: CardDb,
+  knownDecks?: KnownDecks,
 ): number {
-  const features = extractValueFeatures(state, perspective, db);
+  const features = extractValueFeatures(state, perspective, db, { knownDecks });
   let z = model.bias;
   for (let i = 0; i < features.length; i++) z += features[i]! * (model.weights[i] ?? 0);
   return sigmoid(z);

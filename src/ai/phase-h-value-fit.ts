@@ -63,7 +63,7 @@ function computeAuc(scored: { p: number; y: number }[]): number {
   return (rankSum - (nPos * (nPos + 1)) / 2) / (nPos * nNeg);
 }
 
-function rawScore(model: ValueModel, x: readonly number[]): number {
+export function rawPhaseHValueScore(model: ValueModel, x: readonly number[]): number {
   let z = model.bias;
   for (let i = 0; i < VALUE_FEATURE_DIM; i++) z += (model.weights[i] ?? 0) * (x[i] ?? 0);
   return z;
@@ -153,26 +153,35 @@ export function fitPhaseHValueModel(
     provenance: options.provenance ?? "Phase H pairwise gate-positive fit candidate [Codex 2026-06-30]",
   };
 
+  return {
+    model,
+    metrics: scorePhaseHValueModel(model, rows, pairs),
+  };
+}
+
+export function scorePhaseHValueModel(
+  model: ValueModel,
+  rows: readonly PhaseHOutcomeRow[],
+  pairs: readonly PhaseHGatePairRow[] = [],
+): PhaseHValueFitMetrics {
+  assertDim(rows, pairs);
   let logloss = 0;
   let correct = 0;
   const scored: { p: number; y: number }[] = [];
   for (const row of rows) {
-    const p = sigmoid(rawScore(model, row.x));
+    const p = sigmoid(rawPhaseHValueScore(model, row.x));
     logloss += -(row.y * Math.log(p + 1e-12) + (1 - row.y) * Math.log(1 - p + 1e-12));
     if ((p >= 0.5 ? 1 : 0) === row.y) correct++;
     scored.push({ p, y: row.y });
   }
-  const pairMargins = pairs.map((pair) => rawScore(model, pair.positiveX) - rawScore(model, pair.negativeX));
+  const pairMargins = pairs.map((pair) => rawPhaseHValueScore(model, pair.positiveX) - rawPhaseHValueScore(model, pair.negativeX));
   return {
-    model,
-    metrics: {
-      outcomeCount: rows.length,
-      pairCount: pairs.length,
-      logloss: rows.length === 0 ? 0 : logloss / rows.length,
-      accuracy: rows.length === 0 ? 0 : correct / rows.length,
-      auc: rows.length === 0 ? 0.5 : computeAuc(scored),
-      pairAccuracy: pairMargins.length === 0 ? 0 : pairMargins.filter((margin) => margin > 0).length / pairMargins.length,
-      averagePairMargin: pairMargins.length === 0 ? 0 : pairMargins.reduce((sum, margin) => sum + margin, 0) / pairMargins.length,
-    },
+    outcomeCount: rows.length,
+    pairCount: pairs.length,
+    logloss: rows.length === 0 ? 0 : logloss / rows.length,
+    accuracy: rows.length === 0 ? 0 : correct / rows.length,
+    auc: rows.length === 0 ? 0.5 : computeAuc(scored),
+    pairAccuracy: pairMargins.length === 0 ? 0 : pairMargins.filter((margin) => margin > 0).length / pairMargins.length,
+    averagePairMargin: pairMargins.length === 0 ? 0 : pairMargins.reduce((sum, margin) => sum + margin, 0) / pairMargins.length,
   };
 }

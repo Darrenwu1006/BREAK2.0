@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GameState, PlayerId } from "../engine/types";
 import { benchmarkDb } from "./benchmark-fixtures";
 import { evaluatePressureScore, evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, VALUE_FEATURE_DIM, VALUE_FEATURE_NAMES } from "./rollout-value";
+import type { KnownDecks } from "./remaining-pool";
 
 // [Claude 2026-06-22] S1a：價值函數只讀公開 scalar，用最小 fixture 聚焦特徵→值映射與公平性。
 function fake(patch: {
@@ -45,6 +46,40 @@ function pointState(attackUid: number, attackCardId: string): GameState {
     servingPlayer: 0,
     turnPlayer: 0,
   } as unknown as GameState;
+}
+
+function k1LeakageState(hidden: { hand: string[]; deck: string[]; setArea: string[] }): { state: GameState; knownDecks: KnownDecks } {
+  const court = { serve: [], blockCenter: [], blockSides: [], receive: [], toss: [], attack: [], drop: [], eventArea: [] };
+  const cards: Record<number, string> = {
+    1: "HV-D01-006", // own high attack hand
+    2: "HV-D01-011", // own event hand
+    3: "HV-P01-043", // own public drop
+    10: hidden.hand[0]!,
+    11: hidden.hand[1]!,
+    12: hidden.deck[0]!,
+    13: hidden.deck[1]!,
+    14: hidden.setArea[0]!,
+    15: "HV-D01-006", // opponent public drop
+  };
+  return {
+    knownDecks: [
+      ["HV-D01-006", "HV-D01-011", "HV-P01-043", "HV-D01-006", "HV-P01-043"],
+      ["HV-D01-006", "HV-D01-006", "HV-P01-043", "HV-D01-011", "HV-P03-020", "HV-P01-043"],
+    ],
+    state: {
+      players: [
+        { ...court, hand: [1, 2], deck: [20, 21], setArea: [22], drop: [3], attack: [1] },
+        { ...court, hand: [10, 11], deck: [12, 13], setArea: [14], drop: [15] },
+      ],
+      cards,
+      modifiers: [],
+      setNo: 3,
+      op: { value: 5, owner: 0 as PlayerId, source: "attack" },
+      dp: { value: 3, owner: 1 as PlayerId, source: "receive" },
+      servingPlayer: 0,
+      turnPlayer: 0,
+    } as unknown as GameState,
+  };
 }
 
 describe("rollout-value 價值函數", () => {
@@ -93,6 +128,25 @@ describe("rollout-value 價值函數", () => {
     const base = fake({ s0: 1, s1: 1, h0: 5, h1: 4, d0: 24, d1: 25, op: { value: 5, owner: 0 as PlayerId }, oppHand: [9, 8, 7, 6], oppDeck: [1, 2, 3], oppSet: [11, 12] });
     const flipped = fake({ s0: 1, s1: 1, h0: 5, h1: 4, d0: 24, d1: 25, op: { value: 5, owner: 0 as PlayerId }, oppHand: [6, 7, 8, 9], oppDeck: [3, 2, 1], oppSet: [12, 11] });
     expect(evaluatePressureScore(benchmarkDb, flipped, 0)).toBe(evaluatePressureScore(benchmarkDb, base, 0));
+  });
+
+  it("Phase K K1 新特徵逐一不讀對手 hidden hand/deck/set 內容", () => {
+    const base = k1LeakageState({
+      hand: ["HV-P01-043", "HV-D01-011"],
+      deck: ["HV-D01-006", "HV-P03-020"],
+      setArea: ["HV-P01-043"],
+    });
+    const flipped = k1LeakageState({
+      hand: ["HV-D01-006", "HV-P03-020"],
+      deck: ["HV-P01-043", "HV-D01-011"],
+      setArea: ["HV-P01-043"],
+    });
+    const baseFeatures = extractValueFeatures(base.state, 0 as PlayerId, benchmarkDb, { knownDecks: base.knownDecks });
+    const flippedFeatures = extractValueFeatures(flipped.state, 0 as PlayerId, benchmarkDb, { knownDecks: flipped.knownDecks });
+
+    for (let index = 15; index < VALUE_FEATURE_NAMES.length; index++) {
+      expect(flippedFeatures[index], VALUE_FEATURE_NAMES[index]).toBe(baseFeatures[index]);
+    }
   });
 
   it("Phase H shaping 不翻轉明確勝率差", () => {
