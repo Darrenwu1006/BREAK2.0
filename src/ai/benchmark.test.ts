@@ -65,6 +65,9 @@ describe("M8 benchmark harness", () => {
       expect(match.setResults.length, `seed ${match.seed}`).toBeGreaterThan(0);
       expect(match.averageRalliesPerSet, `seed ${match.seed}`).toBeGreaterThan(0);
       expect(match.stats.players[0].opBySource.attack.count + match.stats.players[1].opBySource.attack.count, `seed ${match.seed}`).toBeGreaterThan(0);
+      expect(match.stats.players[0].attackSuccess.attempts + match.stats.players[1].attackSuccess.attempts, `seed ${match.seed}`).toBeGreaterThan(0);
+      expect(match.stats.players[0].attackSuccess.successes, `seed ${match.seed}`).toBeLessThanOrEqual(match.stats.players[0].attackSuccess.attempts);
+      expect(match.stats.players[1].attackSuccess.successes, `seed ${match.seed}`).toBeLessThanOrEqual(match.stats.players[1].attackSuccess.attempts);
       expect(match.stats.players[0].gutsPaidBySource.attack + match.stats.players[1].gutsPaidBySource.attack, `seed ${match.seed}`).toBeGreaterThanOrEqual(0);
     }
     expect(report.summary.playQualityByPlayer[0].lowPointDeployRate).toBeGreaterThanOrEqual(0);

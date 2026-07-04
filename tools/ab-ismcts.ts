@@ -46,6 +46,9 @@ const opp = argValue("opp", "pimc-v2") as BenchmarkPolicyId;
 const leafHorizon = Number(argValue("leaf-horizon", "40"));
 const limitUnits = Number(argValue("limit-units", "0"));
 const rootTiebreakDelta = Number(argValue("root-tiebreak-delta", argValue("ismcts-root-tiebreak-delta", "0.04")));
+const rootConservationThreshold = Number(argValue("root-conservation-threshold", argValue("ismcts-root-conservation-threshold", "0.85")));
+const k2RootTiebreakDelta = Number(argValue("k2-root-tiebreak-delta", String(rootTiebreakDelta)));
+const k2RootConservationThreshold = Number(argValue("k2-root-conservation-threshold", String(rootConservationThreshold)));
 const valueModelPath = argValue("value-model-file", "");
 const outPath = argValue("out", "");
 const mirror = process.argv.includes("--mirror");
@@ -214,6 +217,9 @@ if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
     timeLimitMs: budget === "iterations" ? undefined : timeMs,
     leafRolloutHorizon: leafHorizon,
     rootPressureTieBreakDelta: rootTiebreakDelta,
+    rootConservationWinRateThreshold: rootConservationThreshold,
+    k2RootPressureTieBreakDelta: k2RootTiebreakDelta,
+    k2RootConservationWinRateThreshold: k2RootConservationThreshold,
     ...(valueModelPath
       ? policy === "is-mcts-k2" || opp === "is-mcts-k2"
         ? { k2ValueModel: readValueModel(valueModelPath) }
@@ -226,7 +232,7 @@ if (usesPimcFamily(policy) || usesPimcFamily(opp)) configurePimcBenchmark({ time
 const budgetLabel = budget === "iterations" ? `iteration-matched ${ismctsIters} iters` : `same wall-clock ${timeMs}ms`;
 console.log(`Phase I A/B — ${policy}(leaf=${leafHorizon}) vs ${opp} @ ${budgetLabel}${mirror ? "  [MIRROR 同牌組]" : ""}`);
 if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
-  console.log(`ISMCTS knobs: root-tiebreak-delta=${rootTiebreakDelta}${valueModelPath ? `, value-model=${valueModelPath}` : ""}`);
+  console.log(`ISMCTS knobs: root-tiebreak-delta=${rootTiebreakDelta}, root-conservation-threshold=${rootConservationThreshold}${policy === "is-mcts-k2" || opp === "is-mcts-k2" ? `, k2-root-tiebreak-delta=${k2RootTiebreakDelta}, k2-root-conservation-threshold=${k2RootConservationThreshold}` : ""}${valueModelPath ? `, value-model=${valueModelPath}` : ""}`);
 }
 console.log(`Structure: ${units.length} ${mirror ? "decks(mirror)" : "matchups"} × 2 seatings × ${games} games = ${units.length * 2 * games} total`);
 console.log("");
@@ -305,7 +311,7 @@ if (outPath) {
     `${JSON.stringify(
       {
         kind: "phase-i-ab-ismcts",
-        args: { policy, opp, games, budget, timeMs: budget === "wall-clock" ? timeMs : null, ismctsIters: budget === "iterations" ? ismctsIters : null, leafHorizon, mirror, limitUnits: limitUnits > 0 ? limitUnits : null, rootTiebreakDelta, valueModelPath: valueModelPath || null },
+        args: { policy, opp, games, budget, timeMs: budget === "wall-clock" ? timeMs : null, ismctsIters: budget === "iterations" ? ismctsIters : null, leafHorizon, mirror, limitUnits: limitUnits > 0 ? limitUnits : null, rootTiebreakDelta, rootConservationThreshold, k2RootTiebreakDelta, k2RootConservationThreshold, valueModelPath: valueModelPath || null },
         structure: { units: units.length, totalGames: units.length * 2 * games },
         combined: { wins: policyWins, completed, ci },
         playQuality: {

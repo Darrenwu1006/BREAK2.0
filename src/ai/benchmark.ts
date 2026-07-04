@@ -72,10 +72,16 @@ export interface IsmctsBenchmarkConfig {
   pressureShapingEpsilon: number;
   /** [Codex 2026-06-29] Phase H H2B/H2C：root tie-break winRate delta。 */
   rootPressureTieBreakDelta: number;
+  /** [Codex 2026-07-04] Phase H H5：root conservation certainty threshold。 */
+  rootConservationWinRateThreshold: number;
   /** [Codex 2026-06-30] Phase H H3：benchmark-only 候選 value model，僅 h3 policy 使用。 */
   valueModel?: ValueModel;
   /** [Codex 2026-07-04] Phase K K2：benchmark-only selected-v1 candidate，和 live H4 同場 A/B 用。 */
   k2ValueModel?: ValueModel;
+  /** [Codex 2026-07-04] Phase K K5：K2 candidate 專用 root tie-break delta，避免污染 current H4。 */
+  k2RootPressureTieBreakDelta?: number;
+  /** [Codex 2026-07-04] Phase K K5：K2 candidate 專用 conservation threshold，避免污染 current H4。 */
+  k2RootConservationWinRateThreshold?: number;
 }
 
 const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
@@ -89,6 +95,7 @@ const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
   leafRolloutHorizon: 40,
   pressureShapingEpsilon: 0.05,
   rootPressureTieBreakDelta: 0.04,
+  rootConservationWinRateThreshold: 0.85,
 };
 
 let ismctsBenchmarkConfig: IsmctsBenchmarkConfig = { ...DEFAULT_ISMCTS_BENCHMARK_CONFIG };
@@ -186,6 +193,12 @@ export interface DefenseSkillNonUseStats {
   nonUses: number;
 }
 
+export interface AttackSuccessStats {
+  attempts: number;
+  successes: number;
+  opTotal: number;
+}
+
 export interface PlayQualityStats {
   lowPointDeploy: Record<"toss" | "attack", LowPointDeployStats>;
   defenseSkillNonUse: DefenseSkillNonUseStats;
@@ -247,6 +260,7 @@ export interface MatchPlayerStats {
   deckEmptyDraws: number;
   op: PointStats;
   attackOp: PointStats;
+  attackSuccess: AttackSuccessStats;
   opBySource: Record<OpSource, PointStats>;
   dp: PointStats;
   defense: Record<DefenseRoute, DefenseStats>;
@@ -503,8 +517,17 @@ export function benchmarkPolicyDecision(
       candidateLimit: ismctsBenchmarkConfig.candidateLimit,
       leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
       pressureShapingEpsilon: policy === "is-mcts-h2" ? ismctsBenchmarkConfig.pressureShapingEpsilon : 0,
-      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
+      rootPressureTieBreakDelta:
+        policy === "is-mcts-k2"
+          ? ismctsBenchmarkConfig.k2RootPressureTieBreakDelta ?? ismctsBenchmarkConfig.rootPressureTieBreakDelta
+          : policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4"
+            ? ismctsBenchmarkConfig.rootPressureTieBreakDelta
+            : 0,
       rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2",
+      rootConservationWinRateThreshold:
+        policy === "is-mcts-k2"
+          ? ismctsBenchmarkConfig.k2RootConservationWinRateThreshold ?? ismctsBenchmarkConfig.rootConservationWinRateThreshold
+          : ismctsBenchmarkConfig.rootConservationWinRateThreshold,
       valueModel:
         policy === "is-mcts-k2"
           ? ismctsBenchmarkConfig.k2ValueModel
@@ -609,6 +632,10 @@ function blankDefenseSkillNonUseStats(): DefenseSkillNonUseStats {
   return { opportunities: 0, nonUses: 0 };
 }
 
+function blankAttackSuccessStats(): AttackSuccessStats {
+  return { attempts: 0, successes: 0, opTotal: 0 };
+}
+
 function blankPlayQualityStats(): PlayQualityStats {
   return {
     lowPointDeploy: { toss: blankLowPointDeployStats(), attack: blankLowPointDeployStats() },
@@ -633,6 +660,7 @@ function blankPlayerStats(): MatchPlayerStats {
     deckEmptyDraws: 0,
     op: blankPointStats(),
     attackOp: blankPointStats(),
+    attackSuccess: blankAttackSuccessStats(),
     opBySource: { serve: blankPointStats(), block: blankPointStats(), attack: blankPointStats() },
     dp: blankPointStats(),
     defense: { receive: blankDefenseStats(), block: blankDefenseStats(), unknown: blankDefenseStats() },
@@ -756,6 +784,7 @@ export function collectMatchStats(state: GameState, playQuality?: readonly [Play
   }
   const currentRoute: [DefenseRoute, DefenseRoute] = ["unknown", "unknown"];
   const activeAction: [ActiveAction, ActiveAction] = [null, null];
+  let pendingAttack: { player: PlayerId; setNo: number; op: number } | null = null;
 
   for (const entry of state.log) {
     if (entry.player === null) continue;
@@ -818,13 +847,23 @@ export function collectMatchStats(state: GameState, playQuality?: readonly [Play
       const source: OpSource | null = entry.event?.kind === "attack-op" ? "attack" : entry.event?.kind === "op-calc" ? entry.event.source : text.startsWith("攻擊 OP 算出") ? "attack" : null;
       addPoint(stats.op, op);
       if (source) addPoint(stats.opBySource[source], op);
-      if (source === "attack") addPoint(stats.attackOp, op);
+      if (source === "attack") {
+        addPoint(stats.attackOp, op);
+        pendingAttack = { player: p, setNo: entry.setNo, op };
+      }
     }
     const dp = pointValue(text, "DP");
     if (dp !== null) addPoint(stats.dp, dp);
 
     if (text.startsWith("判定：")) {
       addDefense(stats.defense[currentRoute[p]], text.includes("成功"));
+      if (pendingAttack && pendingAttack.setNo === entry.setNo) {
+        const attack = players[pendingAttack.player].attackSuccess;
+        attack.attempts++;
+        attack.opTotal += pendingAttack.op;
+        if (text.includes("失敗")) attack.successes++;
+        pendingAttack = null;
+      }
     }
   }
 

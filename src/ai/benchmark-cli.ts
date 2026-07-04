@@ -150,6 +150,9 @@ function run(): void {
       ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
       ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
       ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
+      ...(argValue("ismcts-root-conservation-threshold") !== undefined ? { rootConservationWinRateThreshold: numberArg("ismcts-root-conservation-threshold", 0) } : {}),
+      ...(argValue("k2-root-tiebreak-delta") !== undefined ? { k2RootPressureTieBreakDelta: numberArg("k2-root-tiebreak-delta", 0) } : {}),
+      ...(argValue("k2-root-conservation-threshold") !== undefined ? { k2RootConservationWinRateThreshold: numberArg("k2-root-conservation-threshold", 0) } : {}),
       ...(argValue("value-model-file") !== undefined
         ? [policyA, policyB].some((p) => p === "is-mcts-k2")
           ? { k2ValueModel: readValueModel(argValue("value-model-file")) }

@@ -29,6 +29,9 @@ interface QualityAcc {
   defenseSkillNonUses: number;
   opCount: number;
   opTotal: number;
+  attackAttempts: number;
+  attackSuccesses: number;
+  attackOpTotal: number;
 }
 
 function argValue(name: string, fallback: string): string {
@@ -97,6 +100,9 @@ function blankQualityAcc(): QualityAcc {
     defenseSkillNonUses: 0,
     opCount: 0,
     opTotal: 0,
+    attackAttempts: 0,
+    attackSuccesses: 0,
+    attackOpTotal: 0,
   };
 }
 
@@ -110,6 +116,9 @@ function addQuality(acc: QualityAcc, match: MatchResult, player: 0 | 1): void {
   acc.defenseSkillNonUses += play.defenseSkillNonUse.nonUses;
   acc.opCount += stats.op.count;
   acc.opTotal += stats.op.total;
+  acc.attackAttempts += stats.attackSuccess.attempts;
+  acc.attackSuccesses += stats.attackSuccess.successes;
+  acc.attackOpTotal += stats.attackSuccess.opTotal;
 }
 
 function summarizeQuality(acc: QualityAcc): PlayQualitySummary {
@@ -123,6 +132,15 @@ function summarizeQuality(acc: QualityAcc): PlayQualitySummary {
     defenseSkillNonUseRate: acc.defenseSkillOpportunities === 0 ? 0 : acc.defenseSkillNonUses / acc.defenseSkillOpportunities,
     averageOpPressure: acc.opCount === 0 ? 0 : acc.opTotal / acc.opCount,
     opPressureSamples: acc.opCount,
+  };
+}
+
+function summarizeAttackSuccess(acc: QualityAcc) {
+  return {
+    attempts: acc.attackAttempts,
+    successes: acc.attackSuccesses,
+    rate: acc.attackAttempts === 0 ? 0 : acc.attackSuccesses / acc.attackAttempts,
+    averageOp: acc.attackAttempts === 0 ? 0 : acc.attackOpTotal / acc.attackAttempts,
   };
 }
 
@@ -147,6 +165,9 @@ const timeMs = Math.max(1, Math.floor(argNum("time-ms", 500)));
 const leafHorizon = Math.max(0, Math.floor(argNum("leaf-horizon", 40)));
 const seedStart = Math.floor(argNum("seed-start", 12000));
 const rootTiebreakDelta = argNum("root-tiebreak-delta", 0.04);
+const rootConservationThreshold = argNum("root-conservation-threshold", 0.85);
+const k2RootTiebreakDelta = argNum("k2-root-tiebreak-delta", rootTiebreakDelta);
+const k2RootConservationThreshold = argNum("k2-root-conservation-threshold", rootConservationThreshold);
 const candidateModel = readValueModel(modelPath);
 
 configureIsmctsBenchmark({
@@ -154,6 +175,9 @@ configureIsmctsBenchmark({
   timeLimitMs: timeMs,
   leafRolloutHorizon: leafHorizon,
   rootPressureTieBreakDelta: rootTiebreakDelta,
+  rootConservationWinRateThreshold: rootConservationThreshold,
+  k2RootPressureTieBreakDelta: k2RootTiebreakDelta,
+  k2RootConservationWinRateThreshold: k2RootConservationThreshold,
   valueModel: undefined,
   k2ValueModel: candidateModel,
 });
@@ -200,13 +224,15 @@ MIRROR_DECKS.forEach((deckName, index) => {
 const ci = wilson(candidateWins, completed);
 const candidateSummary = summarizeQuality(candidateQuality);
 const currentSummary = summarizeQuality(currentQuality);
+const candidateAttack = summarizeAttackSuccess(candidateQuality);
+const currentAttack = summarizeAttackSuccess(currentQuality);
 const diagnosticsByPolicy = {
   "is-mcts-k2": summarizeDiagnostics(allDiagnostics.filter((item) => item.policy === "is-mcts-k2")),
   "is-mcts-h4": summarizeDiagnostics(allDiagnostics.filter((item) => item.policy === "is-mcts-h4")),
 };
 const result = {
   kind: "phase-k-k2-selected-v1-ab",
-  args: { modelPath, games, timeMs, leafHorizon, seedStart, rootTiebreakDelta },
+  args: { modelPath, games, timeMs, leafHorizon, seedStart, rootTiebreakDelta, rootConservationThreshold, k2RootTiebreakDelta, k2RootConservationThreshold },
   structure: { decks: MIRROR_DECKS, totalGames: MIRROR_DECKS.length * 2 * games },
   combined: { candidateWins, completed, ci },
   playQuality: {
@@ -216,6 +242,14 @@ const result = {
       lowPointDeployRate: candidateSummary.lowPointDeployRate - currentSummary.lowPointDeployRate,
       defenseSkillNonUseRate: candidateSummary.defenseSkillNonUseRate - currentSummary.defenseSkillNonUseRate,
       averageOpPressure: candidateSummary.averageOpPressure - currentSummary.averageOpPressure,
+    },
+  },
+  attackSuccess: {
+    candidate: candidateAttack,
+    current: currentAttack,
+    deltas: {
+      rate: candidateAttack.rate - currentAttack.rate,
+      averageOp: candidateAttack.averageOp - currentAttack.averageOp,
     },
   },
   pairResults,
@@ -236,4 +270,6 @@ console.log(
     `M2 ${pct(currentSummary.defenseSkillNonUseRate)} (${currentSummary.defenseSkillNonUses}/${currentSummary.defenseSkillOpportunities}), ` +
     `M3 OP ${currentSummary.averageOpPressure.toFixed(2)} (${currentSummary.opPressureSamples})`,
 );
+console.log(`Attack success candidate: ${pct(candidateAttack.rate)} (${candidateAttack.successes}/${candidateAttack.attempts}), avg attack OP ${candidateAttack.averageOp.toFixed(2)}`);
+console.log(`Attack success current:   ${pct(currentAttack.rate)} (${currentAttack.successes}/${currentAttack.attempts}), avg attack OP ${currentAttack.averageOp.toFixed(2)}`);
 console.log(`Report written: ${resolve(outPath)}`);

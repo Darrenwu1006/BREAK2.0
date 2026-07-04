@@ -326,6 +326,7 @@ function blankPlayerStats(): MatchPlayerStats {
     deckEmptyDraws: 0,
     op: blankPointStats(),
     attackOp: blankPointStats(),
+    attackSuccess: { attempts: 0, successes: 0, opTotal: 0 },
     opBySource: { serve: blankPointStats(), block: blankPointStats(), attack: blankPointStats() },
     dp: blankPointStats(),
     defense: {
@@ -364,6 +365,9 @@ function mergePlayerStats(target: MatchPlayerStats, source: MatchPlayerStats): v
   for (const area of AREAS) target.deployments[area] += source.deployments[area];
   mergePoint(target.op, source.op);
   mergePoint(target.attackOp, source.attackOp);
+  target.attackSuccess.attempts += source.attackSuccess.attempts;
+  target.attackSuccess.successes += source.attackSuccess.successes;
+  target.attackSuccess.opTotal += source.attackSuccess.opTotal;
   for (const opSource of OP_SOURCES) mergePoint(target.opBySource[opSource], source.opBySource[opSource]);
   mergePoint(target.dp, source.dp);
   for (const route of ["receive", "block", "unknown"] as const) {
