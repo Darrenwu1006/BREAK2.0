@@ -71,6 +71,12 @@
 - **WORKLOG 一律反序（最新在最上）**：新 session 一節插在檔案最前面（緊接頂部規則區塊之後、舊 session 之上），不要往檔尾追加。各模型務必遵守同一順序，避免新舊混雜、時間軸錯亂。
 - M5/M8 相關規劃需標清楚是「對局內決策」、「Coach Mode」、「Match Simulator」或「Deck Optimizer」，不要混成單一 AI 任務。
 
+## Completion Handoff
+
+- [使用者 2026-07-04] 之後每次完成交付時，最終回覆都要附上一段「給 reviewer 的交接文字」。
+- 交接文字需簡潔列出：完成範圍、主要檔案／artifact、驗證結果、已知風險或待 review 的判斷點、明確 stop point。
+- 若本輪是 phased work，交接文字必須標明「未開始／不應先開」的下一階段，避免 reviewer 誤以為已越界。
+
 ## Guardrails
 
 - 不要覆蓋使用者或其他模型未提交的變更；先讀再改。
