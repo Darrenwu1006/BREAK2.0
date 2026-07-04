@@ -310,8 +310,8 @@ describe("M8 benchmark harness", () => {
     }
   });
 
-  it("is-mcts h2/h3/h4 policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
-    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10, valueModel: ROLLOUT_VALUE_MODEL });
+  it("is-mcts h2/h3/h4/k2 policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
+    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10, valueModel: ROLLOUT_VALUE_MODEL, k2ValueModel: ROLLOUT_VALUE_MODEL });
     const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
     const deckB = findBenchmarkDeck("青葉城西-第三彈測試");
     let state = createGame(benchmarkDb, { seed: 191, decks: [deckA.ids, deckB.ids] });
@@ -328,7 +328,7 @@ describe("M8 benchmark harness", () => {
     hiddenChanged.players[oppo].hand.reverse();
     hiddenChanged.players[oppo].deck.reverse();
     hiddenChanged.players[oppo].setArea.reverse();
-    for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c", "is-mcts-h3", "is-mcts-h4"] satisfies BenchmarkPolicyId[]) {
+    for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c", "is-mcts-h3", "is-mcts-h4", "is-mcts-k2"] satisfies BenchmarkPolicyId[]) {
       const decision = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
       expect(decision.type, policy).toBeTruthy();
       expect(() => applyDecision(benchmarkDb, state, decision), policy).not.toThrow();

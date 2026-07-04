@@ -26,6 +26,7 @@ export type BenchmarkPolicyId =
   | "is-mcts-h2c"
   | "is-mcts-h3"
   | "is-mcts-h4"
+  | "is-mcts-k2"
   | "mo-ismcts"
   | "mo-ismcts-h3"
   | HeuristicV2ProfileId;
@@ -73,6 +74,8 @@ export interface IsmctsBenchmarkConfig {
   rootPressureTieBreakDelta: number;
   /** [Codex 2026-06-30] Phase H H3：benchmark-only 候選 value model，僅 h3 policy 使用。 */
   valueModel?: ValueModel;
+  /** [Codex 2026-07-04] Phase K K2：benchmark-only selected-v1 candidate，和 live H4 同場 A/B 用。 */
+  k2ValueModel?: ValueModel;
 }
 
 const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
@@ -488,7 +491,7 @@ export function benchmarkPolicyDecision(
     searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, pimcBenchmarkConfig.candidateLimit));
     return report.bestAction.decision;
   }
-  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4") {
+  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-k2") {
     const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
     const report = createIsmctsReport(db, state, {
       perspectivePlayer: player,
@@ -500,9 +503,14 @@ export function benchmarkPolicyDecision(
       candidateLimit: ismctsBenchmarkConfig.candidateLimit,
       leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
       pressureShapingEpsilon: policy === "is-mcts-h2" ? ismctsBenchmarkConfig.pressureShapingEpsilon : 0,
-      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
-      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4",
-      valueModel: policy === "is-mcts-h3" || policy === "is-mcts-h4" ? ismctsBenchmarkConfig.valueModel : undefined,
+      rootPressureTieBreakDelta: policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2" ? ismctsBenchmarkConfig.rootPressureTieBreakDelta : 0,
+      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2",
+      valueModel:
+        policy === "is-mcts-k2"
+          ? ismctsBenchmarkConfig.k2ValueModel
+          : policy === "is-mcts-h3" || policy === "is-mcts-h4"
+            ? ismctsBenchmarkConfig.valueModel
+            : undefined,
       rolloutPolicy,
     });
     searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));

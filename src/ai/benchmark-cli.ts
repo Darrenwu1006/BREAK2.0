@@ -42,8 +42,8 @@ function numberArg(name: string, fallback: number): number {
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
   if (raw === undefined) return fallback;
-  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || raw === "is-mcts-h2" || raw === "is-mcts-h2b" || raw === "is-mcts-h2c" || raw === "is-mcts-h3" || raw === "is-mcts-h4" || raw === "mo-ismcts" || raw === "mo-ismcts-h3" || isHeuristicV2ProfileId(raw)) return raw;
-  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、is-mcts-h2、is-mcts-h2b、is-mcts-h2c、is-mcts-h3、is-mcts-h4、mo-ismcts、mo-ismcts-h3、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
+  if (raw === "random" || raw === "heuristic-v1" || raw === "pimc" || raw === "pimc-v2" || raw === "is-mcts" || raw === "is-mcts-h2" || raw === "is-mcts-h2b" || raw === "is-mcts-h2c" || raw === "is-mcts-h3" || raw === "is-mcts-h4" || raw === "is-mcts-k2" || raw === "mo-ismcts" || raw === "mo-ismcts-h3" || isHeuristicV2ProfileId(raw)) return raw;
+  throw new Error(`--${name} 只支援 random、heuristic-v1、pimc、pimc-v2、is-mcts、is-mcts-h2、is-mcts-h2b、is-mcts-h2c、is-mcts-h3、is-mcts-h4、is-mcts-k2、mo-ismcts、mo-ismcts-h3、heuristic-v2、heuristic-v2-safe、heuristic-v2-aggressive、heuristic-v2-personality 或 heuristic-v2-<axis>`);
 }
 
 function isObject(value: unknown): value is { model?: unknown } {
@@ -142,7 +142,7 @@ function run(): void {
     });
   }
   // [Claude 2026-06-23] Phase G：IS-MCTS 旋鈕（iterations／同 wall-clock 的 time-ms／UCB c／候選寬度）。
-  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "mo-ismcts" || p === "mo-ismcts-h3")) {
+  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "is-mcts-k2" || p === "mo-ismcts" || p === "mo-ismcts-h3")) {
     configureIsmctsBenchmark({
       ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
       ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
@@ -150,7 +150,11 @@ function run(): void {
       ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
       ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
       ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
-      ...(argValue("value-model-file") !== undefined ? { valueModel: readValueModel(argValue("value-model-file")) } : {}),
+      ...(argValue("value-model-file") !== undefined
+        ? [policyA, policyB].some((p) => p === "is-mcts-k2")
+          ? { k2ValueModel: readValueModel(argValue("value-model-file")) }
+          : { valueModel: readValueModel(argValue("value-model-file")) }
+        : {}),
       ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
       ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
     });
