@@ -5,23 +5,28 @@
  "cards": [
   {
    "id": "HV-P01-033",
-   "count": 6
+   "count": 5,
+   "printing": "IP"
   },
   {
    "id": "HV-P02-056",
-   "count": 2
+   "count": 2,
+   "printing": "SP"
   },
   {
    "id": "HV-P03-058",
-   "count": 3
+   "count": 3,
+   "printing": "RA"
   },
   {
    "id": "HV-P01-035",
-   "count": 6
+   "count": 6,
+   "printing": "SP"
   },
   {
    "id": "HV-P03-059",
-   "count": 2
+   "count": 2,
+   "printing": "NA"
   },
   {
    "id": "HV-P03-005",
@@ -33,11 +38,12 @@
   },
   {
    "id": "HV-P02-058",
-   "count": 2
+   "count": 1
   },
   {
    "id": "HV-P03-007",
-   "count": 1
+   "count": 1,
+   "printing": "IP"
   },
   {
    "id": "HV-PR-051",
@@ -57,10 +63,14 @@
   },
   {
    "id": "HV-P01-039",
-   "count": 5
+   "count": 6
   },
   {
    "id": "HV-P03-006",
+   "count": 1
+  },
+  {
+   "id": "HV-PR-024",
    "count": 1
   }
  ]
