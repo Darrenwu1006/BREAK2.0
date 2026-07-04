@@ -8,7 +8,7 @@ import {
   type BenchmarkPolicyId,
 } from "../src/ai/benchmark";
 import { evaluatePressureScore, extractValueFeatures, VALUE_FEATURE_NAMES } from "../src/ai/rollout-value";
-import { fitPhaseHValueModel, scorePhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
+import { fitPhaseHValueModel, rawPhaseHValueScore, scorePhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
 import { createFreeAttackGateState } from "../src/ai/phase-h-gate-control";
 import { auditReplaySession, summarizeGateValuePairs } from "../src/ai/phase-h-value-audit";
 import type { ReplaySession } from "../src/ui/replayHistory";
@@ -52,6 +52,7 @@ interface OutcomeSourceConfig {
 
 interface CachedOutcomeRow extends PhaseHOutcomeRow {
   gameIndex: number;
+  sampleIndex: number;
 }
 
 interface OutcomeCacheGame {
@@ -79,6 +80,13 @@ interface OutcomeRowSplit {
   holdoutRows: CachedOutcomeRow[];
   trainGames: number[];
   holdoutGames: number[];
+}
+
+interface WithinGamePairMetrics {
+  pairCount: number;
+  pairAccuracy: number;
+  tiedPairs: number;
+  averagePairMargin: number;
 }
 
 function argValue(name: string, fallback: string): string {
@@ -201,10 +209,10 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
     };
   }
   const rows: CachedOutcomeRow[] = [];
-  for (const snap of snapshots) {
-    rows.push({ gameIndex, x: snap.x0, y: state.winner === 0 ? 1 : 0 });
-    rows.push({ gameIndex, x: snap.x1, y: state.winner === 1 ? 1 : 0 });
-  }
+  snapshots.forEach((snap, sampleIndex) => {
+    rows.push({ gameIndex, sampleIndex, x: snap.x0, y: state.winner === 0 ? 1 : 0 });
+    rows.push({ gameIndex, sampleIndex, x: snap.x1, y: state.winner === 1 ? 1 : 0 });
+  });
   return {
     rows,
     meta: { gameIndex, seed, decks: deckNames, outcomePolicy: policy, status: "complete", winner: state.winner, rowCount: rows.length },
@@ -260,24 +268,32 @@ function cacheConfigMatches(actual: OutcomeSourceConfig, expected: OutcomeSource
 function normalizeCachedFeatureDim(cache: OutcomeRowCache, config: OutcomeSourceConfig, path: string): OutcomeRowCache {
   const actualNames = cache.config.valueFeatureNames;
   const expectedNames = config.valueFeatureNames;
-  if (actualNames.length === expectedNames.length) return cache;
   if (!featureNamesArePrefix(actualNames, expectedNames)) {
     throw new Error(`row cache ${path} has incompatible feature names`);
   }
-  console.log(
-    `row cache ${path} uses legacy feature dim ${actualNames.length}; padding cached rows to ${expectedNames.length}`,
-  );
-  const paddedRows = cache.rows.map((row) => {
-    if (row.x.length === expectedNames.length) return row;
-    if (row.x.length !== actualNames.length) {
+  if (actualNames.length !== expectedNames.length) {
+    console.log(
+      `row cache ${path} uses legacy feature dim ${actualNames.length}; padding cached rows to ${expectedNames.length}`,
+    );
+  }
+  const rowOrdinalByGame = new Map<number, number>();
+  const normalizedRows = cache.rows.map((row) => {
+    if (row.x.length !== actualNames.length && row.x.length !== expectedNames.length) {
       throw new Error(`row cache ${path} row feature dim ${row.x.length} does not match cache feature dim ${actualNames.length}`);
     }
-    return { ...row, x: [...row.x, ...new Array(expectedNames.length - actualNames.length).fill(0)] };
+    const ordinal = rowOrdinalByGame.get(row.gameIndex) ?? 0;
+    rowOrdinalByGame.set(row.gameIndex, ordinal + 1);
+    const sampleIndex =
+      typeof (row as { sampleIndex?: unknown }).sampleIndex === "number"
+        ? (row as CachedOutcomeRow).sampleIndex
+        : Math.floor(ordinal / 2);
+    const x = row.x.length === expectedNames.length ? row.x : [...row.x, ...new Array(expectedNames.length - actualNames.length).fill(0)];
+    return { ...row, sampleIndex, x };
   });
   return {
     ...cache,
     config,
-    rows: paddedRows,
+    rows: normalizedRows,
   };
 }
 
@@ -349,6 +365,36 @@ function splitOutcomeRowsByGame(rows: readonly CachedOutcomeRow[], holdoutEvery:
     holdoutRows,
     trainGames: [...trainGames].sort((a, b) => a - b),
     holdoutGames: [...holdoutGames].sort((a, b) => a - b),
+  };
+}
+
+function scoreWithinGamePairs(model: ReturnType<typeof fitPhaseHValueModel>["model"], rows: readonly CachedOutcomeRow[]): WithinGamePairMetrics {
+  const groups = new Map<string, CachedOutcomeRow[]>();
+  for (const row of rows) {
+    const key = `${row.gameIndex}:${row.sampleIndex}`;
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  let pairCount = 0;
+  let correct = 0;
+  let tiedPairs = 0;
+  let marginSum = 0;
+  for (const group of groups.values()) {
+    const positive = group.find((row) => row.y === 1);
+    const negative = group.find((row) => row.y === 0);
+    if (!positive || !negative) continue;
+    const margin = rawPhaseHValueScore(model, positive.x) - rawPhaseHValueScore(model, negative.x);
+    pairCount++;
+    marginSum += margin;
+    if (margin > 0) correct++;
+    else if (margin === 0) tiedPairs++;
+  }
+  return {
+    pairCount,
+    pairAccuracy: pairCount === 0 ? 0 : correct / pairCount,
+    tiedPairs,
+    averagePairMargin: pairCount === 0 ? 0 : marginSum / pairCount,
   };
 }
 
@@ -530,15 +576,27 @@ const result = fitPhaseHValueModel(trainOutcomeRows, gatePairs, {
 });
 const { model, metrics } = result;
 const holdoutMetrics = holdoutOutcomeRows.length > 0 ? scorePhaseHValueModel(model, holdoutOutcomeRows, []) : null;
+const trainWithinGamePairMetrics = scoreWithinGamePairs(model, split.trainRows);
+const holdoutWithinGamePairMetrics = scoreWithinGamePairs(model, split.holdoutRows);
 console.log(
   `train metrics: logloss=${metrics.logloss.toFixed(4)} acc=${(metrics.accuracy * 100).toFixed(1)}% ` +
     `auc=${metrics.auc.toFixed(4)} pairAcc=${(metrics.pairAccuracy * 100).toFixed(1)}% ` +
     `avgPairMargin=${metrics.averagePairMargin.toFixed(4)}`,
 );
+console.log(
+  `train within-game pairs: pairAcc=${(trainWithinGamePairMetrics.pairAccuracy * 100).toFixed(1)}% ` +
+    `pairs=${trainWithinGamePairMetrics.pairCount} avgMargin=${trainWithinGamePairMetrics.averagePairMargin.toFixed(4)} ` +
+    `tied=${trainWithinGamePairMetrics.tiedPairs}`,
+);
 if (holdoutMetrics) {
   console.log(
     `holdout metrics: logloss=${holdoutMetrics.logloss.toFixed(4)} acc=${(holdoutMetrics.accuracy * 100).toFixed(1)}% ` +
       `auc=${holdoutMetrics.auc.toFixed(4)}`,
+  );
+  console.log(
+    `holdout within-game pairs: pairAcc=${(holdoutWithinGamePairMetrics.pairAccuracy * 100).toFixed(1)}% ` +
+      `pairs=${holdoutWithinGamePairMetrics.pairCount} avgMargin=${holdoutWithinGamePairMetrics.averagePairMargin.toFixed(4)} ` +
+      `tied=${holdoutWithinGamePairMetrics.tiedPairs}`,
   );
 }
 console.log("\nfeatures: " + VALUE_FEATURE_NAMES.join(", "));
@@ -562,6 +620,8 @@ if (out) {
     metrics,
     trainMetrics: metrics,
     holdoutMetrics,
+    trainWithinGamePairMetrics,
+    holdoutWithinGamePairMetrics,
     model,
     auditSummary,
     holdout: {
