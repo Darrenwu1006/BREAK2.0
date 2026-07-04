@@ -31,9 +31,10 @@ const DECKS = [
 type BenchmarkDeck = ReturnType<typeof findBenchmarkDeck>;
 type HeuristicProfile = ReturnType<typeof heuristicProfileForDeckAxes>;
 type DeckPairMode = "cross-archetype" | "same-deck";
+type OutcomePolicyId = BenchmarkPolicyId | "mixed-k0";
 
 interface OutcomeSourceConfig {
-  outcomePolicy: BenchmarkPolicyId;
+  outcomePolicy: OutcomePolicyId;
   deckPairMode?: DeckPairMode;
   seedStart: number;
   sampleEvery: number;
@@ -56,6 +57,7 @@ interface OutcomeCacheGame {
   gameIndex: number;
   seed: number;
   decks: [string, string];
+  outcomePolicy?: BenchmarkPolicyId;
   status: "complete" | "skipped";
   winner: PlayerId | null;
   rowCount: number;
@@ -97,14 +99,16 @@ function seededRnd(seed: number): () => number {
   };
 }
 
-function parsePolicy(value: string): BenchmarkPolicyId {
+function parsePolicy(value: string): OutcomePolicyId {
+  if (value === "mixed-k0") return value;
   const allowed = new Set<BenchmarkPolicyId>([
     "heuristic-v2-personality",
     "is-mcts",
+    "is-mcts-h4",
     "mo-ismcts",
   ]);
   if (!allowed.has(value as BenchmarkPolicyId)) {
-    throw new Error(`unsupported --outcome-policy ${value}; use heuristic-v2-personality, is-mcts, or mo-ismcts`);
+    throw new Error(`unsupported --outcome-policy ${value}; use heuristic-v2-personality, is-mcts, is-mcts-h4, mo-ismcts, or mixed-k0`);
   }
   return value as BenchmarkPolicyId;
 }
@@ -136,15 +140,21 @@ function selfPlayDecision(policy: BenchmarkPolicyId, state: GameState, profiles:
   );
 }
 
+function outcomePolicyForGame(config: OutcomeSourceConfig, gameIndex: number): BenchmarkPolicyId {
+  if (config.outcomePolicy !== "mixed-k0") return config.outcomePolicy;
+  return gameIndex % 2 === 0 ? "heuristic-v2-personality" : "is-mcts-h4";
+}
+
 function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfig): { rows: CachedOutcomeRow[]; meta: OutcomeCacheGame } {
   const deckPairMode = config.deckPairMode ?? "cross-archetype";
   const [deckA, deckB] = deckPairFor(gameIndex, config.mirror, deckPairMode);
   const seed = config.seedStart + gameIndex;
   const deckNames: [string, string] = [deckA.name, deckB.name];
+  const policy = outcomePolicyForGame(config, gameIndex);
   if (deckA.name === deckB.name && deckPairMode !== "same-deck") {
     return {
       rows: [],
-      meta: { gameIndex, seed, decks: deckNames, status: "skipped", winner: null, rowCount: 0, reason: "same-deck" },
+      meta: { gameIndex, seed, decks: deckNames, outcomePolicy: policy, status: "skipped", winner: null, rowCount: 0, reason: "same-deck" },
     };
   }
   const profiles: [HeuristicProfile, HeuristicProfile] = [
@@ -168,7 +178,7 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
       });
     }
     try {
-      state = applyDecision(benchmarkDb, state, selfPlayDecision(config.outcomePolicy, state, profiles, [deckA, deckB], seed));
+      state = applyDecision(benchmarkDb, state, selfPlayDecision(policy, state, profiles, [deckA, deckB], seed));
     } catch (error) {
       ok = false;
       reason = error instanceof Error ? error.message : String(error);
@@ -178,7 +188,7 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
   if (!ok || state.winner === null) {
     return {
       rows: [],
-      meta: { gameIndex, seed, decks: deckNames, status: "skipped", winner: null, rowCount: 0, reason: reason || "incomplete" },
+      meta: { gameIndex, seed, decks: deckNames, outcomePolicy: policy, status: "skipped", winner: null, rowCount: 0, reason: reason || "incomplete" },
     };
   }
   const rows: CachedOutcomeRow[] = [];
@@ -188,7 +198,7 @@ function collectOutcomeRowsForGame(gameIndex: number, config: OutcomeSourceConfi
   }
   return {
     rows,
-    meta: { gameIndex, seed, decks: deckNames, status: "complete", winner: state.winner, rowCount: rows.length },
+    meta: { gameIndex, seed, decks: deckNames, outcomePolicy: policy, status: "complete", winner: state.winner, rowCount: rows.length },
   };
 }
 
@@ -405,6 +415,7 @@ const sessions = files.map(readReplay).filter((session): session is ReplaySessio
 const omitted = omittedFeatures();
 const nonNegative = nonNegativeFeatures();
 const minOutcomeRows = argNum("min-outcome-rows", 100);
+const skipGatePairs = hasFlag("no-gate-pairs");
 
 console.log(
   `Phase-H-Value-Fit: outcome policy=${outcomePolicy}, deckPairMode=${deckPairMode}, games=${games}, replayFiles=${files.length}, ` +
@@ -416,10 +427,10 @@ if (nonNegative.length > 0) console.log(`nonNegativeFeatures=${nonNegative.join(
 const outcomeRows = rowCache
   ? collectOutcomeRowsWithCache(games, outcomeConfig, rowCache)
   : collectOutcomeRows(games, outcomeConfig);
-const gatePairs = collectGatePairs(sessions, !hasFlag("no-synthetic"));
+const gatePairs = skipGatePairs ? [] : collectGatePairs(sessions, !hasFlag("no-synthetic"));
 console.log(`outcomeRows=${outcomeRows.length}, gatePairs=${gatePairs.length}`);
 if (outcomeRows.length < minOutcomeRows) throw new Error(`outcome rows too few: ${outcomeRows.length} < ${minOutcomeRows}`);
-if (gatePairs.length === 0) throw new Error("gate pairs too few");
+if (gatePairs.length === 0 && !hasFlag("allow-no-gate-pairs") && !skipGatePairs) throw new Error("gate pairs too few");
 
 const result = fitPhaseHValueModel(outcomeRows, gatePairs, {
   epochs: argNum("epochs", 4000),
@@ -435,7 +446,7 @@ const result = fitPhaseHValueModel(outcomeRows, gatePairs, {
     `rowCache=${rowCache || "none"} ` +
     `gatePairs=${gatePairs.length} pairWeight=${argNum("pair-weight", 4)} ` +
     `omitted=${omitted.join("|") || "none"} nonNegative=${nonNegative.join("|") || "none"} ` +
-    `engine=${engineVersion} [Codex 2026-07-01]`,
+    `engine=${engineVersion} [Codex 2026-07-03]`,
 });
 const { model, metrics } = result;
 console.log(
