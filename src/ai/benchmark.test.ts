@@ -13,7 +13,14 @@ describe("M8 benchmark harness", () => {
         toss: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
         attack: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
       },
-      defenseSkillNonUse: { opportunities: 0, nonUses: 0 },
+      defenseSkillNonUse: {
+        opportunities: 0,
+        nonUses: 0,
+        byCost: {
+          free: { opportunities: 0, nonUses: 0 },
+          costly: { opportunities: 0, nonUses: 0 },
+        },
+      },
     };
   }
 
@@ -74,6 +81,10 @@ describe("M8 benchmark harness", () => {
     expect(report.summary.playQualityByPlayer[0].lowPointDeployRate).toBeLessThanOrEqual(1);
     expect(report.summary.playQualityByPlayer[0].defenseSkillNonUseRate).toBeGreaterThanOrEqual(0);
     expect(report.summary.playQualityByPlayer[0].defenseSkillNonUseRate).toBeLessThanOrEqual(1);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillFreeNonUseRate).toBeGreaterThanOrEqual(0);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillFreeNonUseRate).toBeLessThanOrEqual(1);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillCostlyNonUseRate).toBeGreaterThanOrEqual(0);
+    expect(report.summary.playQualityByPlayer[0].defenseSkillCostlyNonUseRate).toBeLessThanOrEqual(1);
     expect(report.summary.playQualityByPlayer[0].averageOpPressure).toBeGreaterThanOrEqual(0);
   });
 
@@ -133,6 +144,91 @@ describe("M8 benchmark harness", () => {
 
     expect(stats.defenseSkillNonUse.opportunities).toBe(1);
     expect(stats.defenseSkillNonUse.nonUses).toBe(1);
+    expect(stats.defenseSkillNonUse.byCost.free.opportunities).toBe(1);
+    expect(stats.defenseSkillNonUse.byCost.free.nonUses).toBe(1);
+    expect(stats.defenseSkillNonUse.byCost.costly.opportunities).toBe(0);
+  });
+
+  it("K6：零成本 gate 拒絕會只計入 M2-free", () => {
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 173, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    const source = state.players[0].hand.shift()!;
+    state.players[0].receive.push(source);
+    state.phase = "receive";
+    state.turnPlayer = 0;
+    state.op = { owner: 1, value: 3, source: "attack" };
+    state.pendingDecision = { player: 0, type: "effect-confirm", prompt: "免費 +5 接球" };
+    state.effectCtx = {
+      player: 0,
+      source,
+      frames: [],
+      lastTarget: null,
+      triggerUid: null,
+      turn1: false,
+      anyExecuted: false,
+      awaiting: {
+        kind: "confirm",
+        what: "gate",
+        costs: [],
+        then: [{ op: "addParam", target: "self", param: "receive", amount: 5 }],
+        prompt: "免費 +5 接球",
+      },
+      desc: "木兎型零成本技能",
+    };
+
+    const accept = applyDecision(benchmarkDb, state, { type: "effect-confirm", accept: true });
+    const decline = applyDecision(benchmarkDb, state, { type: "effect-confirm", accept: false });
+    expect(effParam(benchmarkDb, accept, source, "receive")).toBeGreaterThan(effParam(benchmarkDb, decline, source, "receive") ?? 0);
+
+    const stats = blankPlayQualityStats();
+    recordPlayQualityDecision(benchmarkDb, state, { type: "effect-confirm", accept: false }, stats);
+
+    expect(stats.defenseSkillNonUse.opportunities).toBe(1);
+    expect(stats.defenseSkillNonUse.nonUses).toBe(1);
+    expect(stats.defenseSkillNonUse.byCost.free).toEqual({ opportunities: 1, nonUses: 1 });
+    expect(stats.defenseSkillNonUse.byCost.costly).toEqual({ opportunities: 0, nonUses: 0 });
+  });
+
+  it("K6：有 cost gate 拒絕會只計入 M2-costly", () => {
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    let state = createGame(benchmarkDb, { seed: 174, decks: [deckA.ids, deckB.ids] });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    const source = state.players[0].hand.shift()!;
+    state.players[0].receive.push(source);
+    state.phase = "receive";
+    state.turnPlayer = 0;
+    state.op = { owner: 1, value: 3, source: "attack" };
+    state.pendingDecision = { player: 0, type: "effect-confirm", prompt: "付 1 Guts +5 接球" };
+    state.effectCtx = {
+      player: 0,
+      source,
+      frames: [],
+      lastTarget: null,
+      triggerUid: null,
+      turn1: false,
+      anyExecuted: false,
+      awaiting: {
+        kind: "confirm",
+        what: "gate",
+        costs: [{ type: "guts", count: 1 }],
+        then: [{ op: "addParam", target: "self", param: "receive", amount: 5 }],
+        prompt: "付 1 Guts +5 接球",
+      },
+      desc: "有成本技能",
+    };
+
+    const stats = blankPlayQualityStats();
+    recordPlayQualityDecision(benchmarkDb, state, { type: "effect-confirm", accept: false }, stats);
+
+    expect(stats.defenseSkillNonUse.byCost.free).toEqual({ opportunities: 0, nonUses: 0 });
+    expect(stats.defenseSkillNonUse.byCost.costly).toEqual({ opportunities: 1, nonUses: 1 });
   });
 
   it("benchmark 牌組池會包含 UI 新增牌組且都是 40 張", () => {

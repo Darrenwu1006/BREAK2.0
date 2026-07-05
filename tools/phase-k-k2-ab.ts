@@ -27,6 +27,10 @@ interface QualityAcc {
   lowPointDeficit: number;
   defenseSkillOpportunities: number;
   defenseSkillNonUses: number;
+  defenseSkillFreeOpportunities: number;
+  defenseSkillFreeNonUses: number;
+  defenseSkillCostlyOpportunities: number;
+  defenseSkillCostlyNonUses: number;
   opCount: number;
   opTotal: number;
   attackAttempts: number;
@@ -98,6 +102,10 @@ function blankQualityAcc(): QualityAcc {
     lowPointDeficit: 0,
     defenseSkillOpportunities: 0,
     defenseSkillNonUses: 0,
+    defenseSkillFreeOpportunities: 0,
+    defenseSkillFreeNonUses: 0,
+    defenseSkillCostlyOpportunities: 0,
+    defenseSkillCostlyNonUses: 0,
     opCount: 0,
     opTotal: 0,
     attackAttempts: 0,
@@ -114,6 +122,10 @@ function addQuality(acc: QualityAcc, match: MatchResult, player: 0 | 1): void {
   acc.lowPointDeficit += play.lowPointDeploy.toss.totalDeficit + play.lowPointDeploy.attack.totalDeficit;
   acc.defenseSkillOpportunities += play.defenseSkillNonUse.opportunities;
   acc.defenseSkillNonUses += play.defenseSkillNonUse.nonUses;
+  acc.defenseSkillFreeOpportunities += play.defenseSkillNonUse.byCost.free.opportunities;
+  acc.defenseSkillFreeNonUses += play.defenseSkillNonUse.byCost.free.nonUses;
+  acc.defenseSkillCostlyOpportunities += play.defenseSkillNonUse.byCost.costly.opportunities;
+  acc.defenseSkillCostlyNonUses += play.defenseSkillNonUse.byCost.costly.nonUses;
   acc.opCount += stats.op.count;
   acc.opTotal += stats.op.total;
   acc.attackAttempts += stats.attackSuccess.attempts;
@@ -130,6 +142,12 @@ function summarizeQuality(acc: QualityAcc): PlayQualitySummary {
     defenseSkillOpportunities: acc.defenseSkillOpportunities,
     defenseSkillNonUses: acc.defenseSkillNonUses,
     defenseSkillNonUseRate: acc.defenseSkillOpportunities === 0 ? 0 : acc.defenseSkillNonUses / acc.defenseSkillOpportunities,
+    defenseSkillFreeOpportunities: acc.defenseSkillFreeOpportunities,
+    defenseSkillFreeNonUses: acc.defenseSkillFreeNonUses,
+    defenseSkillFreeNonUseRate: acc.defenseSkillFreeOpportunities === 0 ? 0 : acc.defenseSkillFreeNonUses / acc.defenseSkillFreeOpportunities,
+    defenseSkillCostlyOpportunities: acc.defenseSkillCostlyOpportunities,
+    defenseSkillCostlyNonUses: acc.defenseSkillCostlyNonUses,
+    defenseSkillCostlyNonUseRate: acc.defenseSkillCostlyOpportunities === 0 ? 0 : acc.defenseSkillCostlyNonUses / acc.defenseSkillCostlyOpportunities,
     averageOpPressure: acc.opCount === 0 ? 0 : acc.opTotal / acc.opCount,
     opPressureSamples: acc.opCount,
   };
@@ -241,6 +259,8 @@ const result = {
     deltas: {
       lowPointDeployRate: candidateSummary.lowPointDeployRate - currentSummary.lowPointDeployRate,
       defenseSkillNonUseRate: candidateSummary.defenseSkillNonUseRate - currentSummary.defenseSkillNonUseRate,
+      defenseSkillFreeNonUseRate: candidateSummary.defenseSkillFreeNonUseRate - currentSummary.defenseSkillFreeNonUseRate,
+      defenseSkillCostlyNonUseRate: candidateSummary.defenseSkillCostlyNonUseRate - currentSummary.defenseSkillCostlyNonUseRate,
       averageOpPressure: candidateSummary.averageOpPressure - currentSummary.averageOpPressure,
     },
   },
@@ -263,11 +283,15 @@ console.log(`COMBINED: candidate ${candidateWins}/${completed} = ${pct(ci.p)}  9
 console.log(
   `M-Throw candidate: M1 ${pct(candidateSummary.lowPointDeployRate)} (${candidateSummary.lowPointDeploys}/${candidateSummary.lowPointDeployOpportunities}), ` +
     `M2 ${pct(candidateSummary.defenseSkillNonUseRate)} (${candidateSummary.defenseSkillNonUses}/${candidateSummary.defenseSkillOpportunities}), ` +
+    `M2-free ${pct(candidateSummary.defenseSkillFreeNonUseRate)} (${candidateSummary.defenseSkillFreeNonUses}/${candidateSummary.defenseSkillFreeOpportunities}), ` +
+    `M2-costly ${pct(candidateSummary.defenseSkillCostlyNonUseRate)} (${candidateSummary.defenseSkillCostlyNonUses}/${candidateSummary.defenseSkillCostlyOpportunities}), ` +
     `M3 OP ${candidateSummary.averageOpPressure.toFixed(2)} (${candidateSummary.opPressureSamples})`,
 );
 console.log(
   `M-Throw current:   M1 ${pct(currentSummary.lowPointDeployRate)} (${currentSummary.lowPointDeploys}/${currentSummary.lowPointDeployOpportunities}), ` +
     `M2 ${pct(currentSummary.defenseSkillNonUseRate)} (${currentSummary.defenseSkillNonUses}/${currentSummary.defenseSkillOpportunities}), ` +
+    `M2-free ${pct(currentSummary.defenseSkillFreeNonUseRate)} (${currentSummary.defenseSkillFreeNonUses}/${currentSummary.defenseSkillFreeOpportunities}), ` +
+    `M2-costly ${pct(currentSummary.defenseSkillCostlyNonUseRate)} (${currentSummary.defenseSkillCostlyNonUses}/${currentSummary.defenseSkillCostlyOpportunities}), ` +
     `M3 OP ${currentSummary.averageOpPressure.toFixed(2)} (${currentSummary.opPressureSamples})`,
 );
 console.log(`Attack success candidate: ${pct(candidateAttack.rate)} (${candidateAttack.successes}/${candidateAttack.attempts}), avg attack OP ${candidateAttack.averageOp.toFixed(2)}`);

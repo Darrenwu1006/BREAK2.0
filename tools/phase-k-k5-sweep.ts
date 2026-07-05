@@ -30,6 +30,10 @@ interface QualityAcc {
   lowPointDeficit: number;
   defenseSkillOpportunities: number;
   defenseSkillNonUses: number;
+  defenseSkillFreeOpportunities: number;
+  defenseSkillFreeNonUses: number;
+  defenseSkillCostlyOpportunities: number;
+  defenseSkillCostlyNonUses: number;
   opCount: number;
   opTotal: number;
   attackAttempts: number;
@@ -112,6 +116,10 @@ function blankQualityAcc(): QualityAcc {
     lowPointDeficit: 0,
     defenseSkillOpportunities: 0,
     defenseSkillNonUses: 0,
+    defenseSkillFreeOpportunities: 0,
+    defenseSkillFreeNonUses: 0,
+    defenseSkillCostlyOpportunities: 0,
+    defenseSkillCostlyNonUses: 0,
     opCount: 0,
     opTotal: 0,
     attackAttempts: 0,
@@ -128,6 +136,10 @@ function addQuality(acc: QualityAcc, match: MatchResult, player: 0 | 1): void {
   acc.lowPointDeficit += play.lowPointDeploy.toss.totalDeficit + play.lowPointDeploy.attack.totalDeficit;
   acc.defenseSkillOpportunities += play.defenseSkillNonUse.opportunities;
   acc.defenseSkillNonUses += play.defenseSkillNonUse.nonUses;
+  acc.defenseSkillFreeOpportunities += play.defenseSkillNonUse.byCost.free.opportunities;
+  acc.defenseSkillFreeNonUses += play.defenseSkillNonUse.byCost.free.nonUses;
+  acc.defenseSkillCostlyOpportunities += play.defenseSkillNonUse.byCost.costly.opportunities;
+  acc.defenseSkillCostlyNonUses += play.defenseSkillNonUse.byCost.costly.nonUses;
   acc.opCount += stats.op.count;
   acc.opTotal += stats.op.total;
   acc.attackAttempts += stats.attackSuccess.attempts;
@@ -144,6 +156,12 @@ function summarizeQuality(acc: QualityAcc): PlayQualitySummary {
     defenseSkillOpportunities: acc.defenseSkillOpportunities,
     defenseSkillNonUses: acc.defenseSkillNonUses,
     defenseSkillNonUseRate: acc.defenseSkillOpportunities === 0 ? 0 : acc.defenseSkillNonUses / acc.defenseSkillOpportunities,
+    defenseSkillFreeOpportunities: acc.defenseSkillFreeOpportunities,
+    defenseSkillFreeNonUses: acc.defenseSkillFreeNonUses,
+    defenseSkillFreeNonUseRate: acc.defenseSkillFreeOpportunities === 0 ? 0 : acc.defenseSkillFreeNonUses / acc.defenseSkillFreeOpportunities,
+    defenseSkillCostlyOpportunities: acc.defenseSkillCostlyOpportunities,
+    defenseSkillCostlyNonUses: acc.defenseSkillCostlyNonUses,
+    defenseSkillCostlyNonUseRate: acc.defenseSkillCostlyOpportunities === 0 ? 0 : acc.defenseSkillCostlyNonUses / acc.defenseSkillCostlyOpportunities,
     averageOpPressure: acc.opCount === 0 ? 0 : acc.opTotal / acc.opCount,
     opPressureSamples: acc.opCount,
   };
@@ -255,6 +273,8 @@ for (const delta of deltas) {
         deltas: {
           lowPointDeployRate: candidatePlay.lowPointDeployRate - currentPlay.lowPointDeployRate,
           defenseSkillNonUseRate: candidatePlay.defenseSkillNonUseRate - currentPlay.defenseSkillNonUseRate,
+          defenseSkillFreeNonUseRate: candidatePlay.defenseSkillFreeNonUseRate - currentPlay.defenseSkillFreeNonUseRate,
+          defenseSkillCostlyNonUseRate: candidatePlay.defenseSkillCostlyNonUseRate - currentPlay.defenseSkillCostlyNonUseRate,
           averageOpPressure: candidatePlay.averageOpPressure - currentPlay.averageOpPressure,
         },
       },

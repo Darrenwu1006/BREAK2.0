@@ -1,4 +1,4 @@
-import { applyDecision, createGame, deployableUids, effParam, freeOptions } from "../engine/engine";
+import { applyDecision, createGame, deployableUids, effParam, effectDefOf, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileId } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
@@ -191,6 +191,7 @@ export interface LowPointDeployStats {
 export interface DefenseSkillNonUseStats {
   opportunities: number;
   nonUses: number;
+  byCost: Record<DefenseSkillCostTier, DefenseSkillNonUseTierStats>;
 }
 
 export interface AttackSuccessStats {
@@ -202,6 +203,13 @@ export interface AttackSuccessStats {
 export interface PlayQualityStats {
   lowPointDeploy: Record<"toss" | "attack", LowPointDeployStats>;
   defenseSkillNonUse: DefenseSkillNonUseStats;
+}
+
+export type DefenseSkillCostTier = "free" | "costly";
+
+export interface DefenseSkillNonUseTierStats {
+  opportunities: number;
+  nonUses: number;
 }
 
 export interface SearchDecisionDiagnostics {
@@ -313,6 +321,12 @@ export interface PlayQualitySummary {
   defenseSkillOpportunities: number;
   defenseSkillNonUses: number;
   defenseSkillNonUseRate: number;
+  defenseSkillFreeOpportunities: number;
+  defenseSkillFreeNonUses: number;
+  defenseSkillFreeNonUseRate: number;
+  defenseSkillCostlyOpportunities: number;
+  defenseSkillCostlyNonUses: number;
+  defenseSkillCostlyNonUseRate: number;
   averageOpPressure: number;
   opPressureSamples: number;
 }
@@ -629,7 +643,14 @@ function blankLowPointDeployStats(): LowPointDeployStats {
 }
 
 function blankDefenseSkillNonUseStats(): DefenseSkillNonUseStats {
-  return { opportunities: 0, nonUses: 0 };
+  return {
+    opportunities: 0,
+    nonUses: 0,
+    byCost: {
+      free: { opportunities: 0, nonUses: 0 },
+      costly: { opportunities: 0, nonUses: 0 },
+    },
+  };
 }
 
 function blankAttackSuccessStats(): AttackSuccessStats {
@@ -680,6 +701,10 @@ function addLowPointDeployStats(target: LowPointDeployStats, source: LowPointDep
 function addDefenseSkillNonUseStats(target: DefenseSkillNonUseStats, source: DefenseSkillNonUseStats): void {
   target.opportunities += source.opportunities;
   target.nonUses += source.nonUses;
+  for (const tier of ["free", "costly"] as const) {
+    target.byCost[tier].opportunities += source.byCost[tier].opportunities;
+    target.byCost[tier].nonUses += source.byCost[tier].nonUses;
+  }
 }
 
 function addPlayQualityStats(target: PlayQualityStats, source: PlayQualityStats): void {
@@ -754,6 +779,24 @@ function isDefensiveFreeStep(state: GameState, player: PlayerId): boolean {
   return (state.phase === "block" || state.phase === "receive") && !!state.op && state.op.owner !== player;
 }
 
+function skillCostTier(costs: readonly unknown[] | undefined): DefenseSkillCostTier {
+  return costs && costs.length > 0 ? "costly" : "free";
+}
+
+function freeSkillCostTier(db: CardDb, state: GameState, uid: number, skillIndex: number): DefenseSkillCostTier {
+  const skill = effectDefOf(db, state, uid)?.skills[skillIndex];
+  return skill?.kind === "active" ? skillCostTier(skill.costs) : "free";
+}
+
+function recordDefenseSkillNonUse(stats: DefenseSkillNonUseStats, nonUse: boolean, tiers: Iterable<DefenseSkillCostTier>): void {
+  stats.opportunities++;
+  if (nonUse) stats.nonUses++;
+  for (const tier of new Set(tiers)) {
+    stats.byCost[tier].opportunities++;
+    if (nonUse) stats.byCost[tier].nonUses++;
+  }
+}
+
 export function recordPlayQualityDecision(db: CardDb, state: GameState, decision: Decision, stats: PlayQualityStats): void {
   const pending = state.pendingDecision;
   if (!pending) return;
@@ -764,15 +807,22 @@ export function recordPlayQualityDecision(db: CardDb, state: GameState, decision
     return;
   }
   if (decision.type === "free" && isDefensiveFreeStep(state, player)) {
-    const availableSkills = freeOptions(db, state).skills.length;
-    if (availableSkills === 0) return;
+    const availableSkills = freeOptions(db, state).skills;
+    if (availableSkills.length === 0) return;
+    const availableTiers = availableSkills.map((skill) => freeSkillCostTier(db, state, skill.uid, skill.skillIndex));
+    const chosenTier = decision.action === "skill" ? freeSkillCostTier(db, state, decision.uid, decision.skillIndex) : null;
     stats.defenseSkillNonUse.opportunities++;
     if (decision.action !== "skill") stats.defenseSkillNonUse.nonUses++;
+    for (const tier of new Set(availableTiers)) {
+      stats.defenseSkillNonUse.byCost[tier].opportunities++;
+      if (chosenTier !== tier) stats.defenseSkillNonUse.byCost[tier].nonUses++;
+    }
     return;
   }
   if (decision.type === "effect-confirm" && isDefensiveFreeStep(state, player) && state.effectCtx?.desc.includes("技能")) {
-    stats.defenseSkillNonUse.opportunities++;
-    if (!decision.accept) stats.defenseSkillNonUse.nonUses++;
+    const awaiting = state.effectCtx.awaiting;
+    const tier = awaiting?.kind === "confirm" && awaiting.what === "gate" ? skillCostTier(awaiting.costs) : "free";
+    recordDefenseSkillNonUse(stats.defenseSkillNonUse, !decision.accept, [tier]);
   }
 }
 
@@ -993,6 +1043,10 @@ function summarizePlayQuality(matches: MatchResult[], player: PlayerId): PlayQua
   const totalDeficit = quality.lowPointDeploy.toss.totalDeficit + quality.lowPointDeploy.attack.totalDeficit;
   const defenseSkillOpportunities = quality.defenseSkillNonUse.opportunities;
   const defenseSkillNonUses = quality.defenseSkillNonUse.nonUses;
+  const defenseSkillFreeOpportunities = quality.defenseSkillNonUse.byCost.free.opportunities;
+  const defenseSkillFreeNonUses = quality.defenseSkillNonUse.byCost.free.nonUses;
+  const defenseSkillCostlyOpportunities = quality.defenseSkillNonUse.byCost.costly.opportunities;
+  const defenseSkillCostlyNonUses = quality.defenseSkillNonUse.byCost.costly.nonUses;
   return {
     lowPointDeployOpportunities,
     lowPointDeploys,
@@ -1001,6 +1055,12 @@ function summarizePlayQuality(matches: MatchResult[], player: PlayerId): PlayQua
     defenseSkillOpportunities,
     defenseSkillNonUses,
     defenseSkillNonUseRate: defenseSkillOpportunities === 0 ? 0 : defenseSkillNonUses / defenseSkillOpportunities,
+    defenseSkillFreeOpportunities,
+    defenseSkillFreeNonUses,
+    defenseSkillFreeNonUseRate: defenseSkillFreeOpportunities === 0 ? 0 : defenseSkillFreeNonUses / defenseSkillFreeOpportunities,
+    defenseSkillCostlyOpportunities,
+    defenseSkillCostlyNonUses,
+    defenseSkillCostlyNonUseRate: defenseSkillCostlyOpportunities === 0 ? 0 : defenseSkillCostlyNonUses / defenseSkillCostlyOpportunities,
     averageOpPressure: op.count === 0 ? 0 : op.total / op.count,
     opPressureSamples: op.count,
   };

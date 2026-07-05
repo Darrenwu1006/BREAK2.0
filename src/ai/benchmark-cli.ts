@@ -85,6 +85,8 @@ function formatPercent(value: number): string {
 function formatPlayQuality(label: string, quality: BatchReport["summary"]["playQualityByPlayer"][number]): string {
   return `${label}: M-Throw1 ${formatPercent(quality.lowPointDeployRate)} (${quality.lowPointDeploys}/${quality.lowPointDeployOpportunities}, avg deficit ${quality.averageLowPointDeficit.toFixed(2)}), ` +
     `M-Throw2 ${formatPercent(quality.defenseSkillNonUseRate)} (${quality.defenseSkillNonUses}/${quality.defenseSkillOpportunities}), ` +
+    `M2-free ${formatPercent(quality.defenseSkillFreeNonUseRate)} (${quality.defenseSkillFreeNonUses}/${quality.defenseSkillFreeOpportunities}), ` +
+    `M2-costly ${formatPercent(quality.defenseSkillCostlyNonUseRate)} (${quality.defenseSkillCostlyNonUses}/${quality.defenseSkillCostlyOpportunities}), ` +
     `M-Throw3 OP ${quality.averageOpPressure.toFixed(2)} (${quality.opPressureSamples} samples)`;
 }
 

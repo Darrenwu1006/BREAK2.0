@@ -42,6 +42,7 @@ import {
 import { cloneStateForSearch } from "./search-clone";
 
 export { freeOptions, blockDeployMax, deployNames, charasOf, effParam, nameOf } from "./effects";
+export { effectDefOf } from "./effects";
 
 // ---------- 工具 ----------
 

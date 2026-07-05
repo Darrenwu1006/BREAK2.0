@@ -339,7 +339,14 @@ function blankPlayerStats(): MatchPlayerStats {
         toss: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
         attack: { opportunities: 0, lowPointChoices: 0, totalDeficit: 0, maxDeficit: 0 },
       },
-      defenseSkillNonUse: { opportunities: 0, nonUses: 0 },
+      defenseSkillNonUse: {
+        opportunities: 0,
+        nonUses: 0,
+        byCost: {
+          free: { opportunities: 0, nonUses: 0 },
+          costly: { opportunities: 0, nonUses: 0 },
+        },
+      },
     },
     actionImpact: { event: blankActionImpactStats(), skill: blankActionImpactStats() },
     gutsPaidBySource: { serve: 0, receive: 0, toss: 0, attack: 0, blockCenter: 0 },
@@ -383,6 +390,10 @@ function mergePlayerStats(target: MatchPlayerStats, source: MatchPlayerStats): v
   }
   target.playQuality.defenseSkillNonUse.opportunities += source.playQuality.defenseSkillNonUse.opportunities;
   target.playQuality.defenseSkillNonUse.nonUses += source.playQuality.defenseSkillNonUse.nonUses;
+  for (const tier of ["free", "costly"] as const) {
+    target.playQuality.defenseSkillNonUse.byCost[tier].opportunities += source.playQuality.defenseSkillNonUse.byCost[tier].opportunities;
+    target.playQuality.defenseSkillNonUse.byCost[tier].nonUses += source.playQuality.defenseSkillNonUse.byCost[tier].nonUses;
+  }
   for (const kind of ["event", "skill"] as const) {
     target.actionImpact[kind].uses += source.actionImpact[kind].uses;
     target.actionImpact[kind].effectiveUses += source.actionImpact[kind].effectiveUses;
