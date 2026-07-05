@@ -10,6 +10,7 @@ import type { CoachActionEstimate, CoachReport } from "../ai/coach";
 import type { ValueExplanation } from "../ai/rollout-value";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
+import { buildHumanAnchorDraft } from "../human-anchor";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER, ValueExplanationSummary } from "./GamePanels";
@@ -92,6 +93,13 @@ type ReplayScanState =
   | { status: "running"; currentStep: number; done: number; total: number }
   | { status: "done"; total: number }
   | { status: "stopped"; done: number; total: number };
+type HumanAnchorStatus =
+  | { status: "idle" }
+  | { status: "scheduled"; replayRef: string }
+  | { status: "saving"; replayRef: string }
+  | { status: "saved"; replayRef: string; duplicate?: boolean }
+  | { status: "skipped"; replayRef?: string }
+  | { status: "error"; replayRef?: string; error: string };
 
 function decisionLabel(decision: Decision): string {
   switch (decision.type) {
@@ -288,6 +296,60 @@ function NarrativeSection(props: { narrative: string[] }) {
   );
 }
 
+function HumanAnchorControls(props: {
+  experimental: boolean;
+  recordEnabled: boolean;
+  status: HumanAnchorStatus;
+  onExperimentalChange: (experimental: boolean) => void;
+  onRecordEnabledChange: (enabled: boolean) => void;
+  onRecordNow: () => void;
+  onCancel: () => void;
+}) {
+  const locked = props.status.status === "saving" || props.status.status === "saved";
+  const statusText =
+    props.status.status === "scheduled" ? "即將自動記錄"
+    : props.status.status === "saving" ? "記錄中"
+    : props.status.status === "saved" ? props.status.duplicate ? "已記錄過" : "已記錄"
+    : props.status.status === "skipped" ? "本場不記錄"
+    : props.status.status === "error" ? `記錄失敗：${props.status.error}`
+    : "等待對戰紀錄儲存";
+  const canRecord =
+    props.status.status === "scheduled" ||
+    props.status.status === "skipped" ||
+    props.status.status === "error";
+
+  return (
+    <section className="report-section human-anchor-panel">
+      <div className="human-anchor-head">
+        <b>人類錨點</b>
+        <span className={`human-anchor-status is-${props.status.status}`}>{statusText}</span>
+      </div>
+      <label>
+        <input
+          type="checkbox"
+          checked={props.recordEnabled}
+          disabled={locked}
+          onChange={(event) => props.onRecordEnabledChange(event.currentTarget.checked)}
+        />
+        <span>記錄本場</span>
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={props.experimental}
+          disabled={locked}
+          onChange={(event) => props.onExperimentalChange(event.currentTarget.checked)}
+        />
+        <span>這場是實驗局</span>
+      </label>
+      <div className="human-anchor-actions">
+        <button className="btn-secondary" disabled={!canRecord} onClick={props.onRecordNow}>記錄本場</button>
+        <button className="btn-quiet" disabled={props.status.status !== "scheduled"} onClick={props.onCancel}>取消本場記錄</button>
+      </div>
+    </section>
+  );
+}
+
 function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
@@ -295,9 +357,16 @@ function PostMatchReportBody(props: {
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
+  humanAnchorExperimental: boolean;
+  humanAnchorRecordEnabled: boolean;
+  humanAnchorStatus: HumanAnchorStatus;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
+  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
+  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
+  onHumanAnchorRecordNow: () => void;
+  onHumanAnchorCancel: () => void;
   onScan: () => void;
   onStopScan: () => void;
 }) {
@@ -320,6 +389,16 @@ function PostMatchReportBody(props: {
       </section>
 
       <NarrativeSection narrative={props.narrative} />
+
+      <HumanAnchorControls
+        experimental={props.humanAnchorExperimental}
+        recordEnabled={props.humanAnchorRecordEnabled}
+        status={props.humanAnchorStatus}
+        onExperimentalChange={props.onHumanAnchorExperimentalChange}
+        onRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
+        onRecordNow={props.onHumanAnchorRecordNow}
+        onCancel={props.onHumanAnchorCancel}
+      />
 
       <section className="report-section">
         <b>局面估值</b>
@@ -411,9 +490,16 @@ function PostMatchReport(props: {
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
+  humanAnchorExperimental: boolean;
+  humanAnchorRecordEnabled: boolean;
+  humanAnchorStatus: HumanAnchorStatus;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
+  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
+  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
+  onHumanAnchorRecordNow: () => void;
+  onHumanAnchorCancel: () => void;
   onScan: () => void;
   onStopScan: () => void;
   onReplay: () => void;
@@ -433,9 +519,16 @@ function PostMatchReport(props: {
         cardDetails={props.cardDetails}
         valueExplanation={props.valueExplanation}
         narrative={props.narrative}
+        humanAnchorExperimental={props.humanAnchorExperimental}
+        humanAnchorRecordEnabled={props.humanAnchorRecordEnabled}
+        humanAnchorStatus={props.humanAnchorStatus}
         keyEntries={props.keyEntries}
         critiqueCache={props.critiqueCache}
         scan={props.scan}
+        onHumanAnchorExperimentalChange={props.onHumanAnchorExperimentalChange}
+        onHumanAnchorRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
+        onHumanAnchorRecordNow={props.onHumanAnchorRecordNow}
+        onHumanAnchorCancel={props.onHumanAnchorCancel}
         onScan={props.onScan}
         onStopScan={props.onStopScan}
       />
@@ -453,11 +546,18 @@ function PostMatchModal(props: {
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
+  humanAnchorExperimental: boolean;
+  humanAnchorRecordEnabled: boolean;
+  humanAnchorStatus: HumanAnchorStatus;
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
   scan: ReplayScanState;
   winner: PlayerId | null;
   replayMode: boolean;
+  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
+  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
+  onHumanAnchorRecordNow: () => void;
+  onHumanAnchorCancel: () => void;
   onScan: () => void;
   onStopScan: () => void;
   onReplay: () => void;
@@ -486,9 +586,16 @@ function PostMatchModal(props: {
             cardDetails={props.cardDetails}
             valueExplanation={props.valueExplanation}
             narrative={props.narrative}
+            humanAnchorExperimental={props.humanAnchorExperimental}
+            humanAnchorRecordEnabled={props.humanAnchorRecordEnabled}
+            humanAnchorStatus={props.humanAnchorStatus}
             keyEntries={props.keyEntries}
             critiqueCache={props.critiqueCache}
             scan={props.scan}
+            onHumanAnchorExperimentalChange={props.onHumanAnchorExperimentalChange}
+            onHumanAnchorRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
+            onHumanAnchorRecordNow={props.onHumanAnchorRecordNow}
+            onHumanAnchorCancel={props.onHumanAnchorCancel}
             onScan={props.onScan}
             onStopScan={props.onStopScan}
           />
@@ -804,7 +911,13 @@ export function Game(props: {
   const [replayCritiques, setReplayCritiques] = useState<ReplayCritiqueCache>({});
   const [replayScan, setReplayScan] = useState<ReplayScanState>({ status: "idle" });
   const [showPostMatchModal, setShowPostMatchModal] = useState(false);
+  const [humanAnchorExperimental, setHumanAnchorExperimental] = useState(false);
+  const [humanAnchorRecordEnabled, setHumanAnchorRecordEnabled] = useState(true);
+  const [humanAnchorStatus, setHumanAnchorStatus] = useState<HumanAnchorStatus>({ status: "idle" });
   const seenLogCount = useRef(state.log.length);
+  const humanAnchorExperimentalRef = useRef(false);
+  const humanAnchorRecordEnabledRef = useRef(true);
+  const humanAnchorTimerRef = useRef<number | null>(null);
 
   const pd = state.pendingDecision;
   const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
@@ -1203,12 +1316,97 @@ export function Game(props: {
     else if (replayScan.status !== "running" || replayScan.currentStep !== replayStep) setReplayCritique({ status: "idle" });
   }, [replayStep]);
 
+  function clearHumanAnchorTimer() {
+    if (humanAnchorTimerRef.current === null) return;
+    window.clearTimeout(humanAnchorTimerRef.current);
+    humanAnchorTimerRef.current = null;
+  }
+
+  function setHumanAnchorExperimentalValue(next: boolean) {
+    humanAnchorExperimentalRef.current = next;
+    setHumanAnchorExperimental(next);
+  }
+
+  function setHumanAnchorRecordEnabledValue(next: boolean) {
+    humanAnchorRecordEnabledRef.current = next;
+    setHumanAnchorRecordEnabled(next);
+    if (!next && humanAnchorStatus.status === "scheduled") {
+      clearHumanAnchorTimer();
+      setHumanAnchorStatus({ status: "skipped", replayRef: humanAnchorStatus.replayRef });
+    }
+  }
+
+  async function submitHumanAnchorRecord(replayRef: string) {
+    clearHumanAnchorTimer();
+    if (props.loadedReplay) return;
+    if (state.winner !== HUMAN && state.winner !== AI) return;
+    setHumanAnchorStatus({ status: "saving", replayRef });
+    try {
+      const draft = buildHumanAnchorDraft({
+        date: replay.startedAt,
+        aiEngine: engine,
+        playerDeck: replay.decks[0].label,
+        aiDeck: replay.decks[1].label,
+        winner: state.winner,
+        setScore: replayAnalytics.setWins,
+        serious: !humanAnchorExperimentalRef.current,
+        playerDecisions: replayAnalytics.playerDecisions,
+        replayRef,
+      });
+      const res = await fetch("/api/human-anchor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "人類錨點記錄失敗");
+      setHumanAnchorStatus({ status: "saved", replayRef, duplicate: !!data.duplicate });
+    } catch (error) {
+      setHumanAnchorStatus({ status: "error", replayRef, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  function scheduleHumanAnchorRecord(replayRef: string) {
+    if (props.loadedReplay) return;
+    clearHumanAnchorTimer();
+    if (!humanAnchorRecordEnabledRef.current) {
+      setHumanAnchorStatus({ status: "skipped", replayRef });
+      return;
+    }
+    setHumanAnchorStatus({ status: "scheduled", replayRef });
+    humanAnchorTimerRef.current = window.setTimeout(() => {
+      void submitHumanAnchorRecord(replayRef);
+    }, 2500);
+  }
+
+  function recordHumanAnchorNow() {
+    const replayRef =
+      humanAnchorStatus.status === "scheduled" ||
+      humanAnchorStatus.status === "skipped" ||
+      humanAnchorStatus.status === "error"
+        ? humanAnchorStatus.replayRef
+        : undefined;
+    if (!replayRef) return;
+    humanAnchorRecordEnabledRef.current = true;
+    setHumanAnchorRecordEnabled(true);
+    void submitHumanAnchorRecord(replayRef);
+  }
+
+  function cancelHumanAnchorRecord() {
+    clearHumanAnchorTimer();
+    const replayRef = humanAnchorStatus.status === "scheduled" ? humanAnchorStatus.replayRef : undefined;
+    humanAnchorRecordEnabledRef.current = false;
+    setHumanAnchorRecordEnabled(false);
+    setHumanAnchorStatus({ status: "skipped", replayRef });
+  }
+
   useEffect(() => () => {
     replayCoachRejectRef.current?.(new Error("__cancelled__"));
     replayCoachWorkerRef.current?.terminate();
     aiWorkerRef.current?.terminate();
     coachWorkerRef.current?.terminate();
     if (aiPaceTimerRef.current !== null) window.clearTimeout(aiPaceTimerRef.current);
+    clearHumanAnchorTimer();
   }, []);
 
   // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
@@ -1230,6 +1428,7 @@ export function Game(props: {
         })
         .then((data) => {
           console.log("對戰紀錄已儲存:", data.file);
+          if (typeof data.file === "string") scheduleHumanAnchorRecord(data.file);
         })
         .catch((err) => {
           console.error("自動儲存對戰紀錄錯誤:", err);
@@ -1717,9 +1916,16 @@ export function Game(props: {
                 cardDetails={replayReview.actionCardDetails}
                 valueExplanation={replayReview.valueExplanation}
                 narrative={replayReview.narrative}
+                humanAnchorExperimental={humanAnchorExperimental}
+                humanAnchorRecordEnabled={humanAnchorRecordEnabled}
+                humanAnchorStatus={humanAnchorStatus}
                 keyEntries={replayKeyEntries}
                 critiqueCache={replayCritiques}
                 scan={replayScan}
+                onHumanAnchorExperimentalChange={setHumanAnchorExperimentalValue}
+                onHumanAnchorRecordEnabledChange={setHumanAnchorRecordEnabledValue}
+                onHumanAnchorRecordNow={recordHumanAnchorNow}
+                onHumanAnchorCancel={cancelHumanAnchorRecord}
                 onScan={scanReplayDecisions}
                 onStopScan={stopReplayScan}
                 onReplay={enterReplayMode}
@@ -1758,9 +1964,16 @@ export function Game(props: {
         cardDetails={replayReview.actionCardDetails}
         valueExplanation={replayReview.valueExplanation}
         narrative={replayReview.narrative}
+        humanAnchorExperimental={humanAnchorExperimental}
+        humanAnchorRecordEnabled={humanAnchorRecordEnabled}
+        humanAnchorStatus={humanAnchorStatus}
         keyEntries={replayKeyEntries}
         critiqueCache={replayCritiques}
         scan={replayScan}
+        onHumanAnchorExperimentalChange={setHumanAnchorExperimentalValue}
+        onHumanAnchorRecordEnabledChange={setHumanAnchorRecordEnabledValue}
+        onHumanAnchorRecordNow={recordHumanAnchorNow}
+        onHumanAnchorCancel={cancelHumanAnchorRecord}
         winner={state.winner ?? null}
         replayMode={replayMode}
         onScan={scanReplayDecisions}

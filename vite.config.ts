@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 // ---- 牌組 API（dev server middleware）----
 // GET  /api/decks         → 讀 decks/<學校>/<牌組>.csv（含 0 張候補列）
@@ -335,9 +336,87 @@ function replayApi(root: string): Plugin {
   };
 }
 
+function humanAnchorApi(root: string): Plugin {
+  const anchorDir = join(root, "data", "human-anchor");
+  const matchesPath = join(anchorDir, "matches.jsonl");
+  const engineVersion = () => {
+    try {
+      return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    } catch {
+      return "dev";
+    }
+  };
+  const readMatches = () => {
+    if (!existsSync(matchesPath)) return [];
+    return readFileSync(matchesPath, "utf8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        try { return [JSON.parse(line) as { replayRef?: string }]; }
+        catch { return []; }
+      });
+  };
+  const validateRecord = (record: any) => {
+    if (!record || typeof record !== "object") throw new Error("record must be an object");
+    if (typeof record.date !== "string" || Number.isNaN(Date.parse(record.date))) throw new Error("invalid date");
+    if (record.aiEngine !== "strong" && record.aiEngine !== "heuristic") throw new Error("invalid aiEngine");
+    if (!record.decks || typeof record.decks.player !== "string" || typeof record.decks.ai !== "string") throw new Error("invalid decks");
+    if (record.result !== "player" && record.result !== "ai") throw new Error("invalid result");
+    if (!Array.isArray(record.setScore) || record.setScore.length !== 2 || !record.setScore.every((n: unknown) => Number.isInteger(n) && Number(n) >= 0)) {
+      throw new Error("invalid setScore");
+    }
+    if (typeof record.serious !== "boolean") throw new Error("invalid serious");
+    if (!Number.isInteger(record.playerDecisions) || record.playerDecisions < 0) throw new Error("invalid playerDecisions");
+    if (typeof record.replayRef !== "string") throw new Error("invalid replayRef");
+    if (typeof record.note !== "string") throw new Error("invalid note");
+  };
+
+  return {
+    name: "human-anchor-api",
+    configureServer(server) {
+      server.middlewares.use("/api/human-anchor", (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          try {
+            const incoming = JSON.parse(body);
+            validateRecord(incoming);
+            const duplicate = incoming.replayRef
+              ? readMatches().some((match) => match.replayRef === incoming.replayRef)
+              : false;
+            if (duplicate) {
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ ok: true, duplicate: true, file: "data/human-anchor/matches.jsonl" }));
+              return;
+            }
+            const record = {
+              ...incoming,
+              engineVersion: typeof incoming.engineVersion === "string" && incoming.engineVersion.trim()
+                ? incoming.engineVersion.trim()
+                : engineVersion(),
+            };
+            mkdirSync(anchorDir, { recursive: true });
+            appendFileSync(matchesPath, `${JSON.stringify(record)}\n`, "utf8");
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, duplicate: false, file: "data/human-anchor/matches.jsonl" }));
+          } catch (e) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: String(e instanceof Error ? e.message : e) }));
+          }
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: "/BREAK2.0/",
-  plugins: [react(), deckApi(__dirname), replayApi(__dirname)],
+  plugins: [react(), deckApi(__dirname), replayApi(__dirname), humanAnchorApi(__dirname)],
   test: {
     include: ["src/**/*.test.ts"],
   },
