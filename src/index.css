@@ -1342,6 +1342,38 @@ input {
 .report-stat-grid b,
 .report-compare b { font-family: var(--font-num); font-size: 17px; }
 .report-compare em { overflow: hidden; color: var(--text-faint); font-size: 11px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.value-explain {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.value-explain-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.value-explain-head small { color: var(--text-dim); font-size: 12px; }
+.value-explain-head b { color: var(--cream); font-family: var(--font-num); font-size: 18px; }
+.value-explain-terms { display: grid; gap: var(--sp-1); }
+.value-explain-terms span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.value-explain-terms b {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.value-explain-terms small { flex: 0 0 auto; font-family: var(--font-num); }
+.value-explain-terms .is-help small { color: var(--accent); }
+.value-explain-terms .is-hurt small { color: var(--danger); }
 .winrate-bars { display: grid; gap: var(--sp-1); }
 .winrate-bar {
   position: relative;

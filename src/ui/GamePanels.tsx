@@ -3,6 +3,7 @@ import type { Card } from "../data/types";
 import { effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 import type { CoachReport } from "../ai/coach";
+import type { ValueExplanation } from "../ai/rollout-value";
 import { CardView, displayName, cardRarity } from "./CardView";
 import type { DeckMeta, InspectedCard } from "./gameTypes";
 
@@ -511,6 +512,34 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+export function ValueExplanationSummary(props: { explanation?: ValueExplanation; compact?: boolean }) {
+  const explanation = props.explanation;
+  if (!explanation) return null;
+  const terms = explanation.terms.filter((term) => term.direction !== "neutral").slice(0, props.compact ? 2 : 3);
+  return (
+    <div className="value-explain">
+      <div className="value-explain-head">
+        <small>局面估值</small>
+        <b>{percent(explanation.probability)}</b>
+      </div>
+      {terms.length > 0 && (
+        <div className="value-explain-terms">
+          {terms.map((term) => (
+            <span key={term.feature} className={term.direction === "helps" ? "is-help" : "is-hurt"}>
+              <b>{term.label}</b>
+              <small>{signed(term.contribution)}</small>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function gameplanToneLabel(tone: NonNullable<CoachReport["bestAction"]["gameplan"]>["tone"] | undefined): string {
   if (tone === "progress") return "主軸推進";
   if (tone === "risk") return "主軸風險";
@@ -638,6 +667,7 @@ export function CoachPanel(props: {
           <span><b>{percent(report.bestAction.winRate)}</b> 勝率</span>
           <span><b>{percent(report.bestAction.confidence)}</b> 信心</span>
         </div>
+        <ValueExplanationSummary explanation={report.valueExplanation} />
         {report.gameplan && (
           <div className="coach-gameplan">
             <small>{report.gameplan.displayName}</small>

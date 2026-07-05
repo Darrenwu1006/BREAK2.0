@@ -58,6 +58,38 @@ export const VALUE_FEATURE_NAMES = [
 export type ValueFeatureName = (typeof VALUE_FEATURE_NAMES)[number];
 export const VALUE_FEATURE_DIM = VALUE_FEATURE_NAMES.length;
 
+export const VALUE_FEATURE_LABELS: Record<ValueFeatureName, string> = {
+  setLifeDiff: "Set 殘量差",
+  opSigned: "攻擊壓力",
+  dpSigned: "防守壓力",
+  handDiff: "手牌差",
+  deckDiff: "牌庫差",
+  serving: "發球權",
+  turnMine: "行動權",
+  attackDiff: "攻擊線張數",
+  blockDiff: "攔網張數",
+  courtDiff: "場上張數",
+  dropDiff: "棄牌資源",
+  eventDiff: "事件佈局",
+  attackPointDiff: "攻擊點數差",
+  attackLinePointDiff: "攻擊線點數差",
+  defensePointDiff: "防守點數差",
+  myHandBestAttack: "手牌最高攻擊",
+  myHandBestBlock: "手牌最高攔網",
+  myHandBestReceive: "手牌最高接球",
+  myHandDeployablePower: "手牌登場火力",
+  myHandEventCount: "手牌事件量",
+  oppRemainingHighAttackRate: "對手高攻存量",
+  oppRemainingHighBlockRate: "對手高攔存量",
+  myRemainingHighAttackCount: "我方高攻存量",
+  gutsTotalDiff: "Guts 資源差",
+  overkillMargin: "攻防餘裕",
+  setLifeLeadOne: "Set 領先一分",
+  setLifeLeadTwoPlus: "Set 領先兩分以上",
+  setLifeDiffProgress: "比分進程",
+  attackLineVsOppDefensePotential: "攻線對防守潛力",
+};
+
 function top(stack: readonly number[]): number | null {
   return stack.length > 0 ? stack[stack.length - 1]! : null;
 }
@@ -202,31 +234,44 @@ export interface ValueModel {
 }
 
 /**
- * [Codex 2026-07-01] Phase H H4 default-on 係數。
- * 來源＝H3 candidate（is-mcts outcome row cache g80）＋SO-H4 root pair tie-break 大守門 PASS。
- * 注意：H4 的上線範圍只包含 live SO-ISMCTS；MO 仍是 benchmark-only，待 Phase I I4 用當下 live model 重跑自己的雙閘。
+ * [Codex 2026-07-05] Phase K default-on selected v1 係數（29 維）。
+ * H4/H5 行為參數（rootPressureTieBreakDelta=0.04、rootConservationWinRateThreshold=0.85）另在 IS-MCTS 保持不動。
  */
 export const ROLLOUT_VALUE_MODEL: ValueModel = {
   weights: [
-    1.6047480620171253,
-    0.13933774202857876,
+    1.0792904515664883,
+    0.10125110367845033,
     0,
-    0.28120472769083127,
-    -0.06160478069224429,
-    -0.22083047076638376,
-    -0.02064792168222764,
-    -0.35911542999440854,
-    -0.3052494204120485,
-    0.02934524962116886,
-    -0.12561231052949046,
-    -0.10651494510836863,
+    0.12845235855358444,
+    -0.02109804724880147,
+    -0.13481758380063316,
+    0.10064361394120208,
+    0.1580467920340516,
+    0.3299436108005369,
+    -0.0696573514192975,
+    0.026916631267495057,
+    -0.06491096486945418,
+    -0.07549608081834222,
+    0.08946038511873473,
+    -0.044363709074465844,
     0,
-    0.2220708438893249,
-    0.02687112911904538,
+    0,
+    0,
+    0,
+    0,
+    -0.08651622401556772,
+    -0.02746377458189579,
+    0.10639185166360375,
+    -0.0020727394014032545,
+    0,
+    0,
+    0,
+    0,
+    0,
   ],
-  bias: -3.252606517456513e-17,
+  bias: 0.15702473665271066,
   provenance:
-    "Phase H H4 default-on: H3 fit outcomePolicy=is-mcts outcomeGames=80 rows=3300 logloss=0.5645 acc=70.1% auc=0.7747 pairAcc=67.5%; SO-H4 rootPairQualityTieBreak delta=0.04 gate PASS (mirror vs current SO 21/40, M-Throw1 5.4% vs 11.3%, M-Throw2 18.6% vs 30.0%, OP 3.26 vs 2.31; vs heuristic 27/40) [Codex 2026-07-01]",
+    "Phase K default-on selected v1: 29-dim omit A+D fit from data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json (outcomeGames=2000, rows=97458, trainRows=78054, holdoutRows=19404, holdoutEvery=5, auc=0.7539, logloss=0.5841). Merge evidence approved by orchestrator 5f51c71 / WORKLOG 2026-07-05: strength 91/160=56.9% [49.1-64.3], attack success pooled -3.7pp watch, M2-free 0/7 + unit tests, M1 improvement, M3/M2-costly accepted as user resource economy. H4/H5 params unchanged: rootPressureTieBreakDelta=0.04, rootConservationWinRateThreshold=0.85. [Codex 2026-07-05]",
 };
 
 /**
@@ -280,8 +325,25 @@ function sigmoid(z: number): number {
   return e / (1 + e);
 }
 
-/** V(state, perspective) ∈ [0,1]＝估計 perspective 最終獲勝機率。 */
-export function evaluateStateValue(
+export interface ValueExplanationTerm {
+  feature: ValueFeatureName;
+  label: string;
+  value: number;
+  weight: number;
+  contribution: number;
+  direction: "helps" | "hurts" | "neutral";
+}
+
+export interface ValueExplanation {
+  perspectivePlayer: PlayerId;
+  probability: number;
+  logit: number;
+  bias: number;
+  provenance: string;
+  terms: ValueExplanationTerm[];
+}
+
+export function valueLogit(
   state: GameState,
   perspective: PlayerId,
   model: ValueModel = ROLLOUT_VALUE_MODEL,
@@ -291,5 +353,48 @@ export function evaluateStateValue(
   const features = extractValueFeatures(state, perspective, db, { knownDecks });
   let z = model.bias;
   for (let i = 0; i < features.length; i++) z += features[i]! * (model.weights[i] ?? 0);
-  return sigmoid(z);
+  return z;
+}
+
+export function explainValue(
+  state: GameState,
+  perspective: PlayerId,
+  model: ValueModel = ROLLOUT_VALUE_MODEL,
+  db?: CardDb,
+  knownDecks?: KnownDecks,
+): ValueExplanation {
+  const features = extractValueFeatures(state, perspective, db, { knownDecks });
+  const terms = VALUE_FEATURE_NAMES.map((feature, index): ValueExplanationTerm => {
+    const value = features[index] ?? 0;
+    const weight = model.weights[index] ?? 0;
+    const contribution = value * weight;
+    return {
+      feature,
+      label: VALUE_FEATURE_LABELS[feature],
+      value,
+      weight,
+      contribution,
+      direction: contribution > 0 ? "helps" : contribution < 0 ? "hurts" : "neutral",
+    };
+  }).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  const logit = model.bias + terms.reduce((sum, term) => sum + term.contribution, 0);
+  return {
+    perspectivePlayer: perspective,
+    probability: sigmoid(logit),
+    logit,
+    bias: model.bias,
+    provenance: model.provenance,
+    terms,
+  };
+}
+
+/** V(state, perspective) ∈ [0,1]＝估計 perspective 最終獲勝機率。 */
+export function evaluateStateValue(
+  state: GameState,
+  perspective: PlayerId,
+  model: ValueModel = ROLLOUT_VALUE_MODEL,
+  db?: CardDb,
+  knownDecks?: KnownDecks,
+): number {
+  return sigmoid(valueLogit(state, perspective, model, db, knownDecks));
 }

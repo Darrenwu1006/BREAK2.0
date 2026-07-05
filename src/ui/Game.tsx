@@ -7,11 +7,12 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
 import type { CoachWorkerResponse } from "../ai/coach-worker";
 import type { CoachActionEstimate, CoachReport } from "../ai/coach";
+import type { ValueExplanation } from "../ai/rollout-value";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
-import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER } from "./GamePanels";
+import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER, ValueExplanationSummary } from "./GamePanels";
 import type { CoachPanelState } from "./GamePanels";
 import type { OpponentEngine, DeckMeta, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
@@ -292,6 +293,7 @@ function PostMatchReportBody(props: {
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
+  valueExplanation: ValueExplanation;
   narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
@@ -318,6 +320,11 @@ function PostMatchReportBody(props: {
       </section>
 
       <NarrativeSection narrative={props.narrative} />
+
+      <section className="report-section">
+        <b>局面估值</b>
+        <ValueExplanationSummary explanation={props.valueExplanation} />
+      </section>
 
       <section className="report-section">
         <div className="replay-overview-heading">
@@ -402,6 +409,7 @@ function PostMatchReport(props: {
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
+  valueExplanation: ValueExplanation;
   narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
@@ -423,6 +431,7 @@ function PostMatchReport(props: {
         lostSets={props.lostSets}
         effectiveness={props.effectiveness}
         cardDetails={props.cardDetails}
+        valueExplanation={props.valueExplanation}
         narrative={props.narrative}
         keyEntries={props.keyEntries}
         critiqueCache={props.critiqueCache}
@@ -442,6 +451,7 @@ function PostMatchModal(props: {
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
+  valueExplanation: ValueExplanation;
   narrative: string[];
   keyEntries: ReplayEntry[];
   critiqueCache: ReplayCritiqueCache;
@@ -474,6 +484,7 @@ function PostMatchModal(props: {
             lostSets={props.lostSets}
             effectiveness={props.effectiveness}
             cardDetails={props.cardDetails}
+            valueExplanation={props.valueExplanation}
             narrative={props.narrative}
             keyEntries={props.keyEntries}
             critiqueCache={props.critiqueCache}
@@ -1704,6 +1715,7 @@ export function Game(props: {
                 lostSets={replayReview.lostSets}
                 effectiveness={replayReview.actionEffectiveness}
                 cardDetails={replayReview.actionCardDetails}
+                valueExplanation={replayReview.valueExplanation}
                 narrative={replayReview.narrative}
                 keyEntries={replayKeyEntries}
                 critiqueCache={replayCritiques}
@@ -1744,6 +1756,7 @@ export function Game(props: {
         lostSets={replayReview.lostSets}
         effectiveness={replayReview.actionEffectiveness}
         cardDetails={replayReview.actionCardDetails}
+        valueExplanation={replayReview.valueExplanation}
         narrative={replayReview.narrative}
         keyEntries={replayKeyEntries}
         critiqueCache={replayCritiques}

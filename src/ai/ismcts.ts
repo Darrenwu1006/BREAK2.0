@@ -10,7 +10,7 @@ import {
   type CoachActionEstimate,
   type CoachReport,
 } from "./coach";
-import { evaluatePressureScore, evaluateShapedStateValue, type ValueModel } from "./rollout-value";
+import { evaluatePressureScore, evaluateShapedStateValue, explainValue, type ValueModel } from "./rollout-value";
 import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
 
@@ -584,6 +584,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
       fallbackDecision,
       bestAction,
       recommendations: [bestAction],
+      valueExplanation: explainValue(state, perspective, undefined, db, knownDecks),
     };
   }
 
@@ -663,6 +664,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     fallbackDecision,
     bestAction,
     recommendations,
+    valueExplanation: explainValue(state, perspective, undefined, db, knownDecks),
   };
 }
 

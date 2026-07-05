@@ -9,6 +9,7 @@ import {
   type GameplanStateReport,
   type GameplanTone,
 } from "./gameplan";
+import { explainValue, type ValueExplanation } from "./rollout-value";
 
 export interface ReplaySetReview {
   setNo: number;
@@ -114,6 +115,7 @@ export interface ReplayReviewReport {
   lostSets: LostSetSummary;
   actionEffectiveness: ReplayActionEffectiveness;
   actionCardDetails: ActionCardDetail[];
+  valueExplanation: ValueExplanation;
   narrative: string[];
   gameplan?: ReplayGameplanReview;
 }
@@ -229,8 +231,9 @@ function buildReplayNarrative(input: {
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   gameplan?: ReplayGameplanReview;
+  valueExplanation?: ValueExplanation;
 }): string[] {
-  const { player, analytics, lostSets, effectiveness, gameplan } = input;
+  const { player, analytics, lostSets, effectiveness, gameplan, valueExplanation } = input;
   const opp = OTHER[player];
   const lines: string[] = [];
 
@@ -281,6 +284,13 @@ function buildReplayNarrative(input: {
     else if (score < 40) lines.push(`牌組主軸只推進到 ${score}/100（${gameplan.final.stage}），核心引擎沒運轉起來，回看是哪一步斷了節奏。`);
     else lines.push(`牌組主軸推進到 ${score}/100（${gameplan.final.stage}），中段卡住，可找關鍵轉折補強。`);
     if (gameplan.final.risks.length) lines.push(`主軸風險：${gameplan.final.risks.join("、")}。`);
+  }
+
+  if (valueExplanation) {
+    const signal = valueExplanation.terms.find((term) => term.direction !== "neutral");
+    if (signal) {
+      lines.push(`終局估值 ${Math.round(valueExplanation.probability * 100)}%，主要來源是「${signal.label}」（${signal.contribution >= 0 ? "+" : ""}${signal.contribution.toFixed(2)}）。`);
+    }
   }
 
   return lines;
@@ -462,6 +472,7 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
 
   const lostSets = buildLostSetSummary(session, player);
   const actionEffectiveness = buildActionEffectiveness(finalState, player);
+  const valueExplanation = explainValue(finalState, player, undefined, db, [session.decks[0].cardIds, session.decks[1].cardIds]);
   const gameplan = profile && finalGameplan
     ? { profileId: profile.id, displayName: profile.displayName, final: finalGameplan, checkpoints }
     : undefined;
@@ -476,7 +487,8 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     lostSets,
     actionEffectiveness,
     actionCardDetails: buildActionCardDetails(finalState, player),
-    narrative: buildReplayNarrative({ player, analytics, lostSets, effectiveness: actionEffectiveness, gameplan }),
+    valueExplanation,
+    narrative: buildReplayNarrative({ player, analytics, lostSets, effectiveness: actionEffectiveness, gameplan, valueExplanation }),
     gameplan,
   };
 }

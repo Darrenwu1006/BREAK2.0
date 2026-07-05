@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameState, PlayerId } from "../engine/types";
 import { benchmarkDb } from "./benchmark-fixtures";
-import { evaluatePressureScore, evaluateStateValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, VALUE_FEATURE_DIM, VALUE_FEATURE_NAMES } from "./rollout-value";
+import { evaluatePressureScore, evaluateStateValue, explainValue, extractValueFeatures, ROLLOUT_VALUE_MODEL, shapeStateValue, valueLogit, VALUE_FEATURE_DIM, VALUE_FEATURE_NAMES } from "./rollout-value";
 import type { KnownDecks } from "./remaining-pool";
 
 // [Claude 2026-06-22] S1a：價值函數只讀公開 scalar，用最小 fixture 聚焦特徵→值映射與公平性。
@@ -87,6 +87,15 @@ describe("rollout-value 價值函數", () => {
     expect(extractValueFeatures(fake({ s0: 2, s1: 2 }), 0)).toHaveLength(VALUE_FEATURE_DIM);
   });
 
+  it("live model 使用 Phase K selected v1 29 維係數與 default-on provenance", () => {
+    expect(ROLLOUT_VALUE_MODEL.weights).toHaveLength(VALUE_FEATURE_DIM);
+    expect(ROLLOUT_VALUE_MODEL.provenance).toContain("Phase K default-on selected v1");
+    expect(ROLLOUT_VALUE_MODEL.provenance).toContain("strength 91/160=56.9%");
+    expect(ROLLOUT_VALUE_MODEL.provenance).toContain("M2-free 0/7");
+    expect(ROLLOUT_VALUE_MODEL.provenance).toContain("rootPressureTieBreakDelta=0.04");
+    expect(ROLLOUT_VALUE_MODEL.provenance).toContain("rootConservationWinRateThreshold=0.85");
+  });
+
   it("V 永遠落在 [0,1]", () => {
     for (const p of [{ s0: 2, s1: 0 }, { s0: 0, s1: 2 }, { s0: 1, s1: 1, op: { value: 7, owner: 0 as PlayerId } }]) {
       const v = evaluateStateValue(fake(p), 0);
@@ -146,6 +155,23 @@ describe("rollout-value 價值函數", () => {
 
     for (let index = 15; index < VALUE_FEATURE_NAMES.length; index++) {
       expect(flippedFeatures[index], VALUE_FEATURE_NAMES[index]).toBe(baseFeatures[index]);
+    }
+  });
+
+  it("explainValue 的貢獻總和與 evaluateStateValue 數學一致", () => {
+    const { state, knownDecks } = k1LeakageState({
+      hand: ["HV-P01-043", "HV-D01-011"],
+      deck: ["HV-D01-006", "HV-P03-020"],
+      setArea: ["HV-P01-043"],
+    });
+    const explanation = explainValue(state, 0 as PlayerId, ROLLOUT_VALUE_MODEL, benchmarkDb, knownDecks);
+    const contributionSum = explanation.terms.reduce((sum, term) => sum + term.contribution, explanation.bias);
+    expect(explanation.terms).toHaveLength(VALUE_FEATURE_DIM);
+    expect(contributionSum).toBeCloseTo(explanation.logit, 12);
+    expect(explanation.logit).toBeCloseTo(valueLogit(state, 0 as PlayerId, ROLLOUT_VALUE_MODEL, benchmarkDb, knownDecks), 12);
+    expect(explanation.probability).toBeCloseTo(evaluateStateValue(state, 0 as PlayerId, ROLLOUT_VALUE_MODEL, benchmarkDb, knownDecks), 12);
+    for (let i = 1; i < explanation.terms.length; i++) {
+      expect(Math.abs(explanation.terms[i - 1]!.contribution)).toBeGreaterThanOrEqual(Math.abs(explanation.terms[i]!.contribution));
     }
   });
 

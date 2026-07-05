@@ -6,7 +6,7 @@ import type { CourtArea } from "../engine/dsl";
 import { heuristicAiDecision } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
-import { evaluateStateValue } from "./rollout-value";
+import { evaluateStateValue, explainValue, type ValueExplanation } from "./rollout-value";
 import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
 import { evaluateGameplanState, evaluateGameplanTransition, resolveGameplanProfile, type GameplanStateReport, type GameplanTransitionReport } from "./gameplan";
@@ -61,6 +61,7 @@ export interface CoachReport {
   bestAction: CoachActionEstimate;
   recommendations: CoachActionEstimate[];
   gameplan?: GameplanStateReport;
+  valueExplanation?: ValueExplanation;
 }
 
 interface MutableStats {
@@ -778,6 +779,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     bestAction,
     recommendations,
     gameplan,
+    valueExplanation: explainValue(state, perspective, undefined, db, knownDecks),
   };
 }
 
