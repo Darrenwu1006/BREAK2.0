@@ -1,0 +1,1797 @@
+{
+  "kind": "policy-ladder-elo",
+  "generatedAt": "2026-07-06T04:15:37.240Z",
+  "config": {
+    "policies": [
+      "random",
+      "heuristic-v1",
+      "heuristic-v2",
+      "pimc-v2",
+      "so-h4h5",
+      "so-k-v1"
+    ],
+    "basePolicies": [
+      "random",
+      "heuristic-v1",
+      "heuristic-v2",
+      "pimc-v2",
+      "so-h4h5",
+      "so-k-v1"
+    ],
+    "anchorPolicy": "heuristic-v2",
+    "anchorElo": 1500,
+    "mirrorDecks": [
+      "烏野-預組",
+      "音駒-預組",
+      "梟谷-高爆發軸",
+      "白鳥沢-最強白鳥沢",
+      "青葉城西-二彈改"
+    ],
+    "gamesPerSeat": 1,
+    "seedStart": 17000,
+    "maxSteps": 5000,
+    "pimcSamples": 8,
+    "searchIterations": 32,
+    "leafRolloutHorizon": 40,
+    "candidateLimit": 8
+  },
+  "policySnapshots": [
+    {
+      "id": "random",
+      "label": "Random",
+      "family": "random",
+      "frozenAt": "M5 baseline",
+      "options": {}
+    },
+    {
+      "id": "heuristic-v1",
+      "label": "Heuristic v1",
+      "family": "heuristic",
+      "frozenAt": "M5 historical baseline",
+      "options": {}
+    },
+    {
+      "id": "heuristic-v2",
+      "label": "Heuristic v2",
+      "family": "heuristic",
+      "frozenAt": "M5 v2 baseline",
+      "options": {
+        "profile": "heuristic-v2"
+      }
+    },
+    {
+      "id": "pimc-v2",
+      "label": "PIMC v2",
+      "family": "pimc",
+      "frozenAt": "Phase F S1",
+      "options": {
+        "sampleCount": 8,
+        "rolloutMaxSteps": 600,
+        "candidateLimit": 8,
+        "valueCutHorizon": 40
+      }
+    },
+    {
+      "id": "so-h4h5",
+      "label": "SO-H4/H5",
+      "family": "so-ismcts",
+      "frozenAt": "Phase H H4/H5 before Phase K",
+      "options": {
+        "iterations": 32,
+        "leafRolloutHorizon": 40,
+        "candidateLimit": 8,
+        "rootPressureTieBreakDelta": 0.04,
+        "rootPairQualityTieBreak": true,
+        "rootConservationWinRateThreshold": 0.85,
+        "valueModel": "phase-h-h3-15d"
+      }
+    },
+    {
+      "id": "so-k-v1",
+      "label": "SO-K v1",
+      "family": "so-ismcts",
+      "frozenAt": "Phase K selected v1 default-on",
+      "options": {
+        "iterations": 32,
+        "leafRolloutHorizon": 40,
+        "candidateLimit": 8,
+        "rootPressureTieBreakDelta": 0.04,
+        "rootPairQualityTieBreak": true,
+        "rootConservationWinRateThreshold": 0.85,
+        "valueModel": "phase-k-selected-v1-29d"
+      }
+    }
+  ],
+  "matches": [
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 17000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 51
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 17500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 86
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 18000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 87
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 18500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 50
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 19000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 110
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 19500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 69
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 20000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 23
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 20500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 85
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 21000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 37
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 21500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 35
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v2",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 117000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 82
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 117500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 74
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v2",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 118000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 38
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 118500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 23
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 119000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 23
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 119500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 37
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 120000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 85
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 120500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 47
+    },
+    {
+      "policyA": "random",
+      "policyB": "heuristic-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 121000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 27
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 121500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 27
+    },
+    {
+      "policyA": "random",
+      "policyB": "pimc-v2",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 217000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 76
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 217500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 70
+    },
+    {
+      "policyA": "random",
+      "policyB": "pimc-v2",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 218000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 59
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 218500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 88
+    },
+    {
+      "policyA": "random",
+      "policyB": "pimc-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 219000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 78
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 219500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 64
+    },
+    {
+      "policyA": "random",
+      "policyB": "pimc-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 220000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 106
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 220500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 42
+    },
+    {
+      "policyA": "random",
+      "policyB": "pimc-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 221000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 31
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 221500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 55
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 317000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 118
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "random",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 317500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 51
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 318000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 92
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "random",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 318500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 109
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 319000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 82
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "random",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 319500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 44
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 320000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 74
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "random",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 320500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 84
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 321000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 40
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "random",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 321500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 27
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 417000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 70
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "random",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 417500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 87
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 418000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 61
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "random",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 418500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 83
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 419000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 85
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "random",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 419500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 134
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 420000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 100
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "random",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 420500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 78
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 421000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 35
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "random",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 421500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 44
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 517000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 150
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "heuristic-v1",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 517500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 120
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 518000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 147
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "heuristic-v1",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 518500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 193
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 519000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 176
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "heuristic-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 519500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 146
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 520000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 118
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "heuristic-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 520500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 129
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 521000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 99
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "heuristic-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 521500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 62
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 617000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 124
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v1",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 617500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 120
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 618000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 201
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v1",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 618500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 70
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 619000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 146
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 619500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 125
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 620000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 98
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 620500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 125
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 621000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 89
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 621500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 83
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 717000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 130
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v1",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 717500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 118
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 718000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 94
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v1",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 718500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 159
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 719000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 162
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 719500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 167
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 720000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 128
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 720500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 84
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 721000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 111
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 721500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 115
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 817000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 118
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v1",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 817500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 115
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 818000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 138
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v1",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 818500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 187
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 819000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 134
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 819500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 124
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 820000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 166
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 820500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 61
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 821000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 131
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 821500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v1",
+      "steps": 69
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 917000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 139
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v2",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 917500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 160
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 918000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 78
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v2",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 918500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 179
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 919000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 204
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 919500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 163
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 920000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 137
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 920500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 128
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 921000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 34
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "heuristic-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 921500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 80
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 1017000,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 62
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v2",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 1017500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 132
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 1018000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 190
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v2",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 1018500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 166
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 1019000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 166
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 1019500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 156
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 1020000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 145
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 1020500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 192
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 1021000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 74
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "heuristic-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 1021500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 95
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 1117000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 134
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v2",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 1117500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 164
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 1118000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 198
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v2",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 1118500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 217
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 1119000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 123
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 1119500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 119
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 1120000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 219
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 1120500,
+      "outcome": "complete",
+      "winnerPolicy": "heuristic-v2",
+      "steps": 103
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 1121000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 84
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "heuristic-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 1121500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 74
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 1217000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 116
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "pimc-v2",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 1217500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 53
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 1218000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 182
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "pimc-v2",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 1218500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 194
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 1219000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 119
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "pimc-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 1219500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 116
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 1220000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 117
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "pimc-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 1220500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 105
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 1221000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 47
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "pimc-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 1221500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 100
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 1317000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 128
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "pimc-v2",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 1317500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 105
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 1318000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 167
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "pimc-v2",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 1318500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 223
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 1319000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 166
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "pimc-v2",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 1319500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 190
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 1320000,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 56
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "pimc-v2",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 1320500,
+      "outcome": "complete",
+      "winnerPolicy": "pimc-v2",
+      "steps": 75
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 1321000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 127
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "pimc-v2",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 1321500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 168
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "deck": "烏野-預組",
+      "seat": 0,
+      "seed": 1417000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 121
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "so-h4h5",
+      "deck": "烏野-預組",
+      "seat": 1,
+      "seed": 1417500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 122
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "deck": "音駒-預組",
+      "seat": 0,
+      "seed": 1418000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 178
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "so-h4h5",
+      "deck": "音駒-預組",
+      "seat": 1,
+      "seed": 1418500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 93
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "deck": "梟谷-高爆發軸",
+      "seat": 0,
+      "seed": 1419000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 186
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "so-h4h5",
+      "deck": "梟谷-高爆發軸",
+      "seat": 1,
+      "seed": 1419500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 119
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 0,
+      "seed": 1420000,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 130
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "so-h4h5",
+      "deck": "白鳥沢-最強白鳥沢",
+      "seat": 1,
+      "seed": 1420500,
+      "outcome": "complete",
+      "winnerPolicy": "so-h4h5",
+      "steps": 156
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "deck": "青葉城西-二彈改",
+      "seat": 0,
+      "seed": 1421000,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 143
+    },
+    {
+      "policyA": "so-k-v1",
+      "policyB": "so-h4h5",
+      "deck": "青葉城西-二彈改",
+      "seat": 1,
+      "seed": 1421500,
+      "outcome": "complete",
+      "winnerPolicy": "so-k-v1",
+      "steps": 108
+    }
+  ],
+  "pairSummaries": [
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "heuristic-v2",
+      "completed": 10,
+      "winsA": 3,
+      "winsB": 7
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "pimc-v2",
+      "completed": 10,
+      "winsA": 1,
+      "winsB": 9
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "random",
+      "completed": 10,
+      "winsA": 10,
+      "winsB": 0
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-h4h5",
+      "completed": 10,
+      "winsA": 3,
+      "winsB": 7
+    },
+    {
+      "policyA": "heuristic-v1",
+      "policyB": "so-k-v1",
+      "completed": 10,
+      "winsA": 5,
+      "winsB": 5
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "pimc-v2",
+      "completed": 10,
+      "winsA": 3,
+      "winsB": 7
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "random",
+      "completed": 10,
+      "winsA": 10,
+      "winsB": 0
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-h4h5",
+      "completed": 10,
+      "winsA": 2,
+      "winsB": 8
+    },
+    {
+      "policyA": "heuristic-v2",
+      "policyB": "so-k-v1",
+      "completed": 10,
+      "winsA": 1,
+      "winsB": 9
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "random",
+      "completed": 10,
+      "winsA": 10,
+      "winsB": 0
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-h4h5",
+      "completed": 10,
+      "winsA": 6,
+      "winsB": 4
+    },
+    {
+      "policyA": "pimc-v2",
+      "policyB": "so-k-v1",
+      "completed": 10,
+      "winsA": 5,
+      "winsB": 5
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-h4h5",
+      "completed": 10,
+      "winsA": 0,
+      "winsB": 10
+    },
+    {
+      "policyA": "random",
+      "policyB": "so-k-v1",
+      "completed": 10,
+      "winsA": 0,
+      "winsB": 10
+    },
+    {
+      "policyA": "so-h4h5",
+      "policyB": "so-k-v1",
+      "completed": 10,
+      "winsA": 4,
+      "winsB": 6
+    }
+  ],
+  "ratings": [
+    {
+      "id": "pimc-v2",
+      "label": "PIMC v2",
+      "elo": 1718,
+      "wins": 37,
+      "losses": 13,
+      "completed": 50,
+      "baseFrozen": true
+    },
+    {
+      "id": "so-k-v1",
+      "label": "SO-K v1",
+      "elo": 1686,
+      "wins": 35,
+      "losses": 15,
+      "completed": 50,
+      "baseFrozen": true
+    },
+    {
+      "id": "so-h4h5",
+      "label": "SO-H4/H5",
+      "elo": 1656,
+      "wins": 33,
+      "losses": 17,
+      "completed": 50,
+      "baseFrozen": true
+    },
+    {
+      "id": "heuristic-v2",
+      "label": "Heuristic v2",
+      "elo": 1500,
+      "wins": 23,
+      "losses": 27,
+      "completed": 50,
+      "baseFrozen": true
+    },
+    {
+      "id": "heuristic-v1",
+      "label": "Heuristic v1",
+      "elo": 1487,
+      "wins": 22,
+      "losses": 28,
+      "completed": 50,
+      "baseFrozen": true
+    },
+    {
+      "id": "random",
+      "label": "Random",
+      "elo": 628,
+      "wins": 0,
+      "losses": 50,
+      "completed": 50,
+      "baseFrozen": true
+    }
+  ],
+  "incrementalCheck": {
+    "basePolicies": [
+      "random",
+      "heuristic-v1",
+      "heuristic-v2",
+      "pimc-v2",
+      "so-h4h5",
+      "so-k-v1"
+    ],
+    "referenceOrder": [
+      "pimc-v2",
+      "so-k-v1",
+      "so-h4h5",
+      "heuristic-v2",
+      "heuristic-v1",
+      "random"
+    ],
+    "currentOrder": [
+      "pimc-v2",
+      "so-k-v1",
+      "so-h4h5",
+      "heuristic-v2",
+      "heuristic-v1",
+      "random"
+    ],
+    "pass": true
+  }
+}
