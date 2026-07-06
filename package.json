@@ -18,6 +18,7 @@
     "analyze:m8": "vite-node src/ai/deck-analyzer-cli.ts",
     "optimize:m8": "vite-node src/ai/deck-optimizer-cli.ts",
     "analyze:replay": "vite-node tools/analyze-saved-replay.ts",
+    "anchor:trend": "vite-node tools/human-anchor-trend.ts",
     "fit:rollout-value": "vite-node src/ai/rollout-value-fit.ts",
     "fit:phase-h-value": "vite-node tools/phase-h-value-fit.ts"
   },

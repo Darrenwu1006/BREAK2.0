@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { applyAnchorScanToJsonl } from "../src/human-anchor";
 import cardsJson from "../data/cards.json";
 import type { Card } from "../src/data/types";
 import type { CardDb, Decision, PlayerId } from "../src/engine/types";
@@ -20,6 +21,20 @@ interface CliOptions {
   board?: { from: number; to: number };
   /** --triage：輸出關鍵手候選清單（失誤＋打得好＋需留意）；搭 --coach 折入 PIMC。 */
   triage: boolean;
+  /** --anchor：Phase L L1——PIMC 全掃彙整單場 agreementRate/blunderCount，回寫 data/human-anchor/matches.jsonl。 */
+  anchor: boolean;
+}
+
+/** [Claude 2026-07-05] L1：--anchor 逐手一致統計（重用同一趟 coach 掃描，不另跑 PIMC）。 */
+interface AnchorScanStats {
+  /** 有拿到玩家實際選項估值、可比對的步數（agreementRate 分母）。 */
+  comparable: number;
+  /** 玩家選擇＝search top1 的步數。 */
+  agreements: number;
+  /** 勝率降幅 >= threshold 的步數。 */
+  blunders: number;
+  /** 玩家選項不在掃描候選內、無法比對的步數（誠實回報，不折進分母）。 */
+  missing: number;
 }
 
 interface CoachFinding {
@@ -50,9 +65,11 @@ function parseArgs(argv: string[]): CliOptions {
     threshold: 0.15,
     maxCoachSteps: Infinity,
     triage: false,
+    anchor: false,
   };
   for (const arg of argv) {
     if (arg === "--coach") options.coach = true;
+    else if (arg === "--anchor") options.anchor = true;
     else if (arg.startsWith("--file=")) options.file = arg.slice("--file=".length);
     else if (arg.startsWith("--player=")) options.player = Number(arg.slice("--player=".length)) as PlayerId;
     else if (arg.startsWith("--samples=")) options.samples = Math.max(0, Number(arg.slice("--samples=".length)) || 0);
@@ -114,10 +131,14 @@ function isSameDecision(a: Decision, b: Decision): boolean {
   return a.type === b.type && JSON.stringify(a) === JSON.stringify(b);
 }
 
-function scanCoachFindings(session: ReplaySession, options: CliOptions): { findings: CoachFinding[]; evaluated: number; errors: number } {
+function scanCoachFindings(
+  session: ReplaySession,
+  options: CliOptions,
+): { findings: CoachFinding[]; evaluated: number; errors: number; anchor: AnchorScanStats } {
   const entries = session.entries.filter((entry) => entry.source === "player" && entry.player === options.player);
   const targetEntries = Number.isFinite(options.maxCoachSteps) ? entries.slice(0, options.maxCoachSteps) : entries;
   const findings: CoachFinding[] = [];
+  const anchor: AnchorScanStats = { comparable: 0, agreements: 0, blunders: 0, missing: 0 };
   let evaluated = 0;
   let errors = 0;
 
@@ -130,9 +151,13 @@ function scanCoachFindings(session: ReplaySession, options: CliOptions): { findi
         gameplanDeckLabels: [session.decks[0].label, session.decks[1].label],
       });
       const actualEstimate = report.recommendations.find((rec) => isSameDecision(rec.decision, entry.decision));
+      if (!actualEstimate) anchor.missing++;
       if (actualEstimate) {
+        anchor.comparable++;
+        if (isSameDecision(entry.decision, report.bestAction.decision)) anchor.agreements++;
         const delta = report.bestAction.winRate - actualEstimate.winRate;
         if (delta >= options.threshold) {
+          anchor.blunders++;
           const progress = actualEstimate.gameplan?.tone === "progress";
           findings.push({
             step: entry.index + 1,
@@ -162,7 +187,42 @@ function scanCoachFindings(session: ReplaySession, options: CliOptions): { findi
     }
   }
 
-  return { findings, evaluated, errors };
+  return { findings, evaluated, errors, anchor };
+}
+
+/** [Claude 2026-07-05] L1 --anchor 模式：單場摘要＋回寫 matches.jsonl（找不到對應紀錄時只印摘要）。 */
+function runAnchorScan(path: string, session: ReplaySession, options: CliOptions): void {
+  console.log(`載入對戰紀錄: ${path}`);
+  console.log(`Anchor 掃描（samples=${options.samples}, blunder 門檻=${pct(options.threshold)}, 座位=${playerName(options.player)}）`);
+  const { evaluated, errors, anchor } = scanCoachFindings(session, options);
+  const agreementRate = anchor.comparable > 0 ? anchor.agreements / anchor.comparable : 0;
+  console.log("");
+  console.log(`單場摘要: 已評估 ${evaluated} 步（可比對 ${anchor.comparable}、候選外 ${anchor.missing}、錯誤略過 ${errors}）`);
+  if (anchor.comparable === 0) {
+    console.log("沒有可比對的決策步，不回寫 jsonl。");
+    return;
+  }
+  console.log(`一致率（玩家選擇＝search top1）: ${pct(agreementRate)}（${anchor.agreements}/${anchor.comparable}）`);
+  console.log(`blunder（勝率降幅 >= ${pct(options.threshold)}）: ${anchor.blunders} 步`);
+
+  const matchesPath = join(process.cwd(), "data", "human-anchor", "matches.jsonl");
+  if (!existsSync(matchesPath)) {
+    console.log(`找不到 ${matchesPath}，摘要未回寫（先在對局端記錄本場）。`);
+    return;
+  }
+  const updated = applyAnchorScanToJsonl(readFileSync(matchesPath, "utf8"), path, {
+    agreementRate: Number(agreementRate.toFixed(4)),
+    blunderCount: anchor.blunders,
+    blunderThreshold: options.threshold,
+    anchorEvaluated: anchor.comparable,
+    anchorScannedAt: new Date().toISOString(),
+  });
+  if (updated === null) {
+    console.log(`matches.jsonl 沒有 replayRef 對應本場（${path.split("/").pop()}）的紀錄，摘要未回寫。`);
+    return;
+  }
+  writeFileSync(matchesPath, updated.endsWith("\n") ? updated : `${updated}\n`, "utf8");
+  console.log("已回寫 data/human-anchor/matches.jsonl（agreementRate/blunderCount/blunderThreshold/anchorEvaluated/anchorScannedAt）。");
 }
 
 function printReport(path: string, session: ReplaySession, options: CliOptions): void {
@@ -297,6 +357,11 @@ function printTriageCandidate(candidate: TriageCandidate): void {
 
 const options = parseArgs(process.argv.slice(2));
 const { path, session } = loadReplay(options.file);
+
+if (options.anchor) {
+  runAnchorScan(path, session, options);
+  process.exit(0);
+}
 
 if (options.triage) {
   printTriage(path, session, options);
