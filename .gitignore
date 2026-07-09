@@ -9,6 +9,7 @@ docs/
 data/replays/
 data/ab/
 data/human-anchor/
+reports/optimizer/*.json
 
 # 個人偏好狀態：常用牌組勾選（執行期生成，因人而異，不進 repo）
 data/deck-favorites.json
