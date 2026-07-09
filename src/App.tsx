@@ -55,6 +55,8 @@ export function App() {
   const [loadedReplay, setLoadedReplay] = useState<ReplaySession | null>(null);
   const [replays, setReplays] = useState<any[]>([]);
   const [loadingReplays, setLoadingReplays] = useState(false);
+  // 預設只撈最近 10 場（列表只讀後端輕量 index、不碰 16MB 大檔）；展開後撈全部
+  const [replaysExpanded, setReplaysExpanded] = useState(false);
 
   async function refreshDecks() {
     try {
@@ -69,13 +71,14 @@ export function App() {
     }
   }
 
-  async function refreshReplays() {
+  async function refreshReplays(expanded = replaysExpanded) {
     setLoadingReplays(true);
     try {
-      const res = await fetch("/api/replays");
+      const res = await fetch(`/api/replays?${expanded ? "all=1" : "limit=10"}`);
       if (res.ok) {
         const list = await res.json();
         setReplays(list);
+        setReplaysExpanded(expanded);
       }
     } catch (e) {
       console.error("無法載入歷史對戰紀錄:", e);
@@ -303,6 +306,15 @@ export function App() {
                   </div>
                 );
               })}
+              {!replaysExpanded && replays.length >= 10 && (
+                <button
+                  className="btn-start btn-secondary"
+                  disabled={loadingReplays}
+                  onClick={() => void refreshReplays(true)}
+                >
+                  顯示更多對局
+                </button>
+              )}
             </div>
           )}
         </section>

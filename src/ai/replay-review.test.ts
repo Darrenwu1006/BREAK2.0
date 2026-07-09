@@ -239,6 +239,56 @@ describe("replay review", () => {
     expect(report.actionCardDetails.find((d) => d.cardName === "テスト")?.effectiveUses).toBe(0);
   });
 
+  it("[事件/技能效率] 會把待機技能解決計入技能使用，不依賴「使用 X 的技能」log", () => {
+    const cardIds = ["HV-P01-043"];
+    const skillName = db.get("HV-P01-043")!.nameJa;
+    const before = state(cardIds, [{ attack: [1] }, {}], {
+      pendingDecision: { player: 0, type: "resolve-pending", candidates: [7] },
+      pendingQueue: [{ id: 7, player: 0, source: 1, kind: "passive", skillIndex: 0, desc: `${skillName} 的技能` }],
+    });
+    const after = state(cardIds, [{ attack: [1] }, {}], {
+      pendingQueue: [],
+      log: [{ setNo: 1, turnNo: 1, player: 0, text: `${skillName} 的攻擊 +5` }],
+    });
+    const session: ReplaySession = {
+      startedAt: "2026-07-07T00:00:00.000Z",
+      seed: 1,
+      decks: [
+        { label: "梟谷-測試", cardIds },
+        { label: "音駒-測試", cardIds: [] },
+      ],
+      initialState: before,
+      entries: [
+        {
+          index: 0,
+          player: 0,
+          source: "player",
+          phase: "attack",
+          setNo: 1,
+          turnNo: 1,
+          pendingType: "resolve-pending",
+          decision: { type: "resolve-pending", id: 7 },
+          before,
+          after,
+          logStart: 0,
+          logEnd: 1,
+        },
+      ],
+    };
+
+    const report = createReplayReviewReport(db, session, { player: 0 });
+
+    expect(report.actionEffectiveness.skill.uses).toBe(1);
+    expect(report.actionEffectiveness.skill.effectiveUses).toBe(1);
+    expect(report.actionEffectiveness.skill.pointMods).toBe(1);
+    expect(report.actionCardDetails.find((d) => d.cardName === skillName)).toEqual({
+      kind: "skill",
+      cardName: skillName,
+      uses: 1,
+      effectiveUses: 1,
+    });
+  });
+
   it("[檢討文案] 失球根因歸到資源 / 構築層，並綜合結果與效率", () => {
     const cardIds = ["HV-P02-022", "HV-P02-024"];
     const before = state(cardIds, [{}, {}]);
@@ -283,5 +333,75 @@ describe("replay review", () => {
     expect(rootCause).toBeTruthy();
     expect(rootCause).toMatch(/RCV|DP|Guts/);
     expect(rootCause).toContain("OP 8.0");
+  });
+});
+
+describe("attack gamble scan (Phase M ③)", () => {
+  const chara = (id: string, nameJa: string, receive: number): Card =>
+    ({
+      id,
+      type: "CHARACTER",
+      nameJa,
+      affiliations: [],
+      positions: [],
+      grades: [],
+      params: { serve: null, block: null, receive, toss: null, attack: null },
+      printings: [],
+    }) as unknown as Card;
+  const gdb: CardDb = new Map([["R9", chara("R9", "鐵壁", 9)]]);
+
+  const mkEntry = (index: number, opAttack: number, held: "成功" | "失敗") => {
+    const before = state(["R9"], [{}, { hand: [1] }]);
+    const after = state(["R9"], [{}, { hand: [1] }], {
+      log: [
+        { setNo: 1, turnNo: 1, player: 0, text: `OP 算出 = ${opAttack}`, event: { kind: "attack-op", player: 0, value: opAttack } },
+        { setNo: 1, turnNo: 1, player: 1, text: `判定：DP 9 vs OP ${opAttack} → ${held}` },
+      ],
+    });
+    return {
+      index,
+      player: 0 as const,
+      source: "player" as const,
+      phase: "toss" as const,
+      setNo: 1,
+      turnNo: 1,
+      pendingType: "deploy-attack" as const,
+      decision: { type: "deploy-attack", uid: null } as never,
+      before,
+      after,
+      logStart: 0,
+      logEnd: 2,
+    };
+  };
+
+  it("並列我方 OP 與對手真實最強接球 DP，標記 into-hold / clean-break 與實際 held", () => {
+    const session: ReplaySession = {
+      startedAt: "2026-07-09T00:00:00.000Z",
+      seed: 1,
+      decks: [
+        { label: "測試-我", cardIds: ["R9"] },
+        { label: "測試-敵", cardIds: ["R9"] },
+      ],
+      initialState: state(["R9"], [{}, { hand: [1] }]),
+      entries: [mkEntry(0, 6, "成功"), mkEntry(1, 12, "失敗")],
+    };
+    const report = createReplayReviewReport(gdb, session, { player: 0 });
+    const gamble = report.attackGamble;
+    expect(gamble.attacks).toBe(2);
+    expect(gamble.intoHold).toBe(1);
+    expect(gamble.cleanBreaks).toBe(1);
+
+    const hold = gamble.lines.find((line) => line.verdict === "into-hold")!;
+    expect(hold.myOP).toBe(6);
+    expect(hold.oppMaxReceiveDP).toBe(9);
+    expect(hold.oppBestReceiverName).toBe("鐵壁");
+    expect(hold.held).toBe(true);
+
+    const clean = gamble.lines.find((line) => line.verdict === "clean-break")!;
+    expect(clean.myOP).toBe(12);
+    expect(clean.oppMaxReceiveDP).toBe(9);
+    expect(clean.held).toBe(false);
+
+    expect(report.narrative.some((line) => line.includes("打進對手接得住的防線"))).toBe(true);
   });
 });

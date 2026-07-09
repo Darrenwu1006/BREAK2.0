@@ -1,6 +1,6 @@
 import type { CardDb, GameState, PlayerId } from "../engine/types";
 import { replayEntryLogs, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "../ui/replayHistory";
-import { collectMatchStats, type ActionImpactStats } from "./benchmark";
+import type { ActionImpactStats } from "./benchmark";
 import {
   evaluateGameplanState,
   evaluateGameplanTransition,
@@ -10,6 +10,7 @@ import {
   type GameplanTone,
 } from "./gameplan";
 import { explainValue, type ValueExplanation } from "./rollout-value";
+import { defenseHolds, estimateMaxReceiveDP } from "./opponent-max";
 
 export interface ReplaySetReview {
   setNo: number;
@@ -105,6 +106,36 @@ export interface ReplayActionEffectiveness {
   skill: ActionEffectivenessLine;
 }
 
+/**
+ * [Claude 2026-07-09] Phase M ③（賽後復盤，地面真相尺）：我方每次攻擊 vs 對手當下真實防守上限。
+ * 出處文章第 3/4 點——出手前要估對手接不接得住。這裡用全資訊（replay）算對手那一刻手上/場上
+ * 最強接球 DP：`into-hold`＝DP≥OP，正確打法下對手守得住（若非在磨資源，這火力宜改存 Guts）。
+ * `clean-break`＝對手怎麼接都擋不住，是穩過的正確 commit。`held`＝實際判定是否被守住。
+ */
+export type AttackVerdict = "clean-break" | "into-hold";
+
+export interface AttackGambleLine {
+  setNo: number;
+  turnNo: number;
+  entryIndex: number;
+  /** 我方該次攻擊實際算出的 OP（attack-op event 值）。 */
+  myOP: number;
+  /** 對手在我 commit 當下能擺出的最強接球 DP（卡面基礎值）。 */
+  oppMaxReceiveDP: number;
+  oppBestReceiverName: string | null;
+  verdict: AttackVerdict;
+  /** 實際判定對手是否守住；紀錄無對應判定行時為 null。 */
+  held: boolean | null;
+}
+
+export interface AttackGambleSummary {
+  attacks: number;
+  /** oppMaxReceiveDP ≥ myOP 的次數（打進接得住的防線）。 */
+  intoHold: number;
+  cleanBreaks: number;
+  lines: AttackGambleLine[];
+}
+
 export interface ReplayReviewReport {
   startedAt: string;
   seed: number;
@@ -115,6 +146,7 @@ export interface ReplayReviewReport {
   lostSets: LostSetSummary;
   actionEffectiveness: ReplayActionEffectiveness;
   actionCardDetails: ActionCardDetail[];
+  attackGamble: AttackGambleSummary;
   valueExplanation: ValueExplanation;
   narrative: string[];
   gameplan?: ReplayGameplanReview;
@@ -134,14 +166,6 @@ function effectivenessLine(kind: "event" | "skill", impact: ActionImpactStats): 
   };
 }
 
-function buildActionEffectiveness(finalState: GameState, player: PlayerId): ReplayActionEffectiveness {
-  const impact = collectMatchStats(finalState).players[player].actionImpact;
-  return {
-    event: effectivenessLine("event", impact.event),
-    skill: effectivenessLine("skill", impact.skill),
-  };
-}
-
 /** 逐張事件 / 技能命中明細：哪張卡打了幾次、其中幾次有效。 */
 export interface ActionCardDetail {
   kind: "event" | "skill";
@@ -155,15 +179,24 @@ function firstNumber(text: string): number {
   return m ? Number(m[0]) : 0;
 }
 
+function blankImpact(): ActionImpactStats {
+  return { uses: 0, effectiveUses: 0, impactCount: 0, pointMods: 0, draws: 0, handAdds: 0, deploys: 0, paidGuts: 0 };
+}
+
+function cardName(db: CardDb, state: GameState, uid: number): string {
+  return db.get(state.cards[uid]!)?.nameJa ?? `uid:${uid}`;
+}
+
 /**
  * 逐張統計事件 / 技能命中。這裡刻意鏡像 benchmark `collectMatchStats` 的「有效使用」判讀規則
  * （打出後窗口內出現抽牌 / 入手 / 登場 / 點數修正即視為 effective），但 keyed by 卡名。
  * `buildActionCardDetails` 的彙總必須等於 `buildActionEffectiveness`（aggregate）——由測試交叉驗證，
  * 一旦 benchmark 規則改動造成漂移，consistency test 會失敗。
  */
-function buildActionCardDetails(finalState: GameState, player: PlayerId): ActionCardDetail[] {
+function buildActionStats(db: CardDb, session: ReplaySession, player: PlayerId): { effectiveness: ReplayActionEffectiveness; details: ActionCardDetail[] } {
   type Active = { kind: "event" | "skill"; name: string; impacted: boolean } | null;
   const active: [Active, Active] = [null, null];
+  const impact: Record<"event" | "skill", ActionImpactStats> = { event: blankImpact(), skill: blankImpact() };
   const order: string[] = [];
   const map = new Map<string, ActionCardDetail>();
 
@@ -182,41 +215,114 @@ function buildActionCardDetails(finalState: GameState, player: PlayerId): Action
     const a = active[p];
     if (!a || a.impacted) return;
     a.impacted = true;
-    if (p === player) ensure(a.kind, a.name).effectiveUses++;
+    if (p === player) {
+      ensure(a.kind, a.name).effectiveUses++;
+      impact[a.kind].effectiveUses++;
+    }
   };
 
-  for (const entry of finalState.log) {
-    if (entry.player === null) continue;
-    const p = entry.player;
-    const text = entry.text;
+  const markImpactField = (
+    p: PlayerId,
+    field: keyof Omit<ActionImpactStats, "uses" | "effectiveUses" | "impactCount" | "paidGuts">,
+    amount = 1,
+  ) => {
+    const a = active[p];
+    if (!a) return;
+    if (p === player) {
+      impact[a.kind].impactCount += amount;
+      impact[a.kind][field] += amount;
+    }
+    markImpact(p);
+  };
 
-    if (text.startsWith("── ")) active[p] = null;
-    if (text.startsWith("打出事件卡 ")) {
-      const name = text.slice("打出事件卡 ".length).trim();
-      active[p] = { kind: "event", name, impacted: false };
-      if (p === player) ensure("event", name).uses++;
+  const registerUse = (kind: "event" | "skill", p: PlayerId, name: string) => {
+    active[p] = { kind, name, impacted: false };
+    if (p !== player) return;
+    ensure(kind, name).uses++;
+    impact[kind].uses++;
+  };
+
+  // [Claude 2026-07-07] gate 技能路徑：引擎對登場/區域技能先 log「解決：X 的(登場)技能」，
+  // 使用與否由下一個該玩家決策（effect-confirm accept／effect-cards 非空選卡）決定；
+  // 「解決」行本身不算 use（可能 decline、條件不成立或［ターン1］無效）。
+  const pendingSkill: [string | null, string | null] = [null, null];
+  const SKILL_RESOLVE = /^解決：(.+?) 的[^ ]*技能$/u;
+  const isSkillCostOrImpact = (text: string): boolean =>
+    text.startsWith("支付 ") || text.startsWith("棄 ") ||
+    (text.includes("抽") && !text.startsWith("接球抽牌") && !text.includes("牌組已空")) ||
+    text.includes("加入手牌") ||
+    (text.includes(" 的") && (text.includes("+") || text.includes("變為")));
+
+  for (const entry of session.entries) {
+    const decision = entry.decision;
+    if (decision.type === "free") {
+      if (decision.action === "event") registerUse("event", entry.player, cardName(db, entry.before, decision.uid));
+      if (decision.action === "skill") registerUse("skill", entry.player, cardName(db, entry.before, decision.uid));
+    } else if (decision.type === "resolve-pending") {
+      const pending = entry.before.pendingQueue.find((item) => item.id === decision.id);
+      if (pending?.kind === "passive") registerUse("skill", pending.player, cardName(db, entry.before, pending.source));
+    } else if (decision.type === "effect-confirm" && pendingSkill[entry.player]) {
+      if (decision.accept) registerUse("skill", entry.player, pendingSkill[entry.player]!);
+      pendingSkill[entry.player] = null;
+    } else if (decision.type === "effect-cards" && pendingSkill[entry.player]) {
+      if (decision.uids.length > 0) registerUse("skill", entry.player, pendingSkill[entry.player]!);
+      pendingSkill[entry.player] = null;
     }
-    if (text.startsWith("使用 ") && text.includes(" 的技能")) {
-      const name = text.slice("使用 ".length, text.indexOf(" 的技能")).trim();
-      active[p] = { kind: "skill", name, impacted: false };
-      if (p === player) ensure("skill", name).uses++;
+
+    for (const log of replayEntryLogs(entry)) {
+      if (log.player === null) continue;
+      const p = log.player;
+      const text = log.text;
+
+      if (text.startsWith("── ")) {
+        active[p] = null;
+        pendingSkill[p] = null;
+      }
+      const resolveMatch = SKILL_RESOLVE.exec(text);
+      if (resolveMatch && !(active[p]?.kind === "skill" && active[p]?.name === resolveMatch[1])) {
+        pendingSkill[p] = resolveMatch[1]!;
+      }
+      if (text === "選擇不使用技能") pendingSkill[p] = null;
+      // 無 gate 決策就直接產生成本/效果的技能（強制型）：以第一個成本/效果 log 認定 use
+      if (pendingSkill[p] && isSkillCostOrImpact(text)) {
+        registerUse("skill", p, pendingSkill[p]!);
+        pendingSkill[p] = null;
+      }
+      if (text.startsWith("打出事件卡 ")) {
+        pendingSkill[p] = null; // 換了行動來源，未決技能上下文作廢（防誤配到事件的 gate）
+        if (!active[p]) registerUse("event", p, text.slice("打出事件卡 ".length).trim());
+      }
+      // 關鍵字效果（フェイント/ワンタッチ/バックアタック…）log 形如「［フェイント(4)］」＝技能實效
+      if (/^［.+\(\d+\)］/.test(text)) markImpactField(p, "pointMods");
+      if (text.startsWith("使用 ") && text.includes(" 的技能") && !active[p]) {
+        registerUse("skill", p, text.slice("使用 ".length, text.indexOf(" 的技能")).trim());
+      }
+      if (text.startsWith("支付 ") && text.includes(" Guts") && active[p] && p === player) {
+        impact[active[p]!.kind].paidGuts += firstNumber(text);
+      }
+      if (text.includes("牌組已空，無法抽牌")) {
+        // 無效抽牌，不算命中
+      } else if (text.includes("抽") && !text.startsWith("接球抽牌")) {
+        markImpactField(p, "draws", Math.max(1, firstNumber(text)));
+      }
+      if (text.includes("加入手牌") || text.includes("回到手牌") || text.includes("回收")) markImpactField(p, "handAdds");
+      const deployMatch = text.match(/→ (serve|receive|toss|attack)$/);
+      if (deployMatch) {
+        if (text.includes("從") || text.includes("移動") || text.includes("登場 →")) markImpactField(p, "deploys");
+        else active[p] = null;
+      }
+      if (text.match(/^攔網登場 (.+)（中央=/)) active[p] = null;
+      if (text.includes(" 的") && (text.includes("+") || text.includes("變為"))) markImpactField(p, "pointMods");
     }
-    if (text.includes("牌組已空，無法抽牌")) {
-      // 無效抽牌，不算命中
-    } else if (text.includes("抽") && !text.startsWith("接球抽牌")) {
-      markImpact(p);
-    }
-    if (text.includes("加入手牌") || text.includes("回到手牌") || text.includes("回收")) markImpact(p);
-    const deployMatch = text.match(/→ (serve|receive|toss|attack)$/);
-    if (deployMatch) {
-      if (text.includes("從") || text.includes("移動") || text.includes("登場 →")) markImpact(p);
-      else active[p] = null;
-    }
-    if (text.match(/^攔網登場 (.+)（中央=/)) active[p] = null;
-    if (text.includes(" 的") && (text.includes("+") || text.includes("變為"))) markImpact(p);
   }
 
-  return order.map((key) => map.get(key)!);
+  return {
+    effectiveness: {
+      event: effectivenessLine("event", impact.event),
+      skill: effectivenessLine("skill", impact.skill),
+    },
+    details: order.map((key) => map.get(key)!),
+  };
 }
 
 const OTHER: Record<PlayerId, PlayerId> = { 0: 1, 1: 0 };
@@ -230,10 +336,11 @@ function buildReplayNarrative(input: {
   analytics: ReplayAnalytics;
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
+  attackGamble: AttackGambleSummary;
   gameplan?: ReplayGameplanReview;
   valueExplanation?: ValueExplanation;
 }): string[] {
-  const { player, analytics, lostSets, effectiveness, gameplan, valueExplanation } = input;
+  const { player, analytics, lostSets, effectiveness, attackGamble, gameplan, valueExplanation } = input;
   const opp = OTHER[player];
   const lines: string[] = [];
 
@@ -276,6 +383,16 @@ function buildReplayNarrative(input: {
   const skill = effectiveness.skill;
   if (skill.uses > 0 && skill.rate < 0.5) {
     lines.push(`技能宣告 ${skill.uses} 次但有效率僅 ${Math.round(skill.rate * 100)}%，部分技能可能在沒收益的時機發動。`);
+  }
+
+  // [Claude 2026-07-09] Phase M ③：攻擊打進「對手接得住的防線」的比例。刻意不逕自判為失誤——
+  // 磨對手防守資源（手牌數勝負路線）是正解之一（見 L0002/L0006）；只在「非為磨資源」時提示改存 Guts。
+  if (attackGamble.attacks > 0 && attackGamble.intoHold > 0) {
+    const held = attackGamble.lines.filter((line) => line.verdict === "into-hold" && line.held === true).length;
+    const heldNote = held > 0 ? `，其中 ${held} 次確實被守住` : "";
+    lines.push(
+      `${attackGamble.attacks} 次攻擊有 ${attackGamble.intoHold} 次打進對手接得住的防線（對手當下最強接球 DP ≥ 你的 OP${heldNote}）——若不是在磨對手防守資源，這些點數可考慮改存 Guts、換一次真正穿防的爆發（文章①③）。`,
+    );
   }
 
   if (gameplan) {
@@ -348,6 +465,49 @@ function buildLostSetSummary(session: ReplaySession, player: PlayerId): LostSetS
     });
   }
   return { total: attributions.length, byCause, attributions };
+}
+
+const JUDGE_RE = /判定：DP\s*(\d+)\s*vs\s*OP\s*(\d+)\s*→\s*(成功|失敗)/u;
+
+/** 從攻擊 entry 起向後（同一 Set 內）找第一個 OP 相符的判定行，回傳防守方是否守住（成功＝守住）。 */
+function attackHeldAfter(entries: readonly ReplayEntry[], fromIdx: number, setNo: number, myOP: number): boolean | null {
+  for (let i = fromIdx; i < entries.length; i++) {
+    const entry = entries[i]!;
+    if (entry.setNo !== setNo) break;
+    for (const log of replayEntryLogs(entry)) {
+      const m = JUDGE_RE.exec(log.text);
+      if (m && Number(m[2]) === myOP) return m[3] === "成功";
+    }
+  }
+  return null;
+}
+
+/**
+ * 我方每次攻擊（attack-op event）對上對手當下真實防守上限。用攻擊 entry 的 `before` 快照——
+ * 該時點對手尚未登場接球手，手上/場上接球資源完整 → estimateMaxReceiveDP 反映其真實防守天花板。
+ */
+function buildAttackGambleSummary(db: CardDb, session: ReplaySession, player: PlayerId): AttackGambleSummary {
+  const opp = OTHER[player];
+  const lines: AttackGambleLine[] = [];
+  session.entries.forEach((entry, idx) => {
+    for (const log of replayEntryLogs(entry)) {
+      if (log.event?.kind !== "attack-op" || log.event.player !== player) continue;
+      const myOP = log.event.value;
+      const def = estimateMaxReceiveDP(db, entry.before, opp);
+      lines.push({
+        setNo: entry.setNo,
+        turnNo: entry.turnNo,
+        entryIndex: entry.index,
+        myOP,
+        oppMaxReceiveDP: def.dp,
+        oppBestReceiverName: def.receiverName,
+        verdict: defenseHolds(def.dp, myOP) ? "into-hold" : "clean-break",
+        held: attackHeldAfter(session.entries, idx, entry.setNo, myOP),
+      });
+    }
+  });
+  const intoHold = lines.filter((line) => line.verdict === "into-hold").length;
+  return { attacks: lines.length, intoHold, cleanBreaks: lines.length - intoHold, lines };
 }
 
 export interface ReplayReviewOptions {
@@ -471,7 +631,9 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
   }
 
   const lostSets = buildLostSetSummary(session, player);
-  const actionEffectiveness = buildActionEffectiveness(finalState, player);
+  const actionStats = buildActionStats(db, session, player);
+  const actionEffectiveness = actionStats.effectiveness;
+  const attackGamble = buildAttackGambleSummary(db, session, player);
   const valueExplanation = explainValue(finalState, player, undefined, db, [session.decks[0].cardIds, session.decks[1].cardIds]);
   const gameplan = profile && finalGameplan
     ? { profileId: profile.id, displayName: profile.displayName, final: finalGameplan, checkpoints }
@@ -486,9 +648,10 @@ export function createReplayReviewReport(db: CardDb, session: ReplaySession, opt
     setReviews,
     lostSets,
     actionEffectiveness,
-    actionCardDetails: buildActionCardDetails(finalState, player),
+    actionCardDetails: actionStats.details,
+    attackGamble,
     valueExplanation,
-    narrative: buildReplayNarrative({ player, analytics, lostSets, effectiveness: actionEffectiveness, gameplan, valueExplanation }),
+    narrative: buildReplayNarrative({ player, analytics, lostSets, effectiveness: actionEffectiveness, attackGamble, gameplan, valueExplanation }),
     gameplan,
   };
 }

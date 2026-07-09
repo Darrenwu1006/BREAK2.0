@@ -17,6 +17,12 @@ export interface HumanAnchorMatchRecord {
   note: string;
   agreementRate?: number;
   blunderCount?: number;
+  /** --anchor 掃描使用的第一階段 sampleCount；用來避免跨版本趨勢誤讀掃描設定差異。 */
+  samplesUsed?: number;
+  /** blunderCount 若經第二階段復驗，記錄復驗 sampleCount。 */
+  blunderVerificationSamples?: number;
+  /** 第一階段 samplesUsed 抓到的 blunder 候選數；blunderCount 是復驗後存活數。 */
+  blunderCandidates?: number;
   /** [Claude 2026-07-05] L1：--anchor 掃描回寫。門檻可調故記錄實際採用值（spec §2）。 */
   blunderThreshold?: number;
   /** 掃描時可比對的決策步數（agreementRate 的分母）。 */
@@ -75,6 +81,9 @@ export function validateHumanAnchorDraft(input: unknown): HumanAnchorMatchDraft 
   if (record.engineVersion !== undefined && typeof record.engineVersion !== "string") throw new Error("invalid engineVersion");
   if (record.agreementRate !== undefined && typeof record.agreementRate !== "number") throw new Error("invalid agreementRate");
   if (record.blunderCount !== undefined && (!Number.isInteger(record.blunderCount) || record.blunderCount < 0)) throw new Error("invalid blunderCount");
+  if (record.samplesUsed !== undefined && (!Number.isInteger(record.samplesUsed) || record.samplesUsed < 0)) throw new Error("invalid samplesUsed");
+  if (record.blunderVerificationSamples !== undefined && (!Number.isInteger(record.blunderVerificationSamples) || record.blunderVerificationSamples < 0)) throw new Error("invalid blunderVerificationSamples");
+  if (record.blunderCandidates !== undefined && (!Number.isInteger(record.blunderCandidates) || record.blunderCandidates < 0)) throw new Error("invalid blunderCandidates");
   if (record.blunderThreshold !== undefined && (typeof record.blunderThreshold !== "number" || record.blunderThreshold < 0)) throw new Error("invalid blunderThreshold");
   if (record.anchorEvaluated !== undefined && (!Number.isInteger(record.anchorEvaluated) || record.anchorEvaluated < 0)) throw new Error("invalid anchorEvaluated");
   if (record.anchorScannedAt !== undefined && (typeof record.anchorScannedAt !== "string" || Number.isNaN(Date.parse(record.anchorScannedAt)))) throw new Error("invalid anchorScannedAt");
@@ -172,6 +181,9 @@ export function summarizeAnchorTrend(records: HumanAnchorMatchRecord[], windowSi
 export interface AnchorScanSummary {
   agreementRate: number;
   blunderCount: number;
+  samplesUsed?: number;
+  blunderVerificationSamples?: number;
+  blunderCandidates?: number;
   blunderThreshold: number;
   anchorEvaluated: number;
   anchorScannedAt: string;

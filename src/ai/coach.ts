@@ -116,7 +116,11 @@ function clamp01(value: number): number {
 
 function cardName(db: CardDb, state: GameState, uid: number): string {
   const id = state.cards[uid];
-  return id ? db.get(id)?.nameZh || db.get(id)?.nameJa || id : `uid ${uid}`;
+  if (!id) return `uid ${uid}`;
+  const card = db.get(id);
+  const name = card?.nameZh || card?.nameJa || id;
+  const shortId = id.split("-").at(-1);
+  return shortId ? `${name}〔${shortId}〕` : name;
 }
 
 function cardParam(db: CardDb, state: GameState, uid: number, area: CourtArea): number {

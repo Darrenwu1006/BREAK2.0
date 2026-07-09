@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyDecision, createGame, deployableUids, effParam } from "../engine/engine";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
-import { benchmarkPolicyDecision, configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
+import { benchmarkPolicyDecision, collectMatchStats, configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
 import type { BenchmarkPolicyId, PlayQualityStats, SearchDecisionDiagnostics } from "./benchmark";
 import { BENCHMARK_REPORT_SCHEMA_VERSION, createBenchmarkReportEnvelope } from "./benchmark-report";
 import { ROLLOUT_VALUE_MODEL } from "./rollout-value";
@@ -86,6 +86,39 @@ describe("M8 benchmark harness", () => {
     expect(report.summary.playQualityByPlayer[0].defenseSkillCostlyNonUseRate).toBeGreaterThanOrEqual(0);
     expect(report.summary.playQualityByPlayer[0].defenseSkillCostlyNonUseRate).toBeLessThanOrEqual(1);
     expect(report.summary.playQualityByPlayer[0].averageOpPressure).toBeGreaterThanOrEqual(0);
+  });
+
+  it("batch report 可針對指定卡片輸出部署與上手機會統計", () => {
+    const report = runBenchmarkBatch({
+      db: benchmarkDb,
+      decks: [findBenchmarkDeck("ユース-合宿精英-優化_名分流三張版"), findBenchmarkDeck("伊達工業-攔網軸改_韋宏")],
+      policies: ["heuristic-v2", "random"],
+      seeds: [32000],
+      maxSteps: 5000,
+      focusCardId: "HV-PR-059",
+    });
+
+    expect(report.config.focusCardId).toBe("HV-PR-059");
+    expect(report.matches[0]!.cardFocus?.cardId).toBe("HV-PR-059");
+    expect(report.summary.cardFocus?.cardId).toBe("HV-PR-059");
+    expect(report.summary.cardFocus?.players[0].deployCount).toBeGreaterThanOrEqual(0);
+    expect(report.summary.cardFocus?.players[0].handDecisionCount).toBeGreaterThanOrEqual(0);
+    expect(report.summary.cardFocus?.players[0].legalByArea.toss).toBeGreaterThanOrEqual(0);
+  });
+
+  it("巨觀統計的技能使用次數可由決策層補上，不依賴技能使用 log 句型", () => {
+    const deckA = findBenchmarkDeck("烏野-預組");
+    const deckB = findBenchmarkDeck("音駒-預組");
+    const state = createGame(benchmarkDb, { seed: 131, decks: [deckA.ids, deckB.ids] });
+
+    const stats = collectMatchStats(state, undefined, [
+      { event: 0, skill: 1 },
+      { event: 0, skill: 0 },
+    ]);
+
+    expect(stats.players[0].freeSkills).toBe(1);
+    expect(stats.players[0].actionImpact.skill.uses).toBe(1);
+    expect(stats.players[0].actionImpact.event.uses).toBe(0);
   });
 
   it("Phase H 行為尺會計入明顯低於手中最高點的攻擊登場", () => {

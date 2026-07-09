@@ -1,0 +1,79 @@
+{
+ "name": "稲荷崎-三彈官方_調整C合併",
+ "school": "稲荷崎",
+ "source": "claude-tuning-test",
+ "cards": [
+  {
+   "id": "HV-P02-024",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-034",
+   "count": 3
+  },
+  {
+   "id": "HV-P03-043",
+   "count": 1
+  },
+  {
+   "id": "HV-P03-046",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-016",
+   "count": 3
+  },
+  {
+   "id": "HV-P03-022",
+   "count": 3
+  },
+  {
+   "id": "HV-P03-040",
+   "count": 3
+  },
+  {
+   "id": "HV-P02-020",
+   "count": 3
+  },
+  {
+   "id": "HV-P02-022",
+   "count": 5
+  },
+  {
+   "id": "HV-P02-077",
+   "count": 3
+  },
+  {
+   "id": "HV-P02-035",
+   "count": 1
+  },
+  {
+   "id": "HV-P02-084",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-087",
+   "count": 2
+  },
+  {
+   "id": "HV-P03-093",
+   "count": 0
+  },
+  {
+   "id": "HV-D03-013",
+   "count": 2
+  },
+  {
+   "id": "HV-D03-006",
+   "count": 2
+  },
+  {
+   "id": "HV-PR-040",
+   "count": 1
+  },
+  {
+   "id": "HV-P03-092",
+   "count": 2
+  }
+ ]
+}

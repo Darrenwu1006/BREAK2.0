@@ -15,8 +15,11 @@ interface CliOptions {
   player: PlayerId;
   coach: boolean;
   samples: number;
+  verifySamples: number;
   threshold: number;
   maxCoachSteps: number;
+  /** --coach-step=N：只評估 replay 全域第 N 步（1-based），供單手深掘使用。 */
+  coachStep?: number;
   /** --board=N｜a-b：只輸出該步（步）的盤面，1-based，含端點。 */
   board?: { from: number; to: number };
   /** --triage：輸出關鍵手候選清單（失誤＋打得好＋需留意）；搭 --coach 折入 PIMC。 */
@@ -62,6 +65,7 @@ function parseArgs(argv: string[]): CliOptions {
     player: 0,
     coach: false,
     samples: 5,
+    verifySamples: 25,
     threshold: 0.15,
     maxCoachSteps: Infinity,
     triage: false,
@@ -73,13 +77,27 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg.startsWith("--file=")) options.file = arg.slice("--file=".length);
     else if (arg.startsWith("--player=")) options.player = Number(arg.slice("--player=".length)) as PlayerId;
     else if (arg.startsWith("--samples=")) options.samples = Math.max(0, Number(arg.slice("--samples=".length)) || 0);
+    else if (arg.startsWith("--verify-samples=")) options.verifySamples = Math.max(0, Number(arg.slice("--verify-samples=".length)) || 0);
     else if (arg.startsWith("--threshold=")) options.threshold = Math.max(0, Number(arg.slice("--threshold=".length)) || 0);
     else if (arg.startsWith("--max-coach-steps=")) options.maxCoachSteps = Math.max(0, Number(arg.slice("--max-coach-steps=".length)) || 0);
+    else if (arg.startsWith("--coach-step=")) {
+      options.coachStep = Math.max(1, Number(arg.slice("--coach-step=".length)) || 1);
+      options.coach = true;
+    }
     else if (arg.startsWith("--board=")) options.board = parseBoardRange(arg.slice("--board=".length));
     else if (arg === "--triage") options.triage = true;
   }
   if (options.player !== 0 && options.player !== 1) throw new Error("--player must be 0 or 1");
   return options;
+}
+
+function coachReportForEntry(session: ReplaySession, entry: ReplaySession["entries"][number], options: CliOptions, samples: number) {
+  return createPimcCoachReport(db, entry.before, {
+    sampleCount: samples,
+    perspectivePlayer: options.player,
+    knownDecks: [session.decks[0].cardIds, session.decks[1].cardIds],
+    gameplanDeckLabels: [session.decks[0].label, session.decks[1].label],
+  });
 }
 
 function parseBoardRange(spec: string): { from: number; to: number } {
@@ -136,7 +154,9 @@ function scanCoachFindings(
   options: CliOptions,
 ): { findings: CoachFinding[]; evaluated: number; errors: number; anchor: AnchorScanStats } {
   const entries = session.entries.filter((entry) => entry.source === "player" && entry.player === options.player);
-  const targetEntries = Number.isFinite(options.maxCoachSteps) ? entries.slice(0, options.maxCoachSteps) : entries;
+  const targetEntries = options.coachStep !== undefined
+    ? entries.filter((entry) => entry.index + 1 === options.coachStep)
+    : Number.isFinite(options.maxCoachSteps) ? entries.slice(0, options.maxCoachSteps) : entries;
   const findings: CoachFinding[] = [];
   const anchor: AnchorScanStats = { comparable: 0, agreements: 0, blunders: 0, missing: 0 };
   let evaluated = 0;
@@ -144,12 +164,7 @@ function scanCoachFindings(
 
   for (const entry of targetEntries) {
     try {
-      const report = createPimcCoachReport(db, entry.before, {
-        sampleCount: options.samples,
-        perspectivePlayer: options.player,
-        knownDecks: [session.decks[0].cardIds, session.decks[1].cardIds],
-        gameplanDeckLabels: [session.decks[0].label, session.decks[1].label],
-      });
+      const report = coachReportForEntry(session, entry, options, options.samples);
       const actualEstimate = report.recommendations.find((rec) => isSameDecision(rec.decision, entry.decision));
       if (!actualEstimate) anchor.missing++;
       if (actualEstimate) {
@@ -190,11 +205,41 @@ function scanCoachFindings(
   return { findings, evaluated, errors, anchor };
 }
 
+function verifyAnchorBlunders(session: ReplaySession, options: CliOptions, findings: CoachFinding[]): { verified: number; errors: number } {
+  if (options.verifySamples <= options.samples || findings.length === 0) return { verified: findings.length, errors: 0 };
+  let verified = 0;
+  let errors = 0;
+  for (let i = 0; i < findings.length; i++) {
+    const finding = findings[i]!;
+    const entry = session.entries[finding.step - 1];
+    if (!entry) {
+      errors++;
+      continue;
+    }
+    try {
+      const report = coachReportForEntry(session, entry, options, options.verifySamples);
+      const actualEstimate = report.recommendations.find((rec) => isSameDecision(rec.decision, entry.decision));
+      if (actualEstimate && report.bestAction.winRate - actualEstimate.winRate >= options.threshold) verified++;
+    } catch {
+      errors++;
+    }
+    if ((i + 1) % 5 === 0 || i + 1 === findings.length) {
+      console.log(`Blunder verify: ${i + 1}/${findings.length}`);
+    }
+  }
+  return { verified, errors };
+}
+
 /** [Claude 2026-07-05] L1 --anchor 模式：單場摘要＋回寫 matches.jsonl（找不到對應紀錄時只印摘要）。 */
 function runAnchorScan(path: string, session: ReplaySession, options: CliOptions): void {
   console.log(`載入對戰紀錄: ${path}`);
-  console.log(`Anchor 掃描（samples=${options.samples}, blunder 門檻=${pct(options.threshold)}, 座位=${playerName(options.player)}）`);
-  const { evaluated, errors, anchor } = scanCoachFindings(session, options);
+  const twoStage = options.verifySamples > options.samples;
+  console.log(
+    `Anchor 掃描（samples=${options.samples}${twoStage ? `→${options.verifySamples} blunder 復驗` : ""}, blunder 門檻=${pct(options.threshold)}, 座位=${playerName(options.player)}）`,
+  );
+  const { evaluated, errors, anchor, findings } = scanCoachFindings(session, options);
+  const verified = verifyAnchorBlunders(session, options, findings);
+  const blunderCount = twoStage ? verified.verified : anchor.blunders;
   const agreementRate = anchor.comparable > 0 ? anchor.agreements / anchor.comparable : 0;
   console.log("");
   console.log(`單場摘要: 已評估 ${evaluated} 步（可比對 ${anchor.comparable}、候選外 ${anchor.missing}、錯誤略過 ${errors}）`);
@@ -203,7 +248,12 @@ function runAnchorScan(path: string, session: ReplaySession, options: CliOptions
     return;
   }
   console.log(`一致率（玩家選擇＝search top1）: ${pct(agreementRate)}（${anchor.agreements}/${anchor.comparable}）`);
-  console.log(`blunder（勝率降幅 >= ${pct(options.threshold)}）: ${anchor.blunders} 步`);
+  if (twoStage) {
+    console.log(`blunder 候選（samples=${options.samples}）: ${anchor.blunders} 步`);
+    console.log(`blunder 復驗存活（samples=${options.verifySamples}）: ${blunderCount} 步${verified.errors ? `（復驗錯誤 ${verified.errors}）` : ""}`);
+  } else {
+    console.log(`blunder（勝率降幅 >= ${pct(options.threshold)}）: ${blunderCount} 步`);
+  }
 
   const matchesPath = join(process.cwd(), "data", "human-anchor", "matches.jsonl");
   if (!existsSync(matchesPath)) {
@@ -212,7 +262,9 @@ function runAnchorScan(path: string, session: ReplaySession, options: CliOptions
   }
   const updated = applyAnchorScanToJsonl(readFileSync(matchesPath, "utf8"), path, {
     agreementRate: Number(agreementRate.toFixed(4)),
-    blunderCount: anchor.blunders,
+    blunderCount,
+    samplesUsed: options.samples,
+    ...(twoStage ? { blunderVerificationSamples: options.verifySamples, blunderCandidates: anchor.blunders } : {}),
     blunderThreshold: options.threshold,
     anchorEvaluated: anchor.comparable,
     anchorScannedAt: new Date().toISOString(),
@@ -222,7 +274,7 @@ function runAnchorScan(path: string, session: ReplaySession, options: CliOptions
     return;
   }
   writeFileSync(matchesPath, updated.endsWith("\n") ? updated : `${updated}\n`, "utf8");
-  console.log("已回寫 data/human-anchor/matches.jsonl（agreementRate/blunderCount/blunderThreshold/anchorEvaluated/anchorScannedAt）。");
+  console.log("已回寫 data/human-anchor/matches.jsonl（agreementRate/blunderCount/samplesUsed/blunderThreshold/anchorEvaluated/anchorScannedAt）。");
 }
 
 function printReport(path: string, session: ReplaySession, options: CliOptions): void {
@@ -287,6 +339,23 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
     for (const detail of report.actionCardDetails) {
       const label = detail.kind === "event" ? "事件" : "技能";
       console.log(`    - [${label}] ${detail.cardName}: ${detail.effectiveUses}/${detail.uses} 有效`);
+    }
+  }
+
+  console.log("");
+  console.log(`攻擊續戰帳（${playerName(report.player)}，地面真相尺）`);
+  const gamble = report.attackGamble;
+  if (gamble.attacks === 0) {
+    console.log("  本場沒有攻擊判定紀錄。");
+  } else {
+    console.log(`  ${gamble.attacks} 次攻擊：穿防 ${gamble.cleanBreaks}、打進接得住的防線 ${gamble.intoHold}`);
+    for (const line of gamble.lines) {
+      const tag = line.verdict === "into-hold" ? "⚠ 對手接得住" : "✓ 必穿防";
+      const heldNote = line.held === null ? "" : line.held ? "（實際被守住）" : "（實際穿防）";
+      const recv = line.oppBestReceiverName
+        ? `對手最強接球 ${line.oppBestReceiverName} DP ${line.oppMaxReceiveDP}`
+        : `對手無接球手（DP ${line.oppMaxReceiveDP}）`;
+      console.log(`  - Set ${line.setNo} T${line.turnNo}｜OP ${line.myOP} vs ${recv}｜${tag}${heldNote}`);
     }
   }
 

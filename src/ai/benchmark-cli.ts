@@ -105,6 +105,28 @@ function formatSearchDiagnostics(summary: BatchReport["summary"]["searchDiagnost
   });
 }
 
+function formatCardFocus(summary: BatchReport["summary"]["cardFocus"]): string[] {
+  if (!summary) return [];
+  const p0 = summary.players[0];
+  const nameChoices = Object.entries(p0.nameChoices)
+    .map(([name, count]) => `${name}=${count}`)
+    .join(", ") || "none";
+  const byArea = Object.entries(p0.deployByArea)
+    .filter(([, count]) => count > 0)
+    .map(([area, count]) => `${area}=${count}`)
+    .join(", ") || "none";
+  const legal = Object.entries(p0.legalByArea)
+    .filter(([, count]) => count > 0)
+    .map(([area, count]) => `${area}=${count}`)
+    .join(", ") || "none";
+  const avgToss = p0.averageTossPoint === null ? "n/a" : p0.averageTossPoint.toFixed(2);
+  const avgDeficit = p0.averageTossDeficit === null ? "n/a" : p0.averageTossDeficit.toFixed(2);
+  return [
+    `Focus ${summary.cardId} P0: deploys=${p0.deployCount}, byArea=${byArea}, nameChoices=${nameChoices}`,
+    `Focus ${summary.cardId} P0: handDecisionCount=${p0.handDecisionCount}, legalByArea=${legal}, toss=${p0.tossDeployCount}, tossLowPoint=${p0.tossLowPointCount}, avgToss=${avgToss}, avgTossDeficit=${avgDeficit}`,
+  ];
+}
+
 function printDecks(): void {
   for (const deck of benchmarkDecks) {
     console.log(`${deck.name} (${deck.ids.length} 張, axes=${deck.axes.join("/")})`);
@@ -167,6 +189,7 @@ function run(): void {
   const seedStart = numberArg("seed-start", DEFAULTS.seedStart);
   const games = numberArg("games", DEFAULTS.games);
   const maxSteps = numberArg("max-steps", DEFAULTS.maxSteps);
+  const focusCardId = argValue("focus-card");
   const matrixMode = matrixModeArg();
   const outPath = argValue("out");
   const seeds = mirroredSeeds(seedStart, games);
@@ -222,6 +245,7 @@ function run(): void {
     policies: [policyA, policyB],
     seeds,
     maxSteps,
+    focusCardId,
   });
 
   if (hasFlag("json")) {
@@ -247,6 +271,11 @@ function run(): void {
   console.log("Phase H play quality:");
   console.log(formatPlayQuality("P0", summary.playQualityByPlayer[0]));
   console.log(formatPlayQuality("P1", summary.playQualityByPlayer[1]));
+  const cardFocus = formatCardFocus(summary.cardFocus);
+  if (cardFocus.length > 0) {
+    console.log("Card focus:");
+    for (const line of cardFocus) console.log(line);
+  }
   const searchDiagnostics = formatSearchDiagnostics(summary.searchDiagnosticsByPolicy);
   if (searchDiagnostics.length > 0) {
     console.log("Search diagnostics:");

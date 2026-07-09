@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyDecision, createGame } from "../engine/engine";
 import type { GameState } from "../engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
-import { createPimcCoachReport } from "./coach";
+import { createPimcCoachReport, decisionLabel } from "./coach";
 
 function setupServeDecision(): { state: GameState; decks: readonly [readonly string[], readonly string[]] } {
   const deckA = findBenchmarkDeck("烏野-預組");
@@ -37,6 +37,15 @@ describe("M8 Phase A PIMC coach", () => {
     expect(report.bestAction.sampleCount).toBeGreaterThan(0);
     expect(report.bestAction.explanation.length).toBeGreaterThan(10);
     expect(report.bestAction.principalLine.length).toBeGreaterThan(0);
+  });
+
+  it("label 會標出短卡號，避免同名卡版本混淆", () => {
+    const { state } = setupServeDecision();
+    const uid = state.players[0].hand[0]!;
+    const id = state.cards[uid]!;
+    const shortId = id.split("-").at(-1)!;
+
+    expect(decisionLabel(benchmarkDb, state, { type: "deploy-serve", uid })).toContain(`〔${shortId}〕`);
   });
 
   it("同 seed 的結果可重現", () => {

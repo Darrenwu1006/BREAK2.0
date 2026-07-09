@@ -1,4 +1,4 @@
-import { applyDecision, createGame, deployableUids, effParam, effectDefOf, freeOptions } from "../engine/engine";
+import { applyDecision, card, createGame, deployableUids, effParam, effectDefOf, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileId } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
@@ -123,6 +123,7 @@ export interface MatchConfig {
   policies: readonly [BenchmarkPolicyId, BenchmarkPolicyId];
   seed: number;
   maxSteps?: number;
+  focusCardId?: string;
 }
 
 export interface PlayerInvariant {
@@ -148,6 +149,7 @@ export interface MatchResult {
   lostBy: [number, number];
   lostReasonsByPlayer: [Partial<Record<LostReason, number>>, Partial<Record<LostReason, number>>];
   stats: MatchStats;
+  cardFocus: CardFocusMatchStats | null;
   searchDiagnostics: SearchDecisionDiagnostics[];
   invariants: [PlayerInvariant, PlayerInvariant];
   error?: string;
@@ -281,12 +283,63 @@ export interface MatchStats {
   players: [MatchPlayerStats, MatchPlayerStats];
 }
 
+export interface CardFocusDeploy {
+  player: PlayerId;
+  cardId: string;
+  cardName: string;
+  area: DeployArea;
+  nameChoice: string | null;
+  effectivePoint: number | null;
+  bestLegalPoint: number | null;
+  lowPointDeficit: number | null;
+  setNo: number;
+  turnNo: number;
+}
+
+export interface CardFocusOpportunities {
+  handDecisionCount: number;
+  legalByArea: Record<DeployArea, number>;
+}
+
+export interface CardFocusPlayerStats {
+  deploys: CardFocusDeploy[];
+  opportunities: CardFocusOpportunities;
+}
+
+export interface CardFocusMatchStats {
+  cardId: string;
+  players: [CardFocusPlayerStats, CardFocusPlayerStats];
+}
+
+export interface CardFocusPlayerSummary {
+  deployCount: number;
+  deployByArea: Record<DeployArea, number>;
+  nameChoices: Record<string, number>;
+  tossDeployCount: number;
+  tossLowPointCount: number;
+  averageTossPoint: number | null;
+  averageTossDeficit: number | null;
+  handDecisionCount: number;
+  legalByArea: Record<DeployArea, number>;
+}
+
+export interface CardFocusSummary {
+  cardId: string;
+  players: [CardFocusPlayerSummary, CardFocusPlayerSummary];
+}
+
+export interface ActionUsageStats {
+  event: number;
+  skill: number;
+}
+
 export interface BatchConfig {
   db: CardDb;
   decks: readonly [BenchmarkDeckInput, BenchmarkDeckInput];
   policies: readonly [BenchmarkPolicyId, BenchmarkPolicyId];
   seeds: number[];
   maxSteps?: number;
+  focusCardId?: string;
 }
 
 export interface ConfidenceInterval {
@@ -310,6 +363,7 @@ export interface BatchSummary {
   setWinsByReason: Partial<Record<LostReason, number>>;
   lostReasons: Partial<Record<LostReason, number>>;
   playQualityByPlayer: [PlayQualitySummary, PlayQualitySummary];
+  cardFocus: CardFocusSummary | null;
   searchDiagnosticsByPolicy: Partial<Record<BenchmarkPolicyId, SearchDiagnosticsSummary>>;
 }
 
@@ -339,6 +393,7 @@ export interface BatchReport {
     policies: [BenchmarkPolicyId, BenchmarkPolicyId];
     seeds: number[];
     maxSteps: number;
+    focusCardId?: string;
   };
   summary: BatchSummary;
   matches: MatchResult[];
@@ -691,6 +746,112 @@ function blankPlayerStats(): MatchPlayerStats {
   };
 }
 
+function blankDeployAreaRecord(): Record<DeployArea, number> {
+  return { serve: 0, block: 0, receive: 0, toss: 0, attack: 0 };
+}
+
+function blankCardFocusPlayerStats(): CardFocusPlayerStats {
+  return {
+    deploys: [],
+    opportunities: {
+      handDecisionCount: 0,
+      legalByArea: blankDeployAreaRecord(),
+    },
+  };
+}
+
+function blankCardFocusStats(cardId: string | undefined): CardFocusMatchStats | null {
+  if (!cardId) return null;
+  return {
+    cardId,
+    players: [blankCardFocusPlayerStats(), blankCardFocusPlayerStats()],
+  };
+}
+
+function decisionDeployArea(decision: Decision): DeployArea | null {
+  if (decision.type === "deploy-serve") return "serve";
+  if (decision.type === "deploy-block") return "block";
+  if (decision.type === "deploy-receive") return "receive";
+  if (decision.type === "deploy-toss") return "toss";
+  if (decision.type === "deploy-attack") return "attack";
+  return null;
+}
+
+function decisionDeployUids(decision: Decision): number[] {
+  if (decision.type === "deploy-block") return decision.uids ?? [];
+  if (
+    decision.type === "deploy-serve" ||
+    decision.type === "deploy-receive" ||
+    decision.type === "deploy-toss" ||
+    decision.type === "deploy-attack"
+  ) {
+    return decision.uid === null ? [] : [decision.uid];
+  }
+  return [];
+}
+
+function decisionNameChoice(decision: Decision, uid: number): string | null {
+  if (decision.type === "deploy-block") return decision.uids === null ? null : decision.nameChoices?.[uid] ?? null;
+  if (
+    decision.type === "deploy-serve" ||
+    decision.type === "deploy-receive" ||
+    decision.type === "deploy-toss" ||
+    decision.type === "deploy-attack"
+  ) {
+    return decision.uid === uid ? decision.nameChoice ?? null : null;
+  }
+  return null;
+}
+
+function focusUidsInHand(db: CardDb, state: GameState, player: PlayerId, cardId: string): number[] {
+  return state.players[player].hand.filter((uid) => card(db, state, uid).id === cardId);
+}
+
+function deployPoint(db: CardDb, state: GameState, uid: number, area: DeployArea): number | null {
+  if (area === "block") return effParam(db, state, uid, "block") ?? null;
+  return effParam(db, state, uid, area) ?? null;
+}
+
+function bestLegalDeployPoint(db: CardDb, state: GameState, player: PlayerId, area: DeployArea): number | null {
+  const legal = deployableUids(db, state, player, area);
+  const values = legal.map((uid) => deployPoint(db, state, uid, area)).filter((value): value is number => value !== null);
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
+function recordCardFocusDecision(db: CardDb, state: GameState, decision: Decision, focus: CardFocusMatchStats | null): void {
+  if (!focus || !state.pendingDecision) return;
+  const player = state.pendingDecision.player as PlayerId;
+  const area = decisionDeployArea(decision);
+  if (!area) return;
+
+  const focusHandUids = focusUidsInHand(db, state, player, focus.cardId);
+  if (focusHandUids.length > 0) {
+    focus.players[player].opportunities.handDecisionCount++;
+    const legal = new Set(deployableUids(db, state, player, area));
+    if (focusHandUids.some((uid) => legal.has(uid))) focus.players[player].opportunities.legalByArea[area]++;
+  }
+
+  const deployedFocusUids = decisionDeployUids(decision).filter((uid) => card(db, state, uid).id === focus.cardId);
+  if (deployedFocusUids.length === 0) return;
+
+  const best = bestLegalDeployPoint(db, state, player, area);
+  for (const uid of deployedFocusUids) {
+    const effective = deployPoint(db, state, uid, area);
+    focus.players[player].deploys.push({
+      player,
+      cardId: focus.cardId,
+      cardName: card(db, state, uid).nameJa,
+      area,
+      nameChoice: decisionNameChoice(decision, uid),
+      effectivePoint: effective,
+      bestLegalPoint: best,
+      lowPointDeficit: effective !== null && best !== null ? best - effective : null,
+      setNo: state.setNo,
+      turnNo: state.turnNo,
+    });
+  }
+}
+
 function addLowPointDeployStats(target: LowPointDeployStats, source: LowPointDeployStats): void {
   target.opportunities += source.opportunities;
   target.lowPointChoices += source.lowPointChoices;
@@ -797,6 +958,22 @@ function recordDefenseSkillNonUse(stats: DefenseSkillNonUseStats, nonUse: boolea
   }
 }
 
+function blankActionUsageStats(): ActionUsageStats {
+  return { event: 0, skill: 0 };
+}
+
+function recordActionUsageDecision(state: GameState, decision: Decision, stats: ActionUsageStats): void {
+  if (decision.type === "free") {
+    if (decision.action === "event") stats.event++;
+    if (decision.action === "skill") stats.skill++;
+    return;
+  }
+  if (decision.type === "resolve-pending") {
+    const item = state.pendingQueue.find((candidate) => candidate.id === decision.id);
+    if (item?.kind === "passive") stats.skill++;
+  }
+}
+
 export function recordPlayQualityDecision(db: CardDb, state: GameState, decision: Decision, stats: PlayQualityStats): void {
   const pending = state.pendingDecision;
   if (!pending) return;
@@ -826,11 +1003,23 @@ export function recordPlayQualityDecision(db: CardDb, state: GameState, decision
   }
 }
 
-export function collectMatchStats(state: GameState, playQuality?: readonly [PlayQualityStats, PlayQualityStats]): MatchStats {
+export function collectMatchStats(
+  state: GameState,
+  playQuality?: readonly [PlayQualityStats, PlayQualityStats],
+  actionUsage?: readonly [ActionUsageStats, ActionUsageStats],
+): MatchStats {
   const players: [MatchPlayerStats, MatchPlayerStats] = [blankPlayerStats(), blankPlayerStats()];
   if (playQuality) {
     players[0].playQuality = copyPlayQualityStats(playQuality[0]);
     players[1].playQuality = copyPlayQualityStats(playQuality[1]);
+  }
+  if (actionUsage) {
+    for (const player of [0, 1] as const) {
+      players[player].freeEvents = actionUsage[player].event;
+      players[player].freeSkills = actionUsage[player].skill;
+      players[player].actionImpact.event.uses = actionUsage[player].event;
+      players[player].actionImpact.skill.uses = actionUsage[player].skill;
+    }
   }
   const currentRoute: [DefenseRoute, DefenseRoute] = ["unknown", "unknown"];
   const activeAction: [ActiveAction, ActiveAction] = [null, null];
@@ -848,13 +1037,17 @@ export function collectMatchStats(state: GameState, playQuality?: readonly [Play
       stats.mulliganReturned += firstNumber(text);
     }
     if (text.startsWith("打出事件卡 ")) {
-      stats.freeEvents++;
-      stats.actionImpact.event.uses++;
+      if (!actionUsage) {
+        stats.freeEvents++;
+        stats.actionImpact.event.uses++;
+      }
       activeAction[p] = { kind: "event", impacted: false };
     }
     if (text.startsWith("使用 ") && text.includes(" 的技能")) {
-      stats.freeSkills++;
-      stats.actionImpact.skill.uses++;
+      if (!actionUsage) {
+        stats.freeSkills++;
+        stats.actionImpact.skill.uses++;
+      }
       activeAction[p] = { kind: "skill", impacted: false };
     }
     if (text.startsWith("支付 ") && text.includes(" Guts")) {
@@ -934,6 +1127,8 @@ function resultFromState(
   steps: number,
   error?: string,
   playQuality?: readonly [PlayQualityStats, PlayQualityStats],
+  actionUsage?: readonly [ActionUsageStats, ActionUsageStats],
+  cardFocus: CardFocusMatchStats | null = null,
   searchDiagnostics: SearchDecisionDiagnostics[] = [],
 ): MatchResult {
   const winner = state.winner;
@@ -953,7 +1148,8 @@ function resultFromState(
     averageRalliesPerSet: averageRallies(lost.setResults),
     lostBy: lost.lostBy,
     lostReasonsByPlayer: lost.lostReasonsByPlayer,
-    stats: collectMatchStats(state, playQuality),
+    stats: collectMatchStats(state, playQuality, actionUsage),
+    cardFocus,
     searchDiagnostics: [...searchDiagnostics],
     invariants: [
       playerInvariant(state, 0, config.decks[0].ids.length),
@@ -971,6 +1167,8 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
     seededRnd(config.seed * 5 + 17),
   ];
   const playQuality: [PlayQualityStats, PlayQualityStats] = [blankPlayQualityStats(), blankPlayQualityStats()];
+  const actionUsage: [ActionUsageStats, ActionUsageStats] = [blankActionUsageStats(), blankActionUsageStats()];
+  const cardFocus = blankCardFocusStats(config.focusCardId);
   const searchDiagnostics: SearchDecisionDiagnostics[] = [];
 
   let state: GameState;
@@ -985,13 +1183,13 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
       decks: [config.decks[0].ids, config.decks[1].ids],
       skipDeckValidation: true,
     });
-    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error), playQuality, searchDiagnostics);
+    return resultFromState(config, fallback, "error", 0, error instanceof Error ? error.message : String(error), playQuality, actionUsage, cardFocus, searchDiagnostics);
   }
 
   for (let step = 0; step < maxSteps; step++) {
-    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step, undefined, playQuality, searchDiagnostics);
+    if (state.phase === "gameOver") return resultFromState(config, state, "complete", step, undefined, playQuality, actionUsage, cardFocus, searchDiagnostics);
     const pending = state.pendingDecision;
-    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision", playQuality, searchDiagnostics);
+    if (!pending) return resultFromState(config, state, "error", step, "遊戲未結束但沒有 pendingDecision", playQuality, actionUsage, cardFocus, searchDiagnostics);
 
     try {
       const player = pending.player as PlayerId;
@@ -1004,14 +1202,16 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
         [config.decks[0].ids, config.decks[1].ids],
         searchDiagnostics,
       );
+      recordCardFocusDecision(config.db, state, decision, cardFocus);
       recordPlayQualityDecision(config.db, state, decision, playQuality[player]);
+      recordActionUsageDecision(state, decision, actionUsage[player]);
       state = applyDecision(config.db, state, decision);
     } catch (error) {
-      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error), playQuality, searchDiagnostics);
+      return resultFromState(config, state, "error", step, error instanceof Error ? error.message : String(error), playQuality, actionUsage, cardFocus, searchDiagnostics);
     }
   }
 
-  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`, playQuality, searchDiagnostics);
+  return resultFromState(config, state, "max-steps", maxSteps, `超過 maxSteps=${maxSteps}`, playQuality, actionUsage, cardFocus, searchDiagnostics);
 }
 
 function wilson(successes: number, total: number): ConfidenceInterval {
@@ -1116,6 +1316,68 @@ function summarizeSearchDiagnostics(matches: MatchResult[]): Partial<Record<Benc
   return summaries;
 }
 
+function summarizeCardFocusPlayer(matches: MatchResult[], player: PlayerId): CardFocusPlayerSummary {
+  const deployByArea = blankDeployAreaRecord();
+  const legalByArea = blankDeployAreaRecord();
+  const nameChoices: Record<string, number> = {};
+  let deployCount = 0;
+  let tossDeployCount = 0;
+  let tossLowPointCount = 0;
+  let tossPointTotal = 0;
+  let tossPointSamples = 0;
+  let tossDeficitTotal = 0;
+  let tossDeficitSamples = 0;
+  let handDecisionCount = 0;
+
+  for (const match of matches) {
+    const focus = match.cardFocus?.players[player];
+    if (!focus) continue;
+    handDecisionCount += focus.opportunities.handDecisionCount;
+    for (const area of ["serve", "block", "receive", "toss", "attack"] as const) {
+      legalByArea[area] += focus.opportunities.legalByArea[area];
+    }
+    for (const deploy of focus.deploys) {
+      deployCount++;
+      deployByArea[deploy.area]++;
+      const nameChoice = deploy.nameChoice ?? "(native)";
+      nameChoices[nameChoice] = (nameChoices[nameChoice] ?? 0) + 1;
+      if (deploy.area === "toss") {
+        tossDeployCount++;
+        if (deploy.effectivePoint !== null) {
+          tossPointTotal += deploy.effectivePoint;
+          tossPointSamples++;
+        }
+        if (deploy.lowPointDeficit !== null) {
+          tossDeficitTotal += deploy.lowPointDeficit;
+          tossDeficitSamples++;
+          if (deploy.lowPointDeficit >= 2) tossLowPointCount++;
+        }
+      }
+    }
+  }
+
+  return {
+    deployCount,
+    deployByArea,
+    nameChoices,
+    tossDeployCount,
+    tossLowPointCount,
+    averageTossPoint: tossPointSamples === 0 ? null : tossPointTotal / tossPointSamples,
+    averageTossDeficit: tossDeficitSamples === 0 ? null : tossDeficitTotal / tossDeficitSamples,
+    handDecisionCount,
+    legalByArea,
+  };
+}
+
+function summarizeCardFocus(matches: MatchResult[]): CardFocusSummary | null {
+  const cardId = matches.find((match) => match.cardFocus)?.cardFocus?.cardId;
+  if (!cardId) return null;
+  return {
+    cardId,
+    players: [summarizeCardFocusPlayer(matches, 0), summarizeCardFocusPlayer(matches, 1)],
+  };
+}
+
 export function summarizeMatches(matches: MatchResult[]): BatchSummary {
   const completedMatches = matches.filter((match) => match.outcome === "complete");
   const winsByPlayer: [number, number] = [
@@ -1161,6 +1423,7 @@ export function summarizeMatches(matches: MatchResult[]): BatchSummary {
     setWinsByReason,
     lostReasons,
     playQualityByPlayer: [summarizePlayQuality(matches, 0), summarizePlayQuality(matches, 1)],
+    cardFocus: summarizeCardFocus(matches),
     searchDiagnosticsByPolicy: summarizeSearchDiagnostics(matches),
   };
 }
@@ -1175,6 +1438,7 @@ export function runBenchmarkBatch(config: BatchConfig): BatchReport {
       policies: [config.policies[0], config.policies[1]],
       seeds: [...config.seeds],
       maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
+      ...(config.focusCardId ? { focusCardId: config.focusCardId } : {}),
     },
     summary: summarizeMatches(matches),
     matches,

@@ -59,12 +59,18 @@ describe("human-anchor L0 schema", () => {
       note: "",
       agreementRate: 0.72,
       blunderCount: 3,
+      samplesUsed: 5,
+      blunderVerificationSamples: 25,
+      blunderCandidates: 9,
       blunderThreshold: 0.15,
       anchorEvaluated: 76,
       anchorScannedAt: "2026-07-05T22:00:00+08:00",
     };
     expect(validateHumanAnchorDraft(record)).toEqual(record);
     expect(() => validateHumanAnchorDraft({ ...record, blunderThreshold: -1 })).toThrow("invalid blunderThreshold");
+    expect(() => validateHumanAnchorDraft({ ...record, samplesUsed: 1.5 })).toThrow("invalid samplesUsed");
+    expect(() => validateHumanAnchorDraft({ ...record, blunderVerificationSamples: -1 })).toThrow("invalid blunderVerificationSamples");
+    expect(() => validateHumanAnchorDraft({ ...record, blunderCandidates: 1.5 })).toThrow("invalid blunderCandidates");
     expect(() => validateHumanAnchorDraft({ ...record, anchorEvaluated: 1.5 })).toThrow("invalid anchorEvaluated");
     expect(() => validateHumanAnchorDraft({ ...record, anchorScannedAt: "not-a-date" })).toThrow("invalid anchorScannedAt");
   });
@@ -157,6 +163,9 @@ describe("human-anchor L1 jsonl write-back", () => {
   const scan = {
     agreementRate: 0.75,
     blunderCount: 2,
+    samplesUsed: 5,
+    blunderVerificationSamples: 25,
+    blunderCandidates: 7,
     blunderThreshold: 0.15,
     anchorEvaluated: 80,
     anchorScannedAt: "2026-07-05T22:00:00Z",

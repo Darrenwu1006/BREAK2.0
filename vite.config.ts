@@ -221,35 +221,80 @@ function deckApi(root: string): Plugin {
   };
 }
 
+// 對戰紀錄 API。單場 replay 檔可達 16MB，過去列表每次都 readFileSync+parse
+// 全部檔案（累積後 ~1GB／~4s），拖慢每次頁面載入。改為維護一份輕量摘要
+// index.jsonl（一場一行、幾百 bytes）：列表只讀 index，永遠不碰大檔；存檔時
+// 即時 append，缺漏／被刪的檔案在 GET 時自我修復（首次會一次性回填既有檔）。
 function replayApi(root: string): Plugin {
   const replaysDir = join(root, "data", "replays");
-  const getReplayList = () => {
-    if (!existsSync(replaysDir)) return [];
-    const files = readdirSync(replaysDir);
-    const list: any[] = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
+  const indexPath = join(replaysDir, "index.jsonl");
+
+  type ReplaySummary = {
+    id: string;
+    startedAt: string;
+    decks: [string, string];
+    winner: number | null;
+    entryCount: number;
+  };
+
+  const summarize = (id: string, session: any): ReplaySummary => {
+    const lastEntry = session.entries?.[session.entries.length - 1];
+    return {
+      id,
+      startedAt: session.startedAt || new Date().toISOString(),
+      decks: [
+        session.decks?.[0]?.label || "Unknown",
+        session.decks?.[1]?.label || "Unknown",
+      ],
+      winner: lastEntry ? lastEntry.after.winner : null,
+      entryCount: session.entries?.length || 0,
+    };
+  };
+
+  const loadIndex = (): Map<string, ReplaySummary> => {
+    const map = new Map<string, ReplaySummary>();
+    if (!existsSync(indexPath)) return map;
+    for (const line of readFileSync(indexPath, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
       try {
-        const fullPath = join(replaysDir, f);
-        const content = readFileSync(fullPath, "utf8");
-        const session = JSON.parse(content);
-        const lastEntry = session.entries[session.entries.length - 1];
-        const winner = lastEntry ? lastEntry.after.winner : null;
-        list.push({
-          id: f,
-          startedAt: session.startedAt || new Date().toISOString(),
-          decks: [
-            session.decks?.[0]?.label || "Unknown",
-            session.decks?.[1]?.label || "Unknown"
-          ],
-          winner,
-          entryCount: session.entries?.length || 0,
-        });
+        const s = JSON.parse(line) as ReplaySummary;
+        if (s && s.id) map.set(s.id, s); // 後出現者覆蓋，天然去重
+      } catch { /* 略過壞行 */ }
+    }
+    return map;
+  };
+
+  const writeIndex = (map: Map<string, ReplaySummary>) => {
+    const body = [...map.values()].map((s) => JSON.stringify(s)).join("\n");
+    writeFileSync(indexPath, body ? body + "\n" : "", "utf8");
+  };
+
+  // 只讀 index；index 缺的檔才逐一 parse 補上，檔案已刪的順手剔除。
+  // 穩態下（所有檔都已入 index）完全不碰 16MB 大檔。
+  const getReplayList = (limit?: number): ReplaySummary[] => {
+    if (!existsSync(replaysDir)) return [];
+    const files = readdirSync(replaysDir).filter((f) => f.endsWith(".json"));
+    const index = loadIndex();
+    const fileSet = new Set(files);
+    let changed = false;
+    for (const f of files) {
+      if (index.has(f)) continue;
+      try {
+        const session = JSON.parse(readFileSync(join(replaysDir, f), "utf8"));
+        index.set(f, summarize(f, session));
+        changed = true;
       } catch (e) {
         console.error(`Failed to parse replay file ${f}:`, e);
       }
     }
-    return list.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    for (const id of [...index.keys()]) {
+      if (!fileSet.has(id)) { index.delete(id); changed = true; }
+    }
+    if (changed) writeIndex(index);
+    const list = [...index.values()].sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
+    return limit && limit > 0 ? list.slice(0, limit) : list;
   };
 
   return {
@@ -275,11 +320,14 @@ function replayApi(root: string): Plugin {
               res.setHeader("Content-Type", "application/json");
               res.end(readFileSync(filePath, "utf8"));
               return;
-            } else {
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify(getReplayList()));
-              return;
             }
+            // 預設只回最近 10 場；?all=1 或 ?limit=N 取更多
+            const all = url.searchParams.get("all") === "1";
+            const limitParam = parseInt(url.searchParams.get("limit") || "", 10);
+            const limit = all ? undefined : (Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 10);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify(getReplayList(limit)));
+            return;
           }
           if (req.method === "POST") {
             let body = "";
@@ -297,6 +345,7 @@ function replayApi(root: string): Plugin {
                 mkdirSync(replaysDir, { recursive: true });
                 const filePath = join(replaysDir, fileName);
                 writeFileSync(filePath, JSON.stringify(session, null, 2), "utf8");
+                appendFileSync(indexPath, `${JSON.stringify(summarize(fileName, session))}\n`, "utf8");
                 res.setHeader("Content-Type", "application/json");
                 res.end(JSON.stringify({ ok: true, file: fileName }));
               } catch (e) {
@@ -321,6 +370,8 @@ function replayApi(root: string): Plugin {
             if (existsSync(filePath)) {
               unlinkSync(filePath);
             }
+            const index = loadIndex();
+            if (index.delete(id)) writeIndex(index); // 同步剔除 index
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ ok: true }));
             return;
@@ -417,6 +468,13 @@ function humanAnchorApi(root: string): Plugin {
 export default defineConfig({
   base: "/BREAK2.0/",
   plugins: [react(), deckApi(__dirname), replayApi(__dirname), humanAnchorApi(__dirname)],
+  server: {
+    // 這些是可重生產物／執行期大檔（replay dump 累積可達 ~1GB、AB log），
+    // 不是原始碼、也不手改，排除出檔案監看以省啟動負擔與記憶體。
+    watch: {
+      ignored: ["**/data/replays/**", "**/data/ab/**", "**/dist/**"],
+    },
+  },
   test: {
     include: ["src/**/*.test.ts"],
   },

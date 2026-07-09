@@ -1,0 +1,700 @@
+{
+  "schemaVersion": "m8-deck-analyzer-v1",
+  "generatedAt": "2026-07-09T04:00:55.163Z",
+  "config": {
+    "deck": "ユース-合宿精英-優化_名分流單張版",
+    "deckAxes": [
+      "block",
+      "defense",
+      "hybrid"
+    ],
+    "opponents": [
+      "梟谷-第三彈官方",
+      "音駒-音駒-二口干擾",
+      "音駒-音駒-三彈官方",
+      "白鳥沢-三彈優化",
+      "伊達工業-攔網軸改_韋宏"
+    ],
+    "policy": "heuristic-v2",
+    "opponentPolicy": "heuristic-v2",
+    "gamesPerSeat": 15,
+    "seedStart": 1200,
+    "maxSteps": 5000,
+    "preset": "custom"
+  },
+  "staticProfile": {
+    "totalCards": 40,
+    "uniqueCardCount": 16,
+    "characterCount": 32,
+    "eventCount": 8,
+    "eventRatio": 0.2,
+    "positionCounts": {
+      "WS": 16,
+      "MB": 4,
+      "Li": 5,
+      "S": 8
+    },
+    "playableCounts": {
+      "serve": 27,
+      "block": 27,
+      "receive": 32,
+      "toss": 32,
+      "attack": 32
+    },
+    "highParamCounts": {
+      "serve": 4,
+      "block": 11,
+      "receive": 17,
+      "toss": 7,
+      "attack": 0
+    },
+    "averageParams": {
+      "serve": 1.037037037037037,
+      "block": 1.4444444444444444,
+      "receive": 3.03125,
+      "toss": 0.53125,
+      "attack": 1.78125
+    },
+    "roleCoverageBuckets": [
+      0,
+      0,
+      0,
+      5,
+      0,
+      27
+    ],
+    "openingQuality": {
+      "serveStarterRate": 0.4925484188642083,
+      "receiveStarterRate": 0.9737006237006237,
+      "blockStarterRate": 0.8762446657183499,
+      "tossStarterRate": 0.7114491009227851,
+      "attackStarterRate": 0,
+      "servingCoreRate": 0,
+      "receivingCoreRate": 0.7105922290132817
+    },
+    "topRoleCards": {
+      "serve": [
+        {
+          "id": "HV-P03-023",
+          "name": "星海 光来",
+          "count": 4,
+          "value": 4
+        },
+        {
+          "id": "HV-P03-024",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 2
+        },
+        {
+          "id": "HV-P03-022",
+          "name": "宮 侑",
+          "count": 5,
+          "value": 1
+        },
+        {
+          "id": "HV-P03-025",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 1
+        },
+        {
+          "id": "HV-P03-026",
+          "name": "佐久早 聖臣",
+          "count": 1,
+          "value": 1
+        }
+      ],
+      "block": [
+        {
+          "id": "HV-P03-022",
+          "name": "宮 侑",
+          "count": 5,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-027",
+          "name": "佐久早 聖臣",
+          "count": 3,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-030",
+          "name": "千鹿谷 栄吉",
+          "count": 3,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-025",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 2
+        },
+        {
+          "id": "HV-P03-026",
+          "name": "佐久早 聖臣",
+          "count": 1,
+          "value": 2
+        }
+      ],
+      "receive": [
+        {
+          "id": "HV-P03-029",
+          "name": "古森 元也",
+          "count": 2,
+          "value": 6
+        },
+        {
+          "id": "HV-P03-020",
+          "name": "影山 飛雄",
+          "count": 4,
+          "value": 5
+        },
+        {
+          "id": "HV-P03-028",
+          "name": "古森 元也",
+          "count": 3,
+          "value": 5
+        },
+        {
+          "id": "HV-P03-021",
+          "name": "宮 侑",
+          "count": 2,
+          "value": 5
+        },
+        {
+          "id": "HV-P03-024",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 5
+        }
+      ],
+      "toss": [
+        {
+          "id": "HV-P03-022",
+          "name": "宮 侑",
+          "count": 5,
+          "value": 2
+        },
+        {
+          "id": "HV-P03-025",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 2
+        },
+        {
+          "id": "HV-P03-021",
+          "name": "宮 侑",
+          "count": 2,
+          "value": 1
+        },
+        {
+          "id": "HV-PR-059",
+          "name": "宮・古森",
+          "count": 1,
+          "value": 1
+        },
+        {
+          "id": "HV-P03-020",
+          "name": "影山 飛雄",
+          "count": 4,
+          "value": 0
+        }
+      ],
+      "attack": [
+        {
+          "id": "HV-P03-027",
+          "name": "佐久早 聖臣",
+          "count": 3,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-030",
+          "name": "千鹿谷 栄吉",
+          "count": 3,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-025",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-024",
+          "name": "星海 光来",
+          "count": 2,
+          "value": 3
+        },
+        {
+          "id": "HV-P03-026",
+          "name": "佐久早 聖臣",
+          "count": 1,
+          "value": 3
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "games": 150,
+    "completed": 150,
+    "winRate": 0.5133333333333333,
+    "winRate95": {
+      "low": 0.43401648564502837,
+      "high": 0.5919842839777524
+    },
+    "setWinRate": 0.5210608424336973,
+    "averageRalliesPerSet": 5.28393135725429,
+    "averageOp": 3.7985932491229626,
+    "averageServeOp": 2.7002571639840367,
+    "averageBlockOp": 0,
+    "averageAttackOp": 4.470232639332411,
+    "burstRate": 0.2857036610728589,
+    "averageDp": 5.082414133687887,
+    "receiveSuccessRate": 0.9975757575757576,
+    "blockSuccessRate": 0.9833333333333333,
+    "eventUsesPerMatch": 6.386666666666667,
+    "eventEffectiveRate": 0.897263705610622,
+    "eventDrawsPerMatch": 5.493333333333333,
+    "eventPointModsPerMatch": 7.12,
+    "eventDeploysPerMatch": 0,
+    "skillUsesPerMatch": 0.6866666666666666,
+    "skillEffectiveRate": 0,
+    "paidGutsPerMatch": 2.66,
+    "gutsPaidBySourcePerMatch": {
+      "serve": 0,
+      "receive": 0.10666666666666667,
+      "toss": 1.96,
+      "attack": 0.5866666666666667,
+      "blockCenter": 0.006666666666666667
+    },
+    "emptyDrawsPerMatch": 0.64,
+    "mulliganRate": 0.3933333333333333,
+    "noDeployLossRate": 0.9869706840390879,
+    "judgeFailLossRate": 0.013029315960912053
+  },
+  "matchups": [
+    {
+      "opponent": "梟谷-第三彈官方",
+      "opponentAxes": [
+        "defense",
+        "hybrid"
+      ],
+      "metrics": {
+        "games": 30,
+        "completed": 30,
+        "winRate": 0.5,
+        "winRate95": {
+          "low": 0.3315385122717376,
+          "high": 0.6684614877282624
+        },
+        "setWinRate": 0.5158730158730159,
+        "averageRalliesPerSet": 4.984126984126984,
+        "averageOp": 4.03921568627451,
+        "averageServeOp": 2.7971014492753623,
+        "averageBlockOp": 0,
+        "averageAttackOp": 4.702247191011236,
+        "burstRate": 0.30337078651685395,
+        "averageDp": 5.265402843601896,
+        "receiveSuccessRate": 1,
+        "blockSuccessRate": 1,
+        "eventUsesPerMatch": 5.433333333333334,
+        "eventEffectiveRate": 0.901840490797546,
+        "eventDrawsPerMatch": 4.833333333333333,
+        "eventPointModsPerMatch": 6.1,
+        "eventDeploysPerMatch": 0,
+        "skillUsesPerMatch": 0.7666666666666667,
+        "skillEffectiveRate": 0,
+        "paidGutsPerMatch": 2.2,
+        "gutsPaidBySourcePerMatch": {
+          "serve": 0,
+          "receive": 0,
+          "toss": 1.9,
+          "attack": 0.3,
+          "blockCenter": 0
+        },
+        "emptyDrawsPerMatch": 0.23333333333333334,
+        "mulliganRate": 0.36666666666666664,
+        "noDeployLossRate": 1,
+        "judgeFailLossRate": 0
+      },
+      "targetLostReasons": {
+        "no-deploy": 61
+      },
+      "opponentLostReasons": {
+        "no-deploy": 65
+      },
+      "seats": [
+        {
+          "seat": 0,
+          "games": 15,
+          "completed": 15,
+          "wins": 7,
+          "winRate": 0.4666666666666667,
+          "averageRalliesPerSet": 5
+        },
+        {
+          "seat": 1,
+          "games": 15,
+          "completed": 15,
+          "wins": 8,
+          "winRate": 0.5333333333333333,
+          "averageRalliesPerSet": 4.96875
+        }
+      ],
+      "diagnosis": [
+        "對 梟谷-第三彈官方 接近五五開，勝率 50%，需要更多場次或 holdout seed 判斷。",
+        "主要失 Set 來源是「未能登場而 Lost」（61 次），這是優先調整方向。"
+      ]
+    },
+    {
+      "opponent": "音駒-音駒-二口干擾",
+      "opponentAxes": [
+        "hybrid"
+      ],
+      "metrics": {
+        "games": 30,
+        "completed": 30,
+        "winRate": 0.3333333333333333,
+        "winRate95": {
+          "low": 0.19230295526846194,
+          "high": 0.5122027418616973
+        },
+        "setWinRate": 0.4552238805970149,
+        "averageRalliesPerSet": 5.641791044776119,
+        "averageOp": 3.6742671009771986,
+        "averageServeOp": 2.6923076923076925,
+        "averageBlockOp": 0,
+        "averageAttackOp": 4.1615720524017465,
+        "burstRate": 0.2445414847161572,
+        "averageDp": 4.960132890365449,
+        "receiveSuccessRate": 1,
+        "blockSuccessRate": 1,
+        "eventUsesPerMatch": 7.066666666666666,
+        "eventEffectiveRate": 0.910377358490566,
+        "eventDrawsPerMatch": 6.133333333333334,
+        "eventPointModsPerMatch": 7.9,
+        "eventDeploysPerMatch": 0,
+        "skillUsesPerMatch": 0.7333333333333333,
+        "skillEffectiveRate": 0,
+        "paidGutsPerMatch": 2.7,
+        "gutsPaidBySourcePerMatch": {
+          "serve": 0,
+          "receive": 0.13333333333333333,
+          "toss": 2.033333333333333,
+          "attack": 0.5333333333333333,
+          "blockCenter": 0
+        },
+        "emptyDrawsPerMatch": 0.9333333333333333,
+        "mulliganRate": 0.38333333333333336,
+        "noDeployLossRate": 1,
+        "judgeFailLossRate": 0
+      },
+      "targetLostReasons": {
+        "no-deploy": 73
+      },
+      "opponentLostReasons": {
+        "no-deploy": 61
+      },
+      "seats": [
+        {
+          "seat": 0,
+          "games": 15,
+          "completed": 15,
+          "wins": 4,
+          "winRate": 0.26666666666666666,
+          "averageRalliesPerSet": 5.6231884057971016
+        },
+        {
+          "seat": 1,
+          "games": 15,
+          "completed": 15,
+          "wins": 6,
+          "winRate": 0.4,
+          "averageRalliesPerSet": 5.661538461538462
+        }
+      ],
+      "diagnosis": [
+        "對 音駒-音駒-二口干擾 明顯吃虧，勝率 33%，應優先檢查這個對局是卡在登場、判定，還是資源支付。",
+        "主要失 Set 來源是「未能登場而 Lost」（73 次），這是優先調整方向。"
+      ]
+    },
+    {
+      "opponent": "音駒-音駒-三彈官方",
+      "opponentAxes": [
+        "defense",
+        "hybrid"
+      ],
+      "metrics": {
+        "games": 30,
+        "completed": 30,
+        "winRate": 0.8,
+        "winRate95": {
+          "low": 0.6269395261897257,
+          "high": 0.9049502189759876
+        },
+        "setWinRate": 0.6507936507936508,
+        "averageRalliesPerSet": 5.285714285714286,
+        "averageOp": 3.7017543859649122,
+        "averageServeOp": 2.6575342465753424,
+        "averageBlockOp": 0,
+        "averageAttackOp": 4.438144329896907,
+        "burstRate": 0.30927835051546393,
+        "averageDp": 5.31404958677686,
+        "receiveSuccessRate": 1,
+        "blockSuccessRate": 1,
+        "eventUsesPerMatch": 6.533333333333333,
+        "eventEffectiveRate": 0.9081632653061225,
+        "eventDrawsPerMatch": 5.7,
+        "eventPointModsPerMatch": 7.166666666666667,
+        "eventDeploysPerMatch": 0,
+        "skillUsesPerMatch": 0.6333333333333333,
+        "skillEffectiveRate": 0,
+        "paidGutsPerMatch": 2.5,
+        "gutsPaidBySourcePerMatch": {
+          "serve": 0,
+          "receive": 0,
+          "toss": 1.9,
+          "attack": 0.6,
+          "blockCenter": 0
+        },
+        "emptyDrawsPerMatch": 0.6,
+        "mulliganRate": 0.38333333333333336,
+        "noDeployLossRate": 1,
+        "judgeFailLossRate": 0
+      },
+      "targetLostReasons": {
+        "no-deploy": 44
+      },
+      "opponentLostReasons": {
+        "no-deploy": 82
+      },
+      "seats": [
+        {
+          "seat": 0,
+          "games": 15,
+          "completed": 15,
+          "wins": 11,
+          "winRate": 0.7333333333333333,
+          "averageRalliesPerSet": 5.424242424242424
+        },
+        {
+          "seat": 1,
+          "games": 15,
+          "completed": 15,
+          "wins": 13,
+          "winRate": 0.8666666666666667,
+          "averageRalliesPerSet": 5.133333333333334
+        }
+      ],
+      "diagnosis": [
+        "對 音駒-音駒-三彈官方 目前有優勢，勝率 80%，可用作調整後的保留基準。",
+        "主要失 Set 來源是「未能登場而 Lost」（44 次），這是優先調整方向。"
+      ]
+    },
+    {
+      "opponent": "白鳥沢-三彈優化",
+      "opponentAxes": [
+        "defense",
+        "hybrid"
+      ],
+      "metrics": {
+        "games": 30,
+        "completed": 30,
+        "winRate": 0.5666666666666667,
+        "winRate95": {
+          "low": 0.39197009545408734,
+          "high": 0.7262276256938489
+        },
+        "setWinRate": 0.5409836065573771,
+        "averageRalliesPerSet": 4.549180327868853,
+        "averageOp": 3.83710407239819,
+        "averageServeOp": 2.6769230769230767,
+        "averageBlockOp": 0,
+        "averageAttackOp": 4.680555555555555,
+        "burstRate": 0.2916666666666667,
+        "averageDp": 5.361581920903955,
+        "receiveSuccessRate": 0.9878787878787879,
+        "blockSuccessRate": 1,
+        "eventUsesPerMatch": 5.233333333333333,
+        "eventEffectiveRate": 0.8789808917197452,
+        "eventDrawsPerMatch": 4.566666666666666,
+        "eventPointModsPerMatch": 5.966666666666667,
+        "eventDeploysPerMatch": 0,
+        "skillUsesPerMatch": 0.3333333333333333,
+        "skillEffectiveRate": 0,
+        "paidGutsPerMatch": 1.7,
+        "gutsPaidBySourcePerMatch": {
+          "serve": 0,
+          "receive": 0.1,
+          "toss": 1.2,
+          "attack": 0.4,
+          "blockCenter": 0
+        },
+        "emptyDrawsPerMatch": 0.03333333333333333,
+        "mulliganRate": 0.4,
+        "noDeployLossRate": 0.9642857142857143,
+        "judgeFailLossRate": 0.03571428571428571
+      },
+      "targetLostReasons": {
+        "no-deploy": 54,
+        "judge-fail": 2
+      },
+      "opponentLostReasons": {
+        "no-deploy": 66
+      },
+      "seats": [
+        {
+          "seat": 0,
+          "games": 15,
+          "completed": 15,
+          "wins": 9,
+          "winRate": 0.6,
+          "averageRalliesPerSet": 4.435483870967742
+        },
+        {
+          "seat": 1,
+          "games": 15,
+          "completed": 15,
+          "wins": 8,
+          "winRate": 0.5333333333333333,
+          "averageRalliesPerSet": 4.666666666666667
+        }
+      ],
+      "diagnosis": [
+        "對 白鳥沢-三彈優化 接近五五開，勝率 57%，需要更多場次或 holdout seed 判斷。",
+        "主要失 Set 來源是「未能登場而 Lost」（54 次），這是優先調整方向。"
+      ]
+    },
+    {
+      "opponent": "伊達工業-攔網軸改_韋宏",
+      "opponentAxes": [
+        "block",
+        "defense",
+        "hybrid"
+      ],
+      "metrics": {
+        "games": 30,
+        "completed": 30,
+        "winRate": 0.36666666666666664,
+        "winRate95": {
+          "low": 0.21873702204017684,
+          "high": 0.5448675356639506
+        },
+        "setWinRate": 0.45112781954887216,
+        "averageRalliesPerSet": 5.879699248120301,
+        "averageOp": 3.740625,
+        "averageServeOp": 2.6774193548387095,
+        "averageBlockOp": 0,
+        "averageAttackOp": 4.36864406779661,
+        "burstRate": 0.2796610169491525,
+        "averageDp": 4.510903426791277,
+        "receiveSuccessRate": 1,
+        "blockSuccessRate": 0.9166666666666666,
+        "eventUsesPerMatch": 7.666666666666667,
+        "eventEffectiveRate": 0.8869565217391304,
+        "eventDrawsPerMatch": 6.233333333333333,
+        "eventPointModsPerMatch": 8.466666666666667,
+        "eventDeploysPerMatch": 0,
+        "skillUsesPerMatch": 0.9666666666666667,
+        "skillEffectiveRate": 0,
+        "paidGutsPerMatch": 4.2,
+        "gutsPaidBySourcePerMatch": {
+          "serve": 0,
+          "receive": 0.3,
+          "toss": 2.7666666666666666,
+          "attack": 1.1,
+          "blockCenter": 0.03333333333333333
+        },
+        "emptyDrawsPerMatch": 1.4,
+        "mulliganRate": 0.43333333333333335,
+        "noDeployLossRate": 0.9726027397260274,
+        "judgeFailLossRate": 0.0273972602739726
+      },
+      "targetLostReasons": {
+        "no-deploy": 71,
+        "judge-fail": 2
+      },
+      "opponentLostReasons": {
+        "no-deploy": 60
+      },
+      "seats": [
+        {
+          "seat": 0,
+          "games": 15,
+          "completed": 15,
+          "wins": 4,
+          "winRate": 0.26666666666666666,
+          "averageRalliesPerSet": 5.838235294117647
+        },
+        {
+          "seat": 1,
+          "games": 15,
+          "completed": 15,
+          "wins": 7,
+          "winRate": 0.4666666666666667,
+          "averageRalliesPerSet": 5.923076923076923
+        }
+      ],
+      "diagnosis": [
+        "對 伊達工業-攔網軸改_韋宏 明顯吃虧，勝率 37%，應優先檢查這個對局是卡在登場、判定，還是資源支付。",
+        "主要失 Set 來源是「未能登場而 Lost」（71 次），這是優先調整方向。",
+        "每場平均支付 4.20 Guts，注意是否把後續需要登場的區域資源先付掉。"
+      ]
+    }
+  ],
+  "gameplan": [
+    "主要計畫偏防守：用 接球/攔網 覆蓋延長 rally，讓對手在判定或登場資源上失誤。",
+    "混合型 gameplan：五區覆蓋較平均，重點是維持起手角色線與事件/技能的節奏，不把單一區域資源過早耗光。",
+    "目前模擬整體勝率 51%，Set 取得率 52%，平均每 Set 5.28 次 rally。"
+  ],
+  "weaknesses": [
+    {
+      "code": "thin-edge",
+      "severity": "watch",
+      "label": "勝率優勢不明顯",
+      "detail": "目前結果接近五五開，後續比較 A/B 版本時需要更多場次確認。",
+      "evidence": "Match勝率=51%"
+    },
+    {
+      "code": "no-deploy-loss",
+      "severity": "risk",
+      "label": "未能登場而 Lost",
+      "detail": "Lost 有明顯比例來自該階段沒有可登場角色，優先檢查角色密度與發球/接球/托球/攻擊區域覆蓋。",
+      "evidence": "失Set中未能登場比例=99%"
+    },
+    {
+      "code": "deck-empty-draw",
+      "severity": "watch",
+      "label": "牌組耗竭訊號",
+      "detail": "模擬中出現牌組空抽，長 rally 或抽牌效果可能讓資源風險上升。",
+      "evidence": "平均空抽=0.64 次/場"
+    }
+  ],
+  "brickSources": [
+    {
+      "code": "no-deploy-loss",
+      "severity": "risk",
+      "label": "未能登場而 Lost",
+      "detail": "Lost 有明顯比例來自該階段沒有可登場角色，優先檢查角色密度與發球/接球/托球/攻擊區域覆蓋。",
+      "evidence": "失Set中未能登場比例=99%"
+    },
+    {
+      "code": "event-density-high",
+      "severity": "watch",
+      "label": "事件密度接近上限",
+      "detail": "事件卡已達或接近 8 張上限，若角色線偏薄會放大卡手。",
+      "evidence": "事件=8, 角色=32"
+    },
+    {
+      "code": "serving-open-low",
+      "severity": "watch",
+      "label": "先攻起手線偏薄",
+      "detail": "同時摸到高發球與基本攻擊線的機率偏低。",
+      "evidence": "先攻核心起手率=0%"
+    }
+  ],
+  "recommendations": [
+    "提高低點但可登場角色的密度，或降低過度依賴單一卡名/位置的比例。"
+  ]
+}
