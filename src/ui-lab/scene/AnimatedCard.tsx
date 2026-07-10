@@ -3,7 +3,7 @@
 // 動畫全在 useFrame 命令式跑，不經 React state——目標改變才觸發 re-render。
 
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
-import { useRef } from "react";
+import { Suspense, useRef } from "react";
 import * as THREE from "three";
 import { CardMesh } from "./CardMesh";
 import type { CardPlacement } from "./placements";
@@ -15,6 +15,8 @@ export interface AnimatedCardProps {
   placement: CardPlacement;
   /** 可拖曳提示：微升＋底光脈動 */
   highlighted?: boolean;
+  /** hover 拉出（手牌檢視）：明顯上抬＋拉向鏡頭＋放大 */
+  hovered?: boolean;
   /** 拖曳中：跟隨 dragPoint（mutable ref，pointer move 直寫、不觸發 render） */
   dragging?: boolean;
   dragPoint?: React.RefObject<THREE.Vector3>;
@@ -56,6 +58,9 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
       tx = dp.x;
       ty = DRAG_Y;
       tz = dp.z;
+    } else if (props.hovered) {
+      ty += 0.55;
+      tz -= 0.5;
     } else if (props.highlighted) {
       ty += 0.16;
       tz -= 0.1;
@@ -99,7 +104,7 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
 
     g.position.set(c.x, c.y + arc, c.z);
     g.rotation.copy(rot.current);
-    const s = damp(g.scale.x, props.dragging ? 1.07 : 1, 12, dt);
+    const s = damp(g.scale.x, props.dragging ? 1.07 : props.hovered ? 1.12 : 1, 12, dt);
     g.scale.setScalar(s);
 
     if (glowMat.current) {
@@ -110,15 +115,18 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
 
   return (
     <group ref={group} position={props.spawnFrom ?? props.placement.position} rotation={props.placement.rotation}>
-      <CardMesh
-        frontUrl={props.placement.frontUrl}
-        backUrl={props.placement.backUrl}
-        faceUp={props.placement.faceUp}
-        position={[0, 0, 0]}
-        onPointerDown={props.onPointerDown}
-        onPointerOver={props.onPointerOver}
-        onPointerOut={props.onPointerOut}
-      />
+      {/* 卡內 Suspense：新卡貼圖載入只讓「這張卡」晚一拍出現，不觸發外層 fallback 整場閃黑 */}
+      <Suspense fallback={null}>
+        <CardMesh
+          frontUrl={props.placement.frontUrl}
+          backUrl={props.placement.backUrl}
+          faceUp={props.placement.faceUp}
+          position={[0, 0, 0]}
+          onPointerDown={props.onPointerDown}
+          onPointerOver={props.onPointerOver}
+          onPointerOut={props.onPointerOut}
+        />
+      </Suspense>
       {/* 可拖曳底光（不動 CardMesh 材質，疊一片脈動平面） */}
       <mesh position={[0, -0.018, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[1.24, 1.66]} />

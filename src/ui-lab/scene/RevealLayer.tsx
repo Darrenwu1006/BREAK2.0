@@ -29,7 +29,7 @@ export function RevealLayer(props: { reveal: RevealView }): React.JSX.Element {
       {judge && (
         <Html position={[0, 2.3, 0]} center style={{ pointerEvents: "none" }}>
           <div className={judge.success ? styles.judgeHold : styles.judgeBreak}>
-            {judge.success ? (judge.defense === "block" ? "ブロック成功！" : "レシーブ成功！") : "突破！！"}
+            {judge.success ? (judge.defense === "block" ? "攔網成功！" : "接球成功！") : "突破！！"}
           </div>
         </Html>
       )}

@@ -32,7 +32,7 @@ describe("renderEventText", () => {
   });
 
   it("判定揭示三拍與 Lost/Set 結果都有人讀文字", () => {
-    expect(renderEventText(db, { kind: "op-revealed", player: 0, source: "serve", value: 3 })).toBe("P0 OP 亮出＝3（serve）");
+    expect(renderEventText(db, { kind: "op-revealed", player: 0, source: "serve", value: 3 })).toBe("P0 OP 亮出＝3（發球）");
     expect(renderEventText(db, { kind: "judge-revealed", defense: "receive", defender: 1, opValue: 3, dpValue: 2, success: false })).toContain("防守失敗");
     expect(renderEventText(db, { kind: "lost-declared", player: 1 })).toContain("Lost");
     expect(renderEventText(db, { kind: "set-won", winner: 0, loser: 1, setNo: 1, loserSetRemaining: 1 })).toContain("拿下 Set 1");

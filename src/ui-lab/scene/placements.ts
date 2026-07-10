@@ -138,7 +138,9 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
         player,
       });
     }
-    // 手牌：P0＝面向鏡頭的扇形手托；P1＝遠端蓋牌扇
+    // 手牌：P0＝面向鏡頭的手托——左到右、由下往上疊（右卡壓左卡右緣，
+    // 卡名在左緣故永遠可見）；y 級距 > 卡厚×傾斜投影，杜絕相鄰卡穿模破圖。
+    // P1＝遠端蓋牌扇。
     const handA = zoneAnchor(player, "hand");
     const n = ps.hand.length;
     ps.hand.forEach((uid, i) => {
@@ -149,8 +151,8 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
-          position: [handA.x + t * 0.66, 1.0 + i * 0.012, handA.z - 0.5 + Math.abs(t) * 0.09],
-          rotation: [0.8, -t * 0.04, -t * 0.06],
+          position: [handA.x + t * 0.66, 0.9 + i * 0.05, handA.z - 0.35 + Math.abs(t) * 0.05],
+          rotation: [0.78, -t * 0.03, -t * 0.02],
           zone: "hand",
           player,
         });

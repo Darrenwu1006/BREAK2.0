@@ -10,10 +10,61 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { cardBackUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
-import { AnimatedCard, DRAG_Y } from "./AnimatedCard";
-import { CARD_H, CARD_T, CARD_W, MAT_D, MAT_W, TABLE_D, TABLE_W, zoneAnchor } from "./layout";
+import { AnimatedCard } from "./AnimatedCard";
+import { blockSideAnchor, CARD_H, CARD_T, CARD_W, MAT_D, MAT_W, setAreaAnchor, TABLE_D, TABLE_W, zoneAnchor } from "./layout";
 import type { BoardPlacements } from "./placements";
 
+/** 桌墊卡槽外框（官方對戰桌墊風：極簡細線框） */
+function SlotFrame(props: { x: number; z: number }): React.JSX.Element {
+  const w = CARD_W + 0.22;
+  const h = CARD_H + 0.22;
+  const t = 0.035;
+  const line = <meshBasicMaterial color="#8fa3b5" transparent opacity={0.35} depthWrite={false} />;
+  return (
+    <group position={[props.x, 0.006, props.z]}>
+      <mesh position={[0, 0, -h / 2]}>
+        <boxGeometry args={[w, 0.003, t]} />
+        {line}
+      </mesh>
+      <mesh position={[0, 0, h / 2]}>
+        <boxGeometry args={[w, 0.003, t]} />
+        {line}
+      </mesh>
+      <mesh position={[-w / 2, 0, 0]}>
+        <boxGeometry args={[t, 0.003, h]} />
+        {line}
+      </mesh>
+      <mesh position={[w / 2, 0, 0]}>
+        <boxGeometry args={[t, 0.003, h]} />
+        {line}
+      </mesh>
+    </group>
+  );
+}
+
+/** 單側桌墊的全部卡槽（依 layout 錨點；手牌區不畫槽） */
+function PlayerSlots(props: { player: 0 | 1 }): React.JSX.Element {
+  const p = props.player;
+  const zones: ZoneId[] = ["serve", "receive", "toss", "attack", "blockCenter", "eventArea", "deck", "drop"];
+  return (
+    <group>
+      {zones.map((z) => {
+        const a = zoneAnchor(p, z);
+        return <SlotFrame key={z} x={a.x} z={a.z} />;
+      })}
+      {[0, 1].map((i) => {
+        const a = blockSideAnchor(p, i);
+        return <SlotFrame key={`bs${i}`} x={a.x} z={a.z} />;
+      })}
+      {[0, 1].map((i) => {
+        const a = setAreaAnchor(p, i);
+        return <SlotFrame key={`set${i}`} x={a.x} z={a.z} />;
+      })}
+    </group>
+  );
+}
+
+/** 桌面：木桌＋精品極簡風對戰桌墊（深色底＋細線卡槽＋中線；學校專屬桌墊列後續設計） */
 function Table(): React.JSX.Element {
   return (
     <group>
@@ -22,41 +73,32 @@ function Table(): React.JSX.Element {
         <boxGeometry args={[TABLE_W, 0.06, TABLE_D]} />
         <meshStandardMaterial color="#3d3128" roughness={0.85} />
       </mesh>
-      {/* 球場桌墊（排球場橘＋外圈藍綠） */}
+      {/* 桌墊：深色雙層（外緣一圈微亮的收邊） */}
       <mesh position={[0, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[MAT_W + 2.4, MAT_D + 1.6]} />
-        <meshStandardMaterial color="#1d5f63" roughness={0.92} />
+        <meshStandardMaterial color="#232c36" roughness={0.94} />
       </mesh>
       <mesh position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[MAT_W, MAT_D]} />
-        <meshStandardMaterial color="#c9722e" roughness={0.9} />
+        <planeGeometry args={[MAT_W + 2.1, MAT_D + 1.3]} />
+        <meshStandardMaterial color="#151b22" roughness={0.94} />
       </mesh>
-      {/* 中線與邊線 */}
-      <mesh position={[0, 0.008, 0]}>
-        <boxGeometry args={[MAT_W, 0.002, 0.08]} />
-        <meshStandardMaterial color="#f2ede2" roughness={0.8} />
+      {/* 中線（雙方分界） */}
+      <mesh position={[0, 0.006, 0]}>
+        <boxGeometry args={[MAT_W + 2.1, 0.002, 0.05]} />
+        <meshBasicMaterial color="#8fa3b5" transparent opacity={0.4} depthWrite={false} />
       </mesh>
-      {[-MAT_D / 2, MAT_D / 2].map((z) => (
-        <mesh key={z} position={[0, 0.008, z]}>
-          <boxGeometry args={[MAT_W, 0.002, 0.08]} />
-          <meshStandardMaterial color="#f2ede2" roughness={0.8} />
-        </mesh>
-      ))}
-      {[-MAT_W / 2, MAT_W / 2].map((x) => (
-        <mesh key={x} position={[x, 0.008, 0]}>
-          <boxGeometry args={[0.08, 0.002, MAT_D]} />
-          <meshStandardMaterial color="#f2ede2" roughness={0.8} />
-        </mesh>
-      ))}
-      {/* 網（半透明帶＋兩根柱） */}
-      <mesh position={[0, 0.24, 0]}>
-        <boxGeometry args={[MAT_W + 0.6, 0.34, 0.015]} />
-        <meshStandardMaterial color="#dfe7ea" transparent opacity={0.32} roughness={0.6} depthWrite={false} />
+      {/* 卡槽格線 */}
+      <PlayerSlots player={0} />
+      <PlayerSlots player={1} />
+      {/* 網（保留輕薄一片，暗示排球 DNA） */}
+      <mesh position={[0, 0.2, 0]}>
+        <boxGeometry args={[MAT_W + 1.2, 0.26, 0.012]} />
+        <meshStandardMaterial color="#dfe7ea" transparent opacity={0.16} roughness={0.6} depthWrite={false} />
       </mesh>
-      {[-(MAT_W / 2 + 0.35), MAT_W / 2 + 0.35].map((x) => (
-        <mesh key={x} position={[x, 0.22, 0]}>
-          <cylinderGeometry args={[0.035, 0.045, 0.44, 12]} />
-          <meshStandardMaterial color="#8a8f94" roughness={0.5} metalness={0.4} />
+      {[-(MAT_W / 2 + 0.85), MAT_W / 2 + 0.85].map((x) => (
+        <mesh key={x} position={[x, 0.17, 0]}>
+          <cylinderGeometry args={[0.028, 0.036, 0.34, 12]} />
+          <meshStandardMaterial color="#6d747b" roughness={0.5} metalness={0.4} />
         </mesh>
       ))}
     </group>
@@ -109,6 +151,9 @@ export interface BoardSceneProps {
   draggableUids: ReadonlySet<number>;
   draggingUid: number | null;
   dragPoint: React.RefObject<THREE.Vector3>;
+  /** hover 拉出的手牌 uid（僅 P0 手牌） */
+  hoveredUid: number | null;
+  onCardHover: (uid: number | null) => void;
   /** 合法落區（deploy 目標）；active＝指標在區內 */
   dropZone: { x: number; z: number; active: boolean } | null;
   onCardPointerDown: (uid: number) => void;
@@ -136,6 +181,7 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
       ))}
       {cards.map((p) => {
         const draggable = draggableUids.has(p.uid) && draggingUid === null;
+        const hoverable = p.player === 0 && p.zone === "hand" && draggingUid === null;
         const org = origins.get(p.uid);
         const orgAnchor = org ? zoneAnchor(org.player, org.zone) : null;
         return (
@@ -143,6 +189,7 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
             key={p.uid}
             placement={p}
             highlighted={draggable}
+            hovered={props.hoveredUid === p.uid && hoverable}
             dragging={draggingUid === p.uid}
             dragPoint={dragPoint}
             spawnFrom={orgAnchor ? [orgAnchor.x, 0.5, orgAnchor.z] : undefined}
@@ -154,15 +201,32 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
                   }
                 : undefined
             }
-            onPointerOver={draggable ? () => setCursor("grab") : undefined}
-            onPointerOut={draggable ? () => setCursor("") : undefined}
+            onPointerOver={
+              draggable || hoverable
+                ? (e) => {
+                    e.stopPropagation();
+                    if (draggable) setCursor("grab");
+                    if (hoverable) props.onCardHover(p.uid);
+                  }
+                : undefined
+            }
+            onPointerOut={
+              draggable || hoverable
+                ? () => {
+                    setCursor("");
+                    if (hoverable) props.onCardHover(null);
+                  }
+                : undefined
+            }
           />
         );
       })}
-      {/* 拖曳攔截平面：拖曳中才存在，透明但可被 raycast */}
+      {/* 拖曳攔截平面：貼齊桌面高度——指標落點的 x/z 才等於「畫面上看到的位置」
+          （平面架高會產生視差，拖到發光區放手卻判定不在區內＝先前放不下的主因）；
+          卡牌本身仍浮在 DRAG_Y 高度（AnimatedCard 強制 ty）。 */}
       {draggingUid !== null && (
         <mesh
-          position={[0, DRAG_Y, 0]}
+          position={[0, 0.02, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
           onPointerMove={(e: ThreeEvent<PointerEvent>) => props.onDragMove(e.point.x, e.point.z)}
           onPointerUp={(e: ThreeEvent<PointerEvent>) => {

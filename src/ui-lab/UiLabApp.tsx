@@ -44,10 +44,10 @@ const DEPLOY_ZONE: Record<DeployType, "serve" | "receive" | "toss" | "attack"> =
   "deploy-attack": "attack",
 };
 const DEPLOY_PROMPT: Record<DeployType, string> = {
-  "deploy-serve": "發球登場：拖曳手牌到發光區（不登場＝Lost）",
-  "deploy-receive": "接球登場：拖曳手牌到發光區",
-  "deploy-toss": "托球登場：拖曳手牌到發光區",
-  "deploy-attack": "攻擊登場：拖曳手牌到發光區",
+  "deploy-serve": "發球登場：點擊發亮的手牌直接出牌，或拖曳到發光區（不登場＝Lost）",
+  "deploy-receive": "接球登場：點擊發亮的手牌直接出牌，或拖曳到發光區",
+  "deploy-toss": "托球登場：點擊發亮的手牌直接出牌，或拖曳到發光區",
+  "deploy-attack": "攻擊登場：點擊發亮的手牌直接出牌，或拖曳到發光區",
 };
 
 /** 中央 banner（宣言/得分類事件演出中顯示）；null＝不顯示 */
@@ -56,17 +56,17 @@ function bannerOf(entry: TimelineEntry | null, schools: [string, string]): { tex
   const e = entry.event;
   switch (e.kind) {
     case "skill-declared":
-      return { text: `⚡ スキル：${e.name}`, heavy: false };
+      return { text: `⚡ 技能發動：${e.name}`, heavy: false };
     case "event-played":
-      return { text: `イベント：${e.name}`, heavy: false };
+      return { text: `事件卡：${e.name}`, heavy: false };
     case "defense-chosen":
-      return { text: e.choice === "block" ? "ブロック宣言！" : "レシーブ宣言！", heavy: false };
+      return { text: e.choice === "block" ? "攔網宣言！" : "接球宣言！", heavy: false };
     case "lost-declared":
-      return { text: `${schools[e.player]} Lost…`, heavy: false };
+      return { text: `${schools[e.player]} 宣告 Lost…`, heavy: false };
     case "set-won":
-      return { text: `第 ${e.setNo} セット——${schools[e.winner]} 先取！`, heavy: true };
+      return { text: `第 ${e.setNo} 局——${schools[e.winner]} 拿下！`, heavy: true };
     case "match-won":
-      return { text: `試合終了——${schools[e.winner]} 勝利！`, heavy: true };
+      return { text: `比賽結束——${schools[e.winner]} 獲勝！`, heavy: true };
     default:
       return null;
   }
@@ -83,11 +83,17 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const controller = useMemo(() => new LabGameController(db, [expand(KARASUNO), expand(NEKOMA)], seed), [db, seed]);
   const { view, tick, markPlaying, skip, setSpeed } = usePlayback(controller, db);
 
-  // ---- 互動狀態（拖曳） ----
+  // ---- 互動狀態（拖曳／點擊出牌／hover） ----
   const dragPoint = useRef(new THREE.Vector3());
   const overRef = useRef(false);
+  /** 點擊 vs 拖曳判別：pointerdown 起算時間＋首個拖曳點＋是否已位移 */
+  const dragMeta = useRef({ t: 0, firstX: null as number | null, firstZ: 0, moved: false });
+  /** draggingUid 的同步鏡像：事件 handler 內的判定不能依賴 setState updater
+   *（React 批次會讓 updater 晚於 handler 尾段執行，屆時 overRef 已被重置） */
+  const draggingRef = useRef<number | null>(null);
   const [draggingUid, setDraggingUid] = useState<number | null>(null);
   const [overZone, setOverZone] = useState(false);
+  const [hoveredUid, setHoveredUid] = useState<number | null>(null);
   const [namePick, setNamePick] = useState<{ uid: number; names: string[] } | null>(null);
   const [speed, setSpeedState] = useState(1);
   const [orbit, setOrbit] = useState(false);
@@ -122,13 +128,16 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
     [controller, markPlaying],
   );
 
-  // ---- 拖曳流程 ----
+  // ---- 拖曳／點擊出牌流程 ----
   const beginDrag = useCallback(
     (uid: number): void => {
       const p = placements.cards.get(uid);
       if (p) dragPoint.current.set(p.position[0], p.position[1], p.position[2]);
+      dragMeta.current = { t: performance.now(), firstX: null, firstZ: 0, moved: false };
       overRef.current = false;
+      draggingRef.current = uid;
       setOverZone(false);
+      setHoveredUid(null);
       setDraggingUid(uid);
     },
     [placements],
@@ -137,8 +146,16 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const onDragMove = useCallback(
     (x: number, z: number): void => {
       dragPoint.current.set(x, dragPoint.current.y, z);
+      const m = dragMeta.current;
+      if (m.firstX === null) {
+        m.firstX = x;
+        m.firstZ = z;
+      } else if (!m.moved && Math.hypot(x - m.firstX, z - m.firstZ) > 0.35) {
+        m.moved = true;
+      }
       if (!dropAnchor) return;
       const over = Math.abs(x - dropAnchor.x) < 1.6 && Math.abs(z - dropAnchor.z) < 1.4;
+      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__labDrag = { x, z, over, anchor: dropAnchor };
       if (over !== overRef.current) {
         overRef.current = over;
         setOverZone(over);
@@ -148,17 +165,22 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   );
 
   const endDrag = useCallback((): void => {
+    const uid = draggingRef.current;
+    if (uid === null) return; // 已結束（plane 與 window 保險各觸發一次）
     document.body.style.cursor = "";
-    setDraggingUid((uid) => {
-      if (uid !== null && overRef.current && deployType) {
-        const names = deployNames(db, engine, uid);
-        if (names && names.length > 1) setNamePick({ uid, names });
-        else decide({ type: deployType, uid } as Decision);
-      }
-      return null;
-    });
+    // 出牌成立條件：拖進合法區放手，或「點一下」（未位移的短按＝點擊出牌，觸控板友善）
+    const over = overRef.current;
+    const isClick = !dragMeta.current.moved && performance.now() - dragMeta.current.t < 450;
+    draggingRef.current = null;
     overRef.current = false;
+    setDraggingUid(null);
     setOverZone(false);
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__labEnd = { uid, deployType, over, isClick, at: Date.now() };
+    if (deployType && (over || isClick)) {
+      const names = deployNames(db, engine, uid);
+      if (names && names.length > 1) setNamePick({ uid, names });
+      else decide({ type: deployType, uid } as Decision);
+    }
   }, [db, engine, deployType, decide]);
 
   // 放手在 canvas 外的保險
@@ -181,7 +203,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
       : pd?.type === "defense-choice"
         ? `${opNote}這一 turn 走攔網還是接球？`
         : gameOver
-          ? `試合終了——${engine.winner !== null ? SCHOOLS[engine.winner] : "?"} 勝利`
+          ? `比賽結束——${engine.winner !== null ? SCHOOLS[engine.winner] : "?"} 獲勝`
           : pd
             ? `${pd.prompt ?? pd.type}（AI 代打型別，M9b 補齊）`
             : "";
@@ -205,6 +227,8 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
             draggableUids={draggableUids}
             draggingUid={draggingUid}
             dragPoint={dragPoint}
+            hoveredUid={hoveredUid}
+            onCardHover={setHoveredUid}
             dropZone={dropAnchor && draggingUid !== null ? { x: dropAnchor.x, z: dropAnchor.z, active: overZone } : null}
             onCardPointerDown={beginDrag}
             onDragMove={onDragMove}
@@ -223,7 +247,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
           ui-lab<span className={styles.tag}>M9a 互動切片</span>
         </span>
         <span className={styles.hint}>
-          第 {shown.setNo} セット・turn {shown.turnNo}｜Set 卡 {SCHOOLS[0]} {shown.players[0].setArea.length}－{shown.players[1].setArea.length} {SCHOOLS[1]}
+          第 {shown.setNo} 局・第 {shown.turnNo} 回合｜Set 卡 {SCHOOLS[0]} {shown.players[0].setArea.length}－{shown.players[1].setArea.length} {SCHOOLS[1]}
           <br />
           你＝{SCHOOLS[0]}（近側）。對手與未實裝決策由 AI 代打。
         </span>
@@ -286,10 +310,10 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         {pd?.type === "defense-choice" && (
           <>
             <button className={styles.btn} disabled={!canChooseBlock(engine)} onClick={() => decide({ type: "defense-choice", choice: "block" })}>
-              ブロック
+              攔網
             </button>
             <button className={styles.btn} onClick={() => decide({ type: "defense-choice", choice: "receive" })}>
-              レシーブ
+              接球
             </button>
           </>
         )}

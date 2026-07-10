@@ -31,6 +31,13 @@ const REASON_LABEL: Record<MoveReason, string> = {
   effect: "效果移動",
 };
 
+const SOURCE_LABEL: Record<"serve" | "block" | "attack" | "receive", string> = {
+  serve: "發球",
+  block: "攔網",
+  attack: "攻擊",
+  receive: "接球",
+};
+
 const zoneText = (ref: ZoneRef): string => `P${ref.player} ${ZONE_LABEL[ref.zone]}`;
 
 export function renderEventText(db: CardDb, event: PresentationEvent): string {
@@ -41,9 +48,9 @@ export function renderEventText(db: CardDb, event: PresentationEvent): string {
       return `${name}${face}：${zoneText(event.from)} → ${zoneText(event.to)}【${REASON_LABEL[event.reason]}】`;
     }
     case "op-revealed":
-      return `P${event.player} OP 亮出＝${event.value}（${event.source}）`;
+      return `P${event.player} OP 亮出＝${event.value}（${SOURCE_LABEL[event.source]}）`;
     case "dp-revealed":
-      return `P${event.player} DP 亮出＝${event.value}（${event.source}）`;
+      return `P${event.player} DP 亮出＝${event.value}（${SOURCE_LABEL[event.source]}）`;
     case "judge-revealed":
       return `判定揭示：DP ${event.dpValue} vs OP ${event.opValue} → ${event.success ? "防守成功" : "防守失敗"}（P${event.defender} ${event.defense === "block" ? "攔網" : "接球"}）`;
     case "skill-declared":
@@ -59,7 +66,7 @@ export function renderEventText(db: CardDb, event: PresentationEvent): string {
     case "match-won":
       return `P${event.winner} 獲勝！`;
     case "turn-started":
-      return `── Set ${event.setNo}・Turn ${event.turnNo}（P${event.player}${event.turnKind === "serve" ? "・發球" : ""}）──`;
+      return `── Set ${event.setNo}・回合 ${event.turnNo}（P${event.player}${event.turnKind === "serve" ? "・發球" : ""}）──`;
     case "defense-chosen":
       return `P${event.player} 選擇${event.choice === "block" ? "攔網" : "接球"}`;
     case "decision-requested":
