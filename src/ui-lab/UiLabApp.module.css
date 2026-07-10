@@ -1,0 +1,86 @@
+/* ui-lab 樣式全走 CSS Modules（spec §0：一行都不進 index.css） */
+
+.root {
+  position: fixed;
+  inset: 0;
+  background: #0d1115;
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute !important;
+  inset: 0;
+}
+
+.overlay {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 300px;
+  pointer-events: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(18, 24, 30, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e8edf2;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #c9722e;
+  color: #14100c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hint {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(18, 24, 30, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #aeb9c2;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.link {
+  pointer-events: auto;
+  align-self: flex-start;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: rgba(18, 24, 30, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #8fc7ff;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.link:hover {
+  border-color: #8fc7ff;
+}
+
+.loading {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0d1115;
+  color: #aeb9c2;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+}
