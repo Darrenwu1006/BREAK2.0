@@ -1,19 +1,18 @@
-// M9a 場景組裝：3D 桌面（球場桌墊＋網）＋依 GameState 擺卡。
-// 只讀 state 擺盤（靜態基線）；演出動畫（M9a 下一塊）將由 PresentationTimeline 驅動位移。
+// M9a CP4 場景組裝：3D 桌面＋依 placements（合成視圖）擺卡。
+// CP3 的「直讀 GameState 擺卡」已抽到 placements.ts；本檔只管渲染與互動事件轉發：
+//   - AnimatedCard 對 placement 目標緩動（演出位移由 usePlayback 換 placements 驅動）
+//   - 拖曳：手牌 pointerdown 起手 → 透明攔截平面回報指標點 → 放手回報 drop
+//   - 合法落區高亮（脈動；指標在區內時增強）
 
 import { ContactShadows, useTexture } from "@react-three/drei";
-import { useMemo } from "react";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { Card } from "../../data/types";
-import type { CardDb, GameState, PlayerId } from "../../engine/types";
-import { cardBackUrl, cardFrontUrl } from "../assets";
-import { CardMesh, type CardMeshProps } from "./CardMesh";
-import { blockSideAnchor, CARD_H, CARD_T, CARD_W, MAT_D, MAT_W, setAreaAnchor, TABLE_D, TABLE_W, zoneAnchor } from "./layout";
-
-const STACK_ZONES = ["serve", "blockCenter", "receive", "toss", "attack"] as const;
-
-/** 每 uid 一點固定微旋（弧度），給「人手擺的」物性 */
-const jitter = (uid: number): number => (((uid * 37) % 7) - 3) * 0.006;
+import { cardBackUrl } from "../assets";
+import type { ZoneId } from "../presentation/events";
+import { AnimatedCard, DRAG_Y } from "./AnimatedCard";
+import { CARD_H, CARD_T, CARD_W, MAT_D, MAT_W, TABLE_D, TABLE_W, zoneAnchor } from "./layout";
+import type { BoardPlacements } from "./placements";
 
 function Table(): React.JSX.Element {
   return (
@@ -66,18 +65,17 @@ function Table(): React.JSX.Element {
 
 /** 牌組/棄牌的「厚度」底座：n 張卡的實體疊 */
 function Pile(props: { count: number; topUrl: string | null; position: [number, number, number]; rotY: number }): React.JSX.Element | null {
-  const url = props.topUrl ?? cardBackUrl();
-  const tex = useTexture(url, (t) => {
+  // useTexture 不可條件呼叫：無頂圖（棄牌底疊）以卡背佔位，頂面材質改用素色
+  const tex = useTexture(props.topUrl ?? cardBackUrl(), (t) => {
     const texture = Array.isArray(t) ? t[0]! : t;
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
   });
   const materials = useMemo(() => {
     const edge = new THREE.MeshStandardMaterial({ color: "#d9d2c0", roughness: 0.95 });
-    const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.62 });
-    const bottom = new THREE.MeshStandardMaterial({ color: "#d9d2c0", roughness: 0.95 });
-    return [edge, edge, top, bottom, edge, edge];
-  }, [tex]);
+    const top = props.topUrl ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.62 }) : edge;
+    return [edge, edge, top, edge, edge, edge];
+  }, [tex, props.topUrl]);
   if (props.count <= 0) return null;
   const h = props.count * CARD_T;
   return (
@@ -87,126 +85,44 @@ function Pile(props: { count: number; topUrl: string | null; position: [number, 
   );
 }
 
-function cardOf(db: CardDb, state: GameState, uid: number): Card | undefined {
-  return db.get(state.cards[uid]!);
+/** 合法落區高亮：脈動平面，指標在區內時轉暖色增強 */
+function ZoneGlow(props: { x: number; z: number; active: boolean }): React.JSX.Element {
+  const mat = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame(() => {
+    if (!mat.current) return;
+    const base = props.active ? 0.42 : 0.2;
+    mat.current.opacity = base + 0.1 * Math.sin(performance.now() * 0.006);
+    mat.current.color.set(props.active ? "#ffd45e" : "#59c8ff");
+  });
+  return (
+    <mesh position={[props.x, 0.02, props.z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[CARD_W + 1.1, CARD_H + 0.9]} />
+      <meshBasicMaterial ref={mat} color="#59c8ff" transparent opacity={0.2} depthWrite={false} />
+    </mesh>
+  );
 }
 
-export function BoardScene(props: { db: CardDb; state: GameState; schools: [string | undefined, string | undefined] }): React.JSX.Element {
-  const { db, state, schools } = props;
+export interface BoardSceneProps {
+  placements: BoardPlacements;
+  /** 本批已演移動的卡的來源區（新掛載卡的出生點；抽牌從牌組頂飛出） */
+  origins: ReadonlyMap<number, { player: 0 | 1; zone: ZoneId }>;
+  draggableUids: ReadonlySet<number>;
+  draggingUid: number | null;
+  dragPoint: React.RefObject<THREE.Vector3>;
+  /** 合法落區（deploy 目標）；active＝指標在區內 */
+  dropZone: { x: number; z: number; active: boolean } | null;
+  onCardPointerDown: (uid: number) => void;
+  onDragMove: (x: number, z: number) => void;
+  onDragEnd: () => void;
+}
 
-  const { cards, piles } = useMemo(() => {
-    const cards: (CardMeshProps & { key: string })[] = [];
-    const piles: { key: string; count: number; topUrl: string | null; position: [number, number, number]; rotY: number }[] = [];
+export function BoardScene(props: BoardSceneProps): React.JSX.Element {
+  const { placements, origins, draggableUids, draggingUid, dragPoint } = props;
+  const cards = useMemo(() => [...placements.cards.values()], [placements]);
 
-    for (const player of [0, 1] as const) {
-      const ps = state.players[player];
-      const rotY = player === 0 ? 0 : Math.PI;
-      const back = cardBackUrl(schools[player]);
-      const lift = (level: number): number => CARD_T / 2 + level * CARD_T * 1.15;
-
-      // 疊放區（頂＝キャラ正面、其下ガッツ往網子方向外露）
-      for (const zone of STACK_ZONES) {
-        const stack = ps[zone];
-        const anchor = zoneAnchor(player, zone === "blockCenter" ? "blockCenter" : zone);
-        stack.forEach((uid, depth) => {
-          const fromTop = stack.length - 1 - depth;
-          const peekZ = -0.32 * fromTop * (player === 0 ? 1 : -1);
-          const card = cardOf(db, state, uid);
-          cards.push({
-            key: `c${uid}`,
-            frontUrl: card ? cardFrontUrl(card) : null,
-            backUrl: back,
-            faceUp: true,
-            position: [anchor.x, lift(depth), anchor.z + peekZ],
-            rotation: [0, rotY + jitter(uid), 0],
-          });
-        });
-      }
-      // サイドブロッカー（不疊放、最多 2）
-      ps.blockSides.forEach((uid, i) => {
-        const anchor = blockSideAnchor(player, i);
-        const card = cardOf(db, state, uid);
-        cards.push({
-          key: `c${uid}`,
-          frontUrl: card ? cardFrontUrl(card) : null,
-          backUrl: back,
-          faceUp: true,
-          position: [anchor.x, lift(0), anchor.z],
-          rotation: [0, rotY + jitter(uid), 0],
-        });
-      });
-      // Set 區（背面朝下、兩張並排）
-      ps.setArea.forEach((uid, i) => {
-        const anchor = setAreaAnchor(player, i);
-        cards.push({
-          key: `c${uid}`,
-          frontUrl: null,
-          backUrl: back,
-          faceUp: false,
-          position: [anchor.x, lift(0), anchor.z],
-          rotation: [0, rotY + jitter(uid), 0],
-        });
-      });
-      // 牌組＝厚度疊（卡背朝上）；棄牌＝疊＋頂張正面；事件區＝疊＋頂張正面
-      const deckA = zoneAnchor(player, "deck");
-      piles.push({ key: `deck${player}`, count: ps.deck.length, topUrl: back, position: [deckA.x, 0, deckA.z], rotY });
-      const dropA = zoneAnchor(player, "drop");
-      if (ps.drop.length > 1) piles.push({ key: `drop${player}`, count: ps.drop.length - 1, topUrl: null, position: [dropA.x, 0, dropA.z], rotY });
-      const dropTop = ps.drop[ps.drop.length - 1];
-      if (dropTop !== undefined) {
-        const card = cardOf(db, state, dropTop);
-        cards.push({
-          key: `c${dropTop}`,
-          frontUrl: card ? cardFrontUrl(card) : null,
-          backUrl: back,
-          faceUp: true,
-          position: [dropA.x, (ps.drop.length - 1) * CARD_T + CARD_T / 2, dropA.z],
-          rotation: [0, rotY + jitter(dropTop), 0],
-        });
-      }
-      const evA = zoneAnchor(player, "eventArea");
-      if (ps.eventArea.length > 1) piles.push({ key: `ev${player}`, count: ps.eventArea.length - 1, topUrl: null, position: [evA.x, 0, evA.z], rotY });
-      const evTop = ps.eventArea[ps.eventArea.length - 1];
-      if (evTop !== undefined) {
-        const card = cardOf(db, state, evTop);
-        cards.push({
-          key: `c${evTop}`,
-          frontUrl: card ? cardFrontUrl(card) : null,
-          backUrl: back,
-          faceUp: true,
-          position: [evA.x, (ps.eventArea.length - 1) * CARD_T + CARD_T / 2, evA.z],
-          rotation: [0, rotY + jitter(evTop), 0],
-        });
-      }
-      // 手牌：P0＝面向鏡頭的扇形手托；P1＝遠端蓋牌扇
-      const handA = zoneAnchor(player, "hand");
-      const n = ps.hand.length;
-      ps.hand.forEach((uid, i) => {
-        const t = n > 1 ? i - (n - 1) / 2 : 0;
-        if (player === 0) {
-          const card = cardOf(db, state, uid);
-          cards.push({
-            key: `c${uid}`,
-            frontUrl: card ? cardFrontUrl(card) : null,
-            backUrl: back,
-            faceUp: true,
-            position: [handA.x + t * 0.66, 1.0 + i * 0.012, handA.z - 0.5 + Math.abs(t) * 0.09],
-            rotation: [0.8, -t * 0.04, -t * 0.06],
-          });
-        } else {
-          cards.push({
-            key: `c${uid}`,
-            frontUrl: null,
-            backUrl: back,
-            faceUp: false,
-            position: [handA.x - t * 0.48, CARD_T / 2 + i * CARD_T * 0.5, handA.z],
-            rotation: [0, rotY + t * 0.04, 0],
-          });
-        }
-      });
-    }
-    return { cards, piles };
-  }, [db, state, schools]);
+  const setCursor = (c: string) => {
+    document.body.style.cursor = c;
+  };
 
   return (
     <group>
@@ -214,12 +130,50 @@ export function BoardScene(props: { db: CardDb; state: GameState; schools: [stri
       <directionalLight position={[4, 11, 7]} intensity={1.35} />
       <directionalLight position={[-6, 6, -4]} intensity={0.35} />
       <Table />
-      {piles.map(({ key, ...p }) => (
+      {props.dropZone && <ZoneGlow x={props.dropZone.x} z={props.dropZone.z} active={props.dropZone.active} />}
+      {placements.piles.map(({ key, ...p }) => (
         <Pile key={key} {...p} />
       ))}
-      {cards.map(({ key, ...c }) => (
-        <CardMesh key={key} {...c} />
-      ))}
+      {cards.map((p) => {
+        const draggable = draggableUids.has(p.uid) && draggingUid === null;
+        const org = origins.get(p.uid);
+        const orgAnchor = org ? zoneAnchor(org.player, org.zone) : null;
+        return (
+          <AnimatedCard
+            key={p.uid}
+            placement={p}
+            highlighted={draggable}
+            dragging={draggingUid === p.uid}
+            dragPoint={dragPoint}
+            spawnFrom={orgAnchor ? [orgAnchor.x, 0.5, orgAnchor.z] : undefined}
+            onPointerDown={
+              draggable
+                ? (e) => {
+                    e.stopPropagation();
+                    props.onCardPointerDown(p.uid);
+                  }
+                : undefined
+            }
+            onPointerOver={draggable ? () => setCursor("grab") : undefined}
+            onPointerOut={draggable ? () => setCursor("") : undefined}
+          />
+        );
+      })}
+      {/* 拖曳攔截平面：拖曳中才存在，透明但可被 raycast */}
+      {draggingUid !== null && (
+        <mesh
+          position={[0, DRAG_Y, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          onPointerMove={(e: ThreeEvent<PointerEvent>) => props.onDragMove(e.point.x, e.point.z)}
+          onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+            e.stopPropagation();
+            props.onDragEnd();
+          }}
+        >
+          <planeGeometry args={[120, 120]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      )}
       <ContactShadows position={[0, 0.012, 0]} opacity={0.45} scale={22} blur={2.2} far={3.2} resolution={512} />
     </group>
   );

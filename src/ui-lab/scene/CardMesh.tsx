@@ -2,6 +2,7 @@
 // 圓角輪廓屬 M9a 手感迭代的質地項，基線先用直角盒（換幾何不動 props 契約）。
 
 import { useTexture } from "@react-three/drei";
+import type { ThreeEvent } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
 import { CARD_H, CARD_T, CARD_W } from "./layout";
@@ -16,6 +17,9 @@ export interface CardMeshProps {
   position: [number, number, number];
   /** 弧度；P1 的卡通常 rotY=π（面向對手） */
   rotation?: [number, number, number];
+  onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
+  onPointerOver?: (e: ThreeEvent<PointerEvent>) => void;
+  onPointerOut?: (e: ThreeEvent<PointerEvent>) => void;
 }
 
 export function CardMesh(props: CardMeshProps): React.JSX.Element {
@@ -38,7 +42,14 @@ export function CardMesh(props: CardMeshProps): React.JSX.Element {
   }, [front, back, props.faceUp, props.frontUrl]);
 
   return (
-    <mesh position={props.position} rotation={props.rotation ?? [0, 0, 0]} material={materials}>
+    <mesh
+      position={props.position}
+      rotation={props.rotation ?? [0, 0, 0]}
+      material={materials}
+      onPointerDown={props.onPointerDown}
+      onPointerOver={props.onPointerOver}
+      onPointerOut={props.onPointerOut}
+    >
       <boxGeometry args={[CARD_W, CARD_T, CARD_H]} />
     </mesh>
   );
