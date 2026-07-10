@@ -260,7 +260,13 @@ export type GameEvent =
   | { kind: "op-calc"; player: PlayerId; source: "serve" | "block" | "attack"; value: number }
   | { kind: "pay-guts"; player: PlayerId; count: number; sources: Partial<Record<"serve" | "receive" | "toss" | "attack" | "blockCenter", number>> }
   | { kind: "set-won"; winner: PlayerId; loser: PlayerId; setNo: number; loserSetRemaining: number }
-  | { kind: "match-won"; winner: PlayerId; loser: PlayerId; setNo: number };
+  | { kind: "match-won"; winner: PlayerId; loser: PlayerId; setNo: number }
+  // ---- M9 演出事件層的結構化錨點（附掛於既有 log 行；search mode 整包抑制，無效能影響）----
+  | { kind: "dp-calc"; player: PlayerId; source: "block" | "receive"; value: number }
+  | { kind: "judge"; defender: PlayerId; defense: "block" | "receive"; opValue: number; dpValue: number; success: boolean }
+  | { kind: "skill-used"; player: PlayerId; uid: number }
+  | { kind: "event-card"; player: PlayerId; uid: number }
+  | { kind: "skill-resolved"; player: PlayerId; uid: number };
 
 export interface GameState {
   rngState: number;

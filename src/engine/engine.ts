@@ -357,7 +357,7 @@ function calcDp(db: CardDb, state: GameState): void {
     value = u !== null ? (effParam(db, state, u, "receive") ?? 0) : 0;
     state.dp = { value, owner: p, source: "receive" };
   }
-  log(state, p, `DP 算出 = ${value}`);
+  log(state, p, `DP 算出 = ${value}`, { kind: "dp-calc", player: p, source: state.phase === "block" ? "block" : "receive", value });
 }
 
 /** ジャッジ①：比較（†5-15；消滅與 Lost 在後續子步驟，期間跑 CP） */
@@ -377,7 +377,14 @@ function judgeCompare(state: GameState): void {
       }
     }
   }
-  log(state, state.turnPlayer, `判定：DP ${dp?.value ?? 0} vs OP ${opValue} → ${state.judgeSuccess ? "成功" : "失敗"}`);
+  log(state, state.turnPlayer, `判定：DP ${dp?.value ?? 0} vs OP ${opValue} → ${state.judgeSuccess ? "成功" : "失敗"}`, {
+    kind: "judge",
+    defender: state.turnPlayer,
+    defense: state.phase === "block" ? "block" : "receive",
+    opValue,
+    dpValue: dp?.value ?? 0,
+    success: state.judgeSuccess === true,
+  });
 }
 
 /**

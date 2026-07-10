@@ -776,7 +776,7 @@ export function startPendingItem(db: CardDb, state: GameState, id: number): void
       desc: item.desc,
     };
   }
-  log(state, item.player, `解決：${item.desc}`);
+  log(state, item.player, `解決：${item.desc}`, { kind: "skill-resolved", player: item.player, uid: item.source });
 }
 
 // ---------- 自由步驟選項 †5-14 ----------
@@ -854,7 +854,7 @@ export function useSkill(db: CardDb, state: GameState, uid: number, skillIndex: 
   if (!opts.skills.some((s) => s.uid === uid && s.skillIndex === skillIndex)) throw new Error("該技能目前不可使用");
   const p = state.turnPlayer;
   const skill = effectDefOf(db, state, uid)!.skills[skillIndex]! as Extract<SkillDef, { kind: "active" }>;
-  log(state, p, `使用 ${nameOf(db, state, uid)} 的技能`);
+  log(state, p, `使用 ${nameOf(db, state, uid)} 的技能`, { kind: "skill-used", player: p, uid });
   if (skill.costs?.some((c) => c.type === "dropSelf")) {
     removeFromHand(state, p, uid);
     state.players[p].drop.push(uid);
@@ -885,7 +885,7 @@ export function playEvent(db: CardDb, state: GameState, uid: number): void {
   const p = state.turnPlayer;
   removeFromHand(state, p, uid);
   state.players[p].eventArea.push(uid);
-  log(state, p, `打出事件卡 ${nameOf(db, state, uid)}`);
+  log(state, p, `打出事件卡 ${nameOf(db, state, uid)}`, { kind: "event-card", player: p, uid });
   if (isSkillInvalid(db, state, p, uid)) {
     log(state, p, `${nameOf(db, state, uid)} 的技能已被ターン1無效化，不發生效果`);
     enqueueEventPlayed(db, state, p, uid);
