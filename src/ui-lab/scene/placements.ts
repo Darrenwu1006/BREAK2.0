@@ -21,6 +21,11 @@ export interface CardPlacement {
   rotation: [number, number, number];
   zone: ZoneId;
   player: PlayerId;
+  /** hover 拉出的安全位移（沿卡面內方向——與相鄰卡保持平行平面，幾何上不可能相交）。
+   *  沒給的卡用 AnimatedCard 的預設世界座標抬升（平放卡安全）。 */
+  hoverOffset?: [number, number, number];
+  /** highlighted（可拖曳提示）的安全位移，語意同上 */
+  highlightOffset?: [number, number, number];
 }
 
 export interface PilePlacement {
@@ -50,8 +55,12 @@ export const HAND_SPAN = 4.6;
 export const HAND_MAX_STEP = 0.72;
 /** 中央弧高（沿卡面內方向，不影響疊序） */
 export const HAND_ARC = 0.2;
-/** 相鄰卡沿卡面法線的間距：> CARD_T＋rotY/rotZ 差異在卡緣造成的擺動（≈0.013），保證不相交 */
+/** 相鄰卡沿卡面法線的間距：rotY=0 後手牌是嚴格平行平面族，只需 > 卡厚（rotZ 是面內滾轉不出面） */
 export const HAND_STACK = 0.028;
+/** hover 拉出距離：沿卡面「上」方向 û 滑出（平面內移動，與鄰卡平行性不變） */
+export const HAND_HOVER_SLIDE = 0.66;
+/** highlighted（可拖曳提示）微升距離：同樣沿 û */
+export const HAND_HIGHLIGHT_SLIDE = 0.16;
 
 const lift = (level: number): number => CARD_T / 2 + level * CARD_T * 1.15;
 
@@ -152,10 +161,13 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
       });
     }
     // 手牌：P0 參考 Pokémon TCG Pocket——中間略高、左右向內收的淺弧扇形。
-    // [使用者 2026-07-11] 固定範圍填滿：手牌越多越密（step 收縮）、少牌時 step 上限；
-    // 破圖修法＝弧線沿「卡面內」方向、逐張抬升沿「卡面法線」方向（HAND_STACK >
-    // 卡厚＋rotY/rotZ 邊緣擺動量），相鄰卡的間隔由幾何保證，不再依賴微 z 級距碰運氣。
-    // P1＝遠端蓋牌扇。
+    // [使用者 2026-07-11] 固定範圍填滿：手牌越多越密（step 收縮）、少牌時 step 上限。
+    // 破圖根治二輪（LP0）：手牌一律 rotY=0 ——扇形感只用 rotZ（卡面內滾轉，不改平面朝向），
+    // 所有手牌成為「嚴格平行的平面族」、層距 HAND_STACK > 卡厚 → 幾何上不可能相交。
+    // （CP5d 的殘洞＝rotY 用正規化位置 nt 算，手牌少時相鄰 Δnt 最大到 1.0，
+    //   卡緣出面擺動 0.028 ＋卡厚 > 層距，2~5 張的常見手牌必穿插。）
+    // hover/highlight 的位移也一律沿卡面內方向（HAND_UP），平行性永遠保持。
+    // P1＝遠端蓋牌扇（平放卡的 rotY 就是面內滾轉，只需層距 > 卡厚）。
     const handA = zoneAnchor(player, "hand");
     const n = ps.hand.length;
     ps.hand.forEach((uid, i) => {
@@ -176,9 +188,11 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
             0.74 + arc * HAND_SIN + stackUp * HAND_COS,
             handA.z - 0.2 - arc * HAND_COS + stackUp * HAND_SIN,
           ],
-          rotation: [HAND_TILT, -nt * 0.05, -nt * 0.08],
+          rotation: [HAND_TILT, 0, -nt * 0.1],
           zone: "hand",
           player,
+          hoverOffset: [0, HAND_HOVER_SLIDE * HAND_SIN, -HAND_HOVER_SLIDE * HAND_COS],
+          highlightOffset: [0, HAND_HIGHLIGHT_SLIDE * HAND_SIN, -HAND_HIGHLIGHT_SLIDE * HAND_COS],
         });
       } else {
         cards.set(uid, {
@@ -186,7 +200,7 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
           frontUrl: null,
           backUrl: back,
           faceUp: false,
-          position: [handA.x - t * 0.48, CARD_T / 2 + i * CARD_T * 0.5, handA.z],
+          position: [handA.x - t * 0.48, CARD_T / 2 + i * CARD_T * 1.2, handA.z],
           rotation: [0, rotY + t * 0.04, 0],
           zone: "hand",
           player,

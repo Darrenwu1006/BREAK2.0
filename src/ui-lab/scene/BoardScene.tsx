@@ -12,7 +12,7 @@ import { ZONE_LABEL } from "../presentation/textRenderer";
 import styles from "../UiLabApp.module.css";
 import { AnimatedCard } from "./AnimatedCard";
 import { GlowFrame } from "./GlowFrame";
-import { blockSideAnchor, CARD_T, CARD_W, CARD_H, MAT_D, MAT_W, setAreaAnchor, SLOT_H, SLOT_W, TABLE_D, TABLE_W, zoneAnchor } from "./layout";
+import { blockSideAnchor, CARD_T, CARD_W, CARD_H, MAT_D, MAT_W, setAreaAnchor, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
 import type { BoardPlacements } from "./placements";
 
 /** 有疊放（ガッツ）語意的場上區 */
@@ -72,13 +72,15 @@ function PlayerSlots(props: { player: 0 | 1; occupied: ReadonlySet<string> }): R
   );
 }
 
-/** 桌面：木桌＋精品極簡風對戰桌墊（排球網已依回饋 #8 移除；學校專屬桌墊列 M9b） */
+/** 桌面：滿版木質表面＋精品極簡風對戰桌墊（排球網已依回饋 #8 移除；學校專屬桌墊列 M9b）。
+ *  [使用者 2026-07-11 LP0] 表面延伸出視野、配 fog 淡出——看不到桌緣，「不像一張桌子」；
+ *  這塊區域的漫畫風質地設計列後續（M9b 質地繼承）。 */
 function Table(props: { occupied: ReadonlySet<string> }): React.JSX.Element {
   return (
     <group>
-      {/* 木桌 */}
+      {/* 滿版表面（尺寸遠超出鏡頭視野；遠端由 fog 淡入背景色） */}
       <mesh position={[0, -0.03, 0]}>
-        <boxGeometry args={[TABLE_W, 0.06, TABLE_D]} />
+        <boxGeometry args={[90, 0.06, 70]} />
         <meshStandardMaterial color="#3d3128" roughness={0.85} />
       </mesh>
       {/* 桌墊：深色雙層（外緣一圈微亮收邊） */}

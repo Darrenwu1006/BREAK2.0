@@ -60,12 +60,17 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
       ty = DRAG_Y;
       tz = dp.z;
     } else if (props.hovered) {
-      // 向上滑出手牌扇（y 為主）＋輕微拉向鏡頭（z）——[使用者 2026-07-11] 兩軸都要有
-      ty += 0.62;
-      tz += 0.22;
+      // [使用者 2026-07-11 LP0] 手牌 hover 沿「卡面內」方向滑出（placement.hoverOffset）——
+      // 與鄰卡保持平行平面、幾何上不可能打架；平放卡（無 offset）退回世界座標抬升。
+      const [ox, oy, oz] = p.hoverOffset ?? [0, 0.5, 0.1];
+      tx += ox;
+      ty += oy;
+      tz += oz;
     } else if (props.highlighted) {
-      ty += 0.16;
-      tz += 0.05;
+      const [ox, oy, oz] = p.highlightOffset ?? [0, 0.16, 0.05];
+      tx += ox;
+      ty += oy;
+      tz += oz;
     }
 
     // ---- 飛行弧線簿記：目標換了才重算航程 ----

@@ -46,25 +46,64 @@ describe("computePlacements", () => {
     for (const player of [0, 1] as const) for (const uid of s.players[player].setArea) expect(cards.get(uid)!.faceUp).toBe(false);
   });
 
-  it("P0 手牌：Pocket 淺弧＋固定範圍填滿＋相鄰卡法線間距 > 卡厚（不破圖不變量）", () => {
-    const s = midGame();
+  /** LP0 不破圖不變量（對任意手牌張數都必須成立——CP5d 的洞就是少牌時 rotY 差過大） */
+  function assertHandNoClip(s: GameState): void {
     const { cards } = computePlacements(db, s, schools);
     const hand = s.players[0].hand.map((uid) => cards.get(uid)!);
+    // 平行平面族：全部 rotY=0、rotX 相同（rotZ 是卡面內滾轉、不改平面朝向）
+    for (const p of hand) {
+      expect(p.rotation[1], "手牌 rotY 必須為 0（平行平面保證）").toBe(0);
+      expect(p.rotation[0]).toBe(hand[0]!.rotation[0]);
+    }
     // x 左到右遞增、整體寬度收在固定範圍內
     for (let i = 1; i < hand.length; i++) expect(hand[i]!.position[0]).toBeGreaterThan(hand[i - 1]!.position[0]);
-    expect(hand[hand.length - 1]!.position[0] - hand[0]!.position[0]).toBeLessThanOrEqual(HAND_SPAN + 1e-6);
-    // 破圖不變量：相鄰卡沿卡面法線 n̂=(0,cosθ,sinθ) 的間距必須大於卡厚（右卡恆在左卡上方）
+    if (hand.length > 1) expect(hand[hand.length - 1]!.position[0] - hand[0]!.position[0]).toBeLessThanOrEqual(HAND_SPAN + 1e-6);
+    // 相鄰卡沿卡面法線 n̂=(0,cosθ,sinθ) 的間距必須大於卡厚（右卡恆在左卡上方）
     for (let i = 1; i < hand.length; i++) {
       const dy = hand[i]!.position[1] - hand[i - 1]!.position[1];
       const dz = hand[i]!.position[2] - hand[i - 1]!.position[2];
       const sep = dy * HAND_COS + dz * HAND_SIN;
       expect(sep, `相鄰手牌 ${i - 1}/${i} 法線間距`).toBeGreaterThan(CARD_T);
     }
-    // 淺弧：中間比兩端高；外側牌帶角度（左正右負）
+    // hover/highlight 位移必須是卡面內移動（沿法線分量 ≈ 0）——平行性在互動中也不破
+    for (const p of hand) {
+      for (const off of [p.hoverOffset, p.highlightOffset]) {
+        expect(off, "手牌必須帶安全位移").toBeDefined();
+        const n = off![1] * HAND_COS + off![2] * HAND_SIN;
+        expect(Math.abs(n), "hover/highlight 位移的法線分量").toBeLessThan(1e-9);
+      }
+    }
+  }
+
+  it("P0 手牌：Pocket 淺弧＋固定範圍填滿＋平行平面不破圖不變量", () => {
+    const s = midGame();
+    assertHandNoClip(s);
+    const { cards } = computePlacements(db, s, schools);
+    const hand = s.players[0].hand.map((uid) => cards.get(uid)!);
+    // 淺弧：中間比兩端高；外側牌帶面內滾轉角（左正右負）
     const mid = Math.floor((hand.length - 1) / 2);
     expect(hand[mid]!.position[1]).toBeGreaterThan(hand[0]!.position[1]);
     expect(hand[0]!.rotation[2]).toBeGreaterThan(0);
     expect(hand[hand.length - 1]!.rotation[2]).toBeLessThan(0);
+  });
+
+  it("P0 手牌少（2/3/4 張）時同樣不破圖——CP5d 迴歸案例", () => {
+    const s = midGame();
+    for (const keep of [4, 3, 2]) {
+      const ps = s.players[0];
+      while (ps.hand.length > keep) ps.deck.push(ps.hand.pop()!);
+      assertHandNoClip(s);
+    }
+  });
+
+  it("P1 蓋牌扇：相鄰層距 > 卡厚（平放卡 rotY＝面內滾轉，只需層距）", () => {
+    const s = midGame();
+    const { cards } = computePlacements(db, s, schools);
+    const hand = s.players[1].hand.map((uid) => cards.get(uid)!);
+    for (let i = 1; i < hand.length; i++) {
+      expect(hand[i]!.position[1] - hand[i - 1]!.position[1], `P1 手牌 ${i - 1}/${i} 層距`).toBeGreaterThan(CARD_T);
+      expect(hand[i]!.rotation[0]).toBe(0);
+    }
   });
 
   it("P0 場上卡槽保留完整間距；接球/托球/攻擊列在 Set 卡列下方", () => {
