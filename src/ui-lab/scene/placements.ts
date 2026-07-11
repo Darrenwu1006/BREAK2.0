@@ -39,6 +39,20 @@ export interface BoardPlacements {
 /** 每 uid 一點固定微旋（弧度），給「人手擺的」物性 */
 export const jitter = (uid: number): number => (((uid * 37) % 7) - 3) * 0.006;
 
+// ---- P0 手牌扇幾何常數（placements.test 以同組常數驗證「不破圖」不變量） ----
+/** 手托傾角（繞 x 軸） */
+export const HAND_TILT = 0.72;
+export const HAND_SIN = Math.sin(HAND_TILT);
+export const HAND_COS = Math.cos(HAND_TILT);
+/** 固定可用寬度：滿手時卡牌填滿此範圍（越多越密） */
+export const HAND_SPAN = 4.6;
+/** 少牌時的單張間距上限（避免 2~3 張時攤太開） */
+export const HAND_MAX_STEP = 0.72;
+/** 中央弧高（沿卡面內方向，不影響疊序） */
+export const HAND_ARC = 0.2;
+/** 相鄰卡沿卡面法線的間距：> CARD_T＋rotY/rotZ 差異在卡緣造成的擺動（≈0.013），保證不相交 */
+export const HAND_STACK = 0.028;
+
 const lift = (level: number): number => CARD_T / 2 + level * CARD_T * 1.15;
 
 function cardOf(db: CardDb, state: GameState, uid: number): Card | undefined {
@@ -137,9 +151,10 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
         player,
       });
     }
-    // 手牌：P0 參考 Pokémon TCG Pocket——中間略高、左右向內收的淺弧扇形；
-    // x 每張露出約半張，z 只用極小級距維持「右卡壓左卡右緣」的穩定遮擋順序。
-    // hover 時 AnimatedCard 再把單張往上／鏡頭方向抽出。
+    // 手牌：P0 參考 Pokémon TCG Pocket——中間略高、左右向內收的淺弧扇形。
+    // [使用者 2026-07-11] 固定範圍填滿：手牌越多越密（step 收縮）、少牌時 step 上限；
+    // 破圖修法＝弧線沿「卡面內」方向、逐張抬升沿「卡面法線」方向（HAND_STACK >
+    // 卡厚＋rotY/rotZ 邊緣擺動量），相鄰卡的間隔由幾何保證，不再依賴微 z 級距碰運氣。
     // P1＝遠端蓋牌扇。
     const handA = zoneAnchor(player, "hand");
     const n = ps.hand.length;
@@ -147,15 +162,21 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
       const t = n > 1 ? i - (n - 1) / 2 : 0;
       if (player === 0) {
         const maxT = Math.max((n - 1) / 2, 1);
-        const normalized = t / maxT;
-        const arc = 0.16 * (1 - normalized * normalized);
+        const nt = t / maxT;
+        const step = n > 1 ? Math.min(HAND_MAX_STEP, HAND_SPAN / (n - 1)) : 0;
+        const arc = HAND_ARC * (1 - nt * nt); // 沿卡面「上」方向 û=(0, sinθ, -cosθ)
+        const stackUp = i * HAND_STACK; // 沿卡面法線 n̂=(0, cosθ, sinθ)：右卡恆在左卡上方
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
-          position: [handA.x + t * 0.46, 0.76 + arc, handA.z - 0.2 + i * 0.006],
-          rotation: [0.72, -normalized * 0.18, -normalized * 0.06],
+          position: [
+            handA.x + t * step,
+            0.74 + arc * HAND_SIN + stackUp * HAND_COS,
+            handA.z - 0.2 - arc * HAND_COS + stackUp * HAND_SIN,
+          ],
+          rotation: [HAND_TILT, -nt * 0.05, -nt * 0.08],
           zone: "hand",
           player,
         });

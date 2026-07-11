@@ -435,3 +435,131 @@
     opacity: 0;
   }
 }
+
+/* ---- CP5d：hover 手牌的中央資訊匡（左卡圖＋右繁中資訊；純檢視、不攔截指標） ---- */
+
+.cardInfo {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 16px;
+  width: min(640px, 78vw);
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(13, 17, 22, 0.93);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  animation: cardInfoPop 140ms ease-out;
+  z-index: 6; /* 高於槽位標籤(2)/Guts徽章(3)，不被場地 DOM 穿透 */
+}
+
+@keyframes cardInfoPop {
+  from {
+    transform: translate(-50%, -48%) scale(0.96);
+    opacity: 0;
+  }
+}
+
+.cardInfoImg {
+  width: 210px;
+  align-self: flex-start;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.cardInfoImgEmpty {
+  width: 210px;
+  aspect-ratio: 5 / 7;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  color: #7c8893;
+  font-size: 12px;
+}
+
+.cardInfoBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.cardInfoName {
+  color: #f2f6fa;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.cardInfoName span {
+  display: block;
+  color: #8b97a3;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.cardInfoMeta {
+  color: #aeb9c2;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.paramCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.paramCell span {
+  color: #8b97a3;
+  font-size: 10.5px;
+}
+
+.paramCell strong {
+  color: #f2f6fa;
+  font-size: 16px;
+}
+
+.cardInfoTiming {
+  color: #9fc1e0;
+  font-size: 12px;
+}
+
+.cardInfoSkill {
+  color: #dfe8f0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-height: 170px;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.cardInfoSkill em {
+  display: block;
+  margin-top: 5px;
+  color: #b08d4f;
+  font-size: 11px;
+  font-style: normal;
+}

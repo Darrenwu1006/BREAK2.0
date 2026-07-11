@@ -208,6 +208,9 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const gameOver = !view.playing && !engine.pendingDecision;
   const shown = view.displayed;
   const expandedGuts = expandedStack ? shown.players[expandedStack.player][expandedStack.zone].slice(0, -1).reverse() : [];
+  /** hover 手牌的中央資訊匡（[使用者 2026-07-11]）：左卡圖、右繁中資訊；拖曳中不顯示 */
+  const hoveredCard = hoveredUid !== null && draggingUid === null ? db.get(shown.cards[hoveredUid] ?? "") : undefined;
+  const hoveredCardImg = hoveredCard ? cardFrontUrl(hoveredCard) : null;
   const opNote = engine.op && engine.op.owner !== HUMAN ? `對手 OP ${engine.op.value}——` : "";
   const prompt = view.playing
     ? "演出中…"
@@ -367,6 +370,54 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
                 </figure>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {/* hover 手牌：中央蓋板資訊匡（左＝卡牌大圖、右＝繁中資訊）。pointer-events:none
+          ——純檢視層，不攔截 canvas hover，樣式屬第一版、待使用者回饋再修 */}
+      {hoveredCard && (
+        <section className={styles.cardInfo} aria-hidden>
+          {hoveredCardImg ? (
+            <img className={styles.cardInfoImg} src={hoveredCardImg} alt={hoveredCard.nameJa} />
+          ) : (
+            <div className={styles.cardInfoImgEmpty}>無卡圖</div>
+          )}
+          <div className={styles.cardInfoBody}>
+            <div className={styles.cardInfoName}>
+              {hoveredCard.nameZh ?? hoveredCard.nameJa}
+              {hoveredCard.nameZh && <span>{hoveredCard.nameJa}</span>}
+            </div>
+            <div className={styles.cardInfoMeta}>
+              {hoveredCard.type === "CHARACTER" ? "角色" : "事件"}｜{hoveredCard.affiliations.join("・")}
+              {hoveredCard.positions.length > 0 ? `｜${hoveredCard.positions.join("/")}` : ""}
+              {hoveredCard.grades.length > 0 ? `｜${hoveredCard.grades.join("/")}` : ""}
+            </div>
+            {hoveredCard.params && (
+              <div className={styles.paramRow}>
+                {(
+                  [
+                    ["發球", hoveredCard.params.serve],
+                    ["攔網", hoveredCard.params.block],
+                    ["接球", hoveredCard.params.receive],
+                    ["托球", hoveredCard.params.toss],
+                    ["攻擊", hoveredCard.params.attack],
+                  ] as const
+                ).map(([label, v]) => (
+                  <div key={label} className={styles.paramCell}>
+                    <span>{label}</span>
+                    <strong>{v ?? "－"}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            {hoveredCard.timing.length > 0 && <div className={styles.cardInfoTiming}>時機：{hoveredCard.timing.join("・")}</div>}
+            {(hoveredCard.skillZh ?? hoveredCard.skillJa) && (
+              <div className={styles.cardInfoSkill}>
+                {hoveredCard.skillZh ?? hoveredCard.skillJa}
+                {hoveredCard.skillZhStatus === "machine" && <em>（機翻待確認）</em>}
+              </div>
+            )}
           </div>
         </section>
       )}

@@ -60,8 +60,9 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
       ty = DRAG_Y;
       tz = dp.z;
     } else if (props.hovered) {
-      ty += 0.55;
-      tz += 0.4;
+      // 向上滑出手牌扇（y 為主）＋輕微拉向鏡頭（z）——[使用者 2026-07-11] 兩軸都要有
+      ty += 0.62;
+      tz += 0.22;
     } else if (props.highlighted) {
       ty += 0.16;
       tz += 0.05;
