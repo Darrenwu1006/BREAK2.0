@@ -153,6 +153,11 @@ export interface BoardSceneProps {
   /** 本批已演移動的卡的來源區（新掛載卡的出生點；抽牌從牌組頂飛出） */
   origins: ReadonlyMap<number, { player: 0 | 1; zone: ZoneId }>;
   draggableUids: ReadonlySet<number>;
+  /** 點選模式（mulligan 換牌／攔網多選／取 Set 卡／自由步驟技能宣告）：可點選的卡 */
+  selectableUids: ReadonlySet<number>;
+  /** 已選取的卡（金框） */
+  selectedUids: ReadonlySet<number>;
+  onCardSelect: (uid: number) => void;
   draggingUid: number | null;
   dragPoint: React.RefObject<THREE.Vector3>;
   /** hover 拉出的手牌 uid（僅 P0 手牌） */
@@ -237,6 +242,7 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
       ))}
       {cards.map((p) => {
         const draggable = draggableUids.has(p.uid) && draggingUid === null;
+        const selectable = props.selectableUids.has(p.uid) && draggingUid === null;
         const hoverable = p.player === 0 && p.zone === "hand" && draggingUid === null;
         const stackable = stackKeys.has(`${p.player}:${p.zone}`) && draggingUid === null;
         const org = origins.get(p.uid);
@@ -245,7 +251,8 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
           <AnimatedCard
             key={p.uid}
             placement={p}
-            highlighted={draggable}
+            highlighted={draggable || selectable}
+            selected={props.selectedUids.has(p.uid)}
             hovered={props.hoveredUid === p.uid && hoverable}
             dragging={draggingUid === p.uid}
             dragPoint={dragPoint}
@@ -256,15 +263,20 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
                     e.stopPropagation();
                     props.onCardPointerDown(p.uid);
                   }
-                : stackable
+                : selectable
                   ? (e) => {
                       e.stopPropagation();
-                      props.onStackToggle(p.player, p.zone);
+                      props.onCardSelect(p.uid);
                     }
-                  : undefined
+                  : stackable
+                    ? (e) => {
+                        e.stopPropagation();
+                        props.onStackToggle(p.player, p.zone);
+                      }
+                    : undefined
             }
             onPointerOver={
-              draggable || hoverable || stackable
+              draggable || selectable || hoverable || stackable
                 ? (e) => {
                     e.stopPropagation();
                     setCursor(draggable ? "grab" : "pointer");
@@ -273,7 +285,7 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
                 : undefined
             }
             onPointerOut={
-              draggable || hoverable || stackable
+              draggable || selectable || hoverable || stackable
                 ? () => {
                     setCursor("");
                     if (hoverable) props.onCardHover(null);

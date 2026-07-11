@@ -17,13 +17,12 @@ const expand = (d: DeckJson): string[] => d.cards.flatMap((c) => Array(c.count).
 const db: CardDb = new Map((cardsJson as unknown as Card[]).map((c) => [c.id, c]));
 const decks: [string[], string[]] = [expand(karasunoDeck as DeckJson), expand(nekomaDeck as DeckJson)];
 
-const HUMAN_TYPES = new Set(["deploy-serve", "deploy-receive", "deploy-toss", "deploy-attack", "defense-choice"]);
-
 describe("LabGameController", () => {
   it("建構後自動推進到第一個人類互動決策，沿途批次都有 meta 且 before/after 相接", () => {
     const c = new LabGameController(db, decks, 42);
     expect(c.awaitingHuman).toBe(true);
-    expect(HUMAN_TYPES.has(c.engine.pendingDecision!.type)).toBe(true);
+    // LP2 起：P0 的所有決策型別都停給人類（含 serve-rights/mulligan）
+    expect(c.engine.pendingDecision!.player).toBe(HUMAN);
     // 佇列裡至少有 serve-rights＋抽牌等前置批次
     expect(c.timeline.idle).toBe(false);
     let prev: ReturnType<typeof c.metaOf> | undefined;
@@ -56,6 +55,6 @@ describe("LabGameController", () => {
     }
     // 至少驗證 awaitingHuman 與 pendingDecision 一致
     const pd = c.engine.pendingDecision;
-    if (pd) expect(c.awaitingHuman).toBe(pd.player === HUMAN && HUMAN_TYPES.has(pd.type));
+    if (pd) expect(c.awaitingHuman).toBe(pd.player === HUMAN);
   });
 });

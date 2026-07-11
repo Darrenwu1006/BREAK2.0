@@ -1,43 +1,40 @@
-// M9a CP4 ui-lab 入口：可玩的互動切片（雙入口並行，spec §0：?ui=lab、與 src/ui/ 完全隔離）。
-// 人類＝P0（烏野）：deploy-serve/receive/toss/attack 拖曳登場＋defense-choice 二選一；
-// 其餘決策型別由 heuristic 代打（spec §4 過渡期允許），對手 P1＝heuristic AI。
+// ui-lab 入口（雙入口並行，spec §0：?ui=lab、與 src/ui/ 完全隔離）。
+// LP1~LP5（[使用者 2026-07-11] 完整對局路線）：選牌組進場 → 人類親手操作 P0 全部 18 種
+// 決策變體（拖曳登場／攔網多選＋center／換牌多選／自由步驟技能事件／效果決策蓋板／
+// 取 Set 卡／serve-rights）→ 結算畫面。對手 P1＝heuristic AI；任何單手可按「AI 代打」委託。
 // 架構：LabGameController（邏輯即時）→ PresentationTimeline → usePlayback（演出視圖）→ BoardScene（R3F）。
-// 鏡頭固定＋關鍵揭示微推近；「自由視角」按鈕僅供構圖檢查。
 
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import cardsJson from "../../data/cards.json";
-import karasunoDeck from "../../data/decks/烏野-預組.json";
-import nekomaDeck from "../../data/decks/音駒-預組.json";
 import { heuristicAiDecision } from "../ai/heuristic";
 import type { Card } from "../data/types";
-import { canChooseBlock, deployNames, deployableUids } from "../engine/engine";
+import { blockDeployMax, canChooseBlock, deployNames, deployableUids, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState } from "../engine/types";
 import { cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
+import {
+  BlockPickPanel,
+  EffectCardsPanel,
+  EffectConfirmModal,
+  EffectOptionModal,
+  ResolvePendingModal,
+  ServeRightsModal,
+  SettlementModal,
+} from "./game/overlays";
 import { usePlayback } from "./game/usePlayback";
+import { expandDeck, LabMenu, type LabDeck } from "./LabMenu";
 import type { ZoneId } from "./presentation/events";
 import { ZONE_LABEL } from "./presentation/textRenderer";
+import type { TimelineEntry } from "./presentation/timeline";
 import { BoardScene } from "./scene/BoardScene";
 import { CameraRig, LAB_CAMERA_BASE } from "./scene/CameraRig";
 import { zoneAnchor } from "./scene/layout";
 import { computePlacements, mergePlacements } from "./scene/placements";
 import { RevealLayer } from "./scene/RevealLayer";
-import type { TimelineEntry } from "./presentation/timeline";
 import styles from "./UiLabApp.module.css";
-
-interface DeckJson {
-  name: string;
-  school: string;
-  cards: { id: string; count: number }[];
-}
-const expand = (d: DeckJson): string[] => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
-
-const KARASUNO = karasunoDeck as DeckJson;
-const NEKOMA = nekomaDeck as DeckJson;
-const SCHOOLS: [string, string] = [KARASUNO.school, NEKOMA.school];
 
 type DeployType = "deploy-serve" | "deploy-receive" | "deploy-toss" | "deploy-attack";
 type StackZone = "serve" | "blockCenter" | "receive" | "toss" | "attack";
@@ -84,18 +81,21 @@ function PlaybackTicker(props: { tick: (dtMs: number) => void }): null {
   return null;
 }
 
-function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): React.JSX.Element {
+function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; onRematch: () => void; onExit: () => void }): React.JSX.Element {
   const { db, seed } = props;
-  const controller = useMemo(() => new LabGameController(db, [expand(KARASUNO), expand(NEKOMA)], seed), [db, seed]);
+  const schools: [string, string] = [props.decks[0].school, props.decks[1].school];
+  const controller = useMemo(
+    () => new LabGameController(db, [expandDeck(props.decks[0]), expandDeck(props.decks[1])], seed),
+    [db, props.decks, seed],
+  );
   const { view, tick, markPlaying, skip, setSpeed } = usePlayback(controller, db);
 
-  // ---- 互動狀態（拖曳／點擊出牌／hover） ----
+  // ---- 互動狀態（拖曳／點擊出牌／hover／多選） ----
   const dragPoint = useRef(new THREE.Vector3());
   const overRef = useRef(false);
   /** 點擊 vs 拖曳判別：pointerdown 起算時間＋首個拖曳點＋是否已位移 */
   const dragMeta = useRef({ t: 0, firstX: null as number | null, firstZ: 0, moved: false });
-  /** draggingUid 的同步鏡像：事件 handler 內的判定不能依賴 setState updater
-   *（React 批次會讓 updater 晚於 handler 尾段執行，屆時 overRef 已被重置） */
+  /** draggingUid 的同步鏡像：事件 handler 內的判定不能依賴 setState updater */
   const draggingRef = useRef<number | null>(null);
   const [draggingUid, setDraggingUid] = useState<number | null>(null);
   const [overZone, setOverZone] = useState(false);
@@ -103,25 +103,65 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const [namePick, setNamePick] = useState<{ uid: number; names: string[] } | null>(null);
   const [speed, setSpeedState] = useState(1);
   const [orbit, setOrbit] = useState(false);
+  /** 觀戰模式：我方決策全部自動委託 heuristic（LP6 全流程驗證兼觀戰用） */
+  const [autoPlay, setAutoPlay] = useState(false);
   const [expandedStack, setExpandedStack] = useState<{ player: 0 | 1; zone: StackZone } | null>(null);
+  /** 多選（mulligan 換牌／攔網登場）＋攔網中央指定＋攔網選名佇列 */
+  const [boardSel, setBoardSel] = useState<number[]>([]);
+  const [blockCenter, setBlockCenter] = useState<number | null>(null);
+  const [blockNames, setBlockNames] = useState<{ queue: { uid: number; names: string[] }[]; chosen: Record<number, string> } | null>(null);
 
   // ---- 演出視圖 → 擺位 ----
   const placements = useMemo(() => {
-    const base = computePlacements(db, view.displayed, SCHOOLS);
+    const base = computePlacements(db, view.displayed, schools);
     if (!view.after || view.movedUids.size === 0) return base;
-    return mergePlacements(base, computePlacements(db, view.after, SCHOOLS), view.movedUids);
-  }, [db, view.displayed, view.after, view.movedUids]);
+    return mergePlacements(base, computePlacements(db, view.after, schools), view.movedUids);
+  }, [db, view.displayed, view.after, view.movedUids, schools[0], schools[1]]);
 
   // ---- 互動閘：佇列清空前不開放（spec §1.1） ----
   const engine: GameState = controller.engine;
   const pd = view.playing ? null : engine.pendingDecision;
-  const deployType = pd && pd.player === HUMAN && pd.type in DEPLOY_ZONE ? (pd.type as DeployType) : null;
+  const myPd = pd && pd.player === HUMAN ? pd : null;
+  const deployType = myPd && myPd.type in DEPLOY_ZONE ? (myPd.type as DeployType) : null;
   const zone = deployType ? DEPLOY_ZONE[deployType] : null;
   const draggableUids = useMemo(
     () => (zone ? new Set(deployableUids(db, engine, HUMAN, zone)) : new Set<number>()),
     [db, engine, zone],
   );
   const dropAnchor = zone ? zoneAnchor(HUMAN, zone) : null;
+
+  // 決策切換時清空選取狀態
+  useEffect(() => {
+    setBoardSel([]);
+    setBlockCenter(null);
+    setBlockNames(null);
+    setNamePick(null);
+  }, [pd]);
+
+  /** 自由步驟可用選項（技能宣告／事件卡） */
+  const freeOpts = useMemo(
+    () => (myPd?.type === "free" ? freeOptions(db, engine) : { skills: [], events: [] }),
+    [db, engine, myPd],
+  );
+  const blockMax = myPd?.type === "deploy-block" ? Math.min(3, blockDeployMax(engine, HUMAN)) : 0;
+
+  /** 點選模式的可選卡 */
+  const selectableUids = useMemo(() => {
+    if (!myPd) return new Set<number>();
+    switch (myPd.type) {
+      case "mulligan":
+        return new Set(engine.players[HUMAN].hand);
+      case "pick-set-card":
+        return new Set(engine.players[HUMAN].setArea);
+      case "deploy-block":
+        return new Set(deployableUids(db, engine, HUMAN, "block"));
+      case "free":
+        return new Set([...freeOpts.skills.map((s) => s.uid), ...freeOpts.events.map((e) => e.uid)]);
+      default:
+        return new Set<number>();
+    }
+  }, [db, engine, myPd, freeOpts]);
+  const selectedUids = useMemo(() => new Set(boardSel), [boardSel]);
 
   const decide = useCallback(
     (decision: Decision): void => {
@@ -133,6 +173,67 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
       markPlaying();
     },
     [controller, markPlaying],
+  );
+
+  /** 攔網登場確認：收集 072/073 選名後送出 */
+  const confirmBlock = useCallback((): void => {
+    if (!boardSel.length) return;
+    const center = blockCenter ?? boardSel[0]!;
+    const chosen: Record<number, string> = {};
+    const queue: { uid: number; names: string[] }[] = [];
+    for (const uid of boardSel) {
+      const names = deployNames(db, engine, uid);
+      if (!names || names.length === 0) continue;
+      if (names.length === 1) chosen[uid] = names[0]!;
+      else queue.push({ uid, names });
+    }
+    if (queue.length > 0) {
+      setBlockNames({ queue, chosen });
+      return;
+    }
+    decide({ type: "deploy-block", uids: boardSel, center, ...(Object.keys(chosen).length ? { nameChoices: chosen } : {}) });
+  }, [db, engine, boardSel, blockCenter, decide]);
+
+  /** 點選卡片（依決策型別分派） */
+  const onCardSelect = useCallback(
+    (uid: number): void => {
+      if (!myPd) return;
+      switch (myPd.type) {
+        case "mulligan":
+          setBoardSel((cur) => (cur.includes(uid) ? cur.filter((u) => u !== uid) : [...cur, uid]));
+          break;
+        case "pick-set-card": {
+          const index = engine.players[HUMAN].setArea.indexOf(uid);
+          if (index >= 0) decide({ type: "pick-set-card", index });
+          break;
+        }
+        case "deploy-block":
+          setBoardSel((cur) => {
+            if (cur.includes(uid)) {
+              const next = cur.filter((u) => u !== uid);
+              setBlockCenter((c) => (c === uid ? (next[0] ?? null) : c));
+              return next;
+            }
+            if (cur.length >= blockMax) return cur;
+            setBlockCenter((c) => c ?? uid);
+            return [...cur, uid];
+          });
+          break;
+        case "free": {
+          const skill = freeOpts.skills.find((s) => s.uid === uid);
+          if (skill) {
+            decide({ type: "free", action: "skill", uid: skill.uid, skillIndex: skill.skillIndex });
+            break;
+          }
+          const event = freeOpts.events.find((e) => e.uid === uid);
+          if (event) decide({ type: "free", action: "event", uid: event.uid });
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    [myPd, engine, decide, blockMax, freeOpts],
   );
 
   // ---- 拖曳／點擊出牌流程 ----
@@ -162,7 +263,6 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
       }
       if (!dropAnchor) return;
       const over = Math.abs(x - dropAnchor.x) < 1.6 && Math.abs(z - dropAnchor.z) < 1.4;
-      if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__labDrag = { x, z, over, anchor: dropAnchor };
       if (over !== overRef.current) {
         overRef.current = over;
         setOverZone(over);
@@ -182,7 +282,6 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
     overRef.current = false;
     setDraggingUid(null);
     setOverZone(false);
-    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__labEnd = { uid, deployType, over, isClick, at: Date.now() };
     if (deployType && (over || isClick)) {
       const names = deployNames(db, engine, uid);
       if (names && names.length > 1) setNamePick({ uid, names });
@@ -202,13 +301,20 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
     return () => window.removeEventListener("pointerup", endDrag);
   }, [draggingUid, endDrag]);
 
+  // 觀戰模式：演出空檔自動代打我方決策
+  useEffect(() => {
+    if (!autoPlay || view.playing || !controller.awaitingHuman) return;
+    const t = window.setTimeout(() => decide(heuristicAiDecision(db, controller.engine)), 80);
+    return () => window.clearTimeout(t);
+  }, [autoPlay, view.playing, controller, db, decide, pd]);
+
   // ---- 顯示輔助 ----
-  const banner = bannerOf(view.current, SCHOOLS);
+  const banner = bannerOf(view.current, schools);
   const pushed = !!view.current && ["judge-revealed", "set-won", "match-won"].includes(view.current.event.kind);
   const gameOver = !view.playing && !engine.pendingDecision;
   const shown = view.displayed;
   const expandedGuts = expandedStack ? shown.players[expandedStack.player][expandedStack.zone].slice(0, -1).reverse() : [];
-  /** hover 手牌的中央資訊匡（[使用者 2026-07-11]）：左卡圖、右繁中資訊；拖曳中不顯示 */
+  /** hover 手牌的中央資訊匡：左卡圖、右繁中資訊；拖曳中不顯示 */
   const hoveredCard = hoveredUid !== null && draggingUid === null ? db.get(shown.cards[hoveredUid] ?? "") : undefined;
   const hoveredCardImg = hoveredCard ? cardFrontUrl(hoveredCard) : null;
   const opNote = engine.op && engine.op.owner !== HUMAN ? `對手 OP ${engine.op.value}——` : "";
@@ -216,13 +322,23 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
     ? "演出中…"
     : deployType
       ? `${deployType === "deploy-receive" ? opNote : ""}${DEPLOY_PROMPT[deployType]}`
-      : pd?.type === "defense-choice"
+      : myPd?.type === "defense-choice"
         ? `${opNote}這一 turn 走攔網還是接球？`
-        : gameOver
-          ? `比賽結束——${engine.winner !== null ? SCHOOLS[engine.winner] : "?"} 獲勝`
-          : pd
-            ? `${pd.prompt ?? pd.type}（AI 代打型別，M9b 補齊）`
-            : "";
+        : myPd?.type === "mulligan"
+          ? "換牌：點手牌切換選取（可 0 張），選好按「換牌」"
+          : myPd?.type === "deploy-block"
+            ? `${opNote}攔網登場：點發亮手牌選 1~${blockMax} 張，面板上指定中央後確認`
+            : myPd?.type === "pick-set-card"
+              ? "拿回一張 Set 卡：點擊你的 Set 區卡片"
+              : myPd?.type === "free"
+                ? "自由步驟：可宣告技能／打出事件卡（點發亮的卡或下方選項），或結束步驟"
+                : gameOver
+                  ? `比賽結束——${engine.winner !== null ? schools[engine.winner] : "?"} 獲勝`
+                  : myPd
+                    ? (myPd.prompt ?? myPd.type)
+                    : pd
+                      ? "對手行動中…"
+                      : "";
 
   return (
     // 尺寸關鍵容器用 inline style：R3F 以 ResizeObserver 量測容器，冷載入時 CSS module
@@ -241,6 +357,9 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
             placements={placements}
             origins={view.origins}
             draggableUids={draggableUids}
+            selectableUids={selectableUids}
+            selectedUids={selectedUids}
+            onCardSelect={onCardSelect}
             draggingUid={draggingUid}
             dragPoint={dragPoint}
             hoveredUid={hoveredUid}
@@ -261,12 +380,12 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
       {/* 左上：狀態列 */}
       <div className={styles.overlay}>
         <span className={styles.badge}>
-          ui-lab<span className={styles.tag}>M9a 互動切片</span>
+          ui-lab<span className={styles.tag}>對局</span>
         </span>
         <span className={styles.hint}>
-          第 {shown.setNo} 局・第 {shown.turnNo} 回合｜Set 卡 {SCHOOLS[0]} {shown.players[0].setArea.length}－{shown.players[1].setArea.length} {SCHOOLS[1]}
+          第 {shown.setNo} 局・第 {shown.turnNo} 回合｜Set 卡 {schools[0]} {shown.players[0].setArea.length}－{shown.players[1].setArea.length} {schools[1]}
           <br />
-          你＝{SCHOOLS[0]}（近側）。本畫面直接接共用規則引擎；對手與未實裝決策由 AI 代打。
+          你＝{schools[0]}（近側）。對手＝AI；任何一手都可按「AI 代打」委託。
         </span>
         <a className={styles.link} href="./">
           ← 回經典介面
@@ -287,6 +406,9 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         </button>
         <button className={styles.btnGhost} onClick={() => setOrbit((o) => !o)}>
           {orbit ? "鎖定鏡頭" : "自由視角"}
+        </button>
+        <button className={autoPlay ? styles.btn : styles.btnGhost} data-testid="autoplay" onClick={() => setAutoPlay((a) => !a)}>
+          {autoPlay ? "⏹ 停止代打" : "AI 代打到底"}
         </button>
       </div>
 
@@ -317,36 +439,66 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
           <button
             className={styles.btnGhost}
             data-testid="auto-one"
-            disabled={!pd || !controller.awaitingHuman}
-            onClick={() => pd && controller.awaitingHuman && decide(heuristicAiDecision(db, engine))}
+            disabled={!myPd || !controller.awaitingHuman}
+            onClick={() => myPd && controller.awaitingHuman && decide(heuristicAiDecision(db, engine))}
           >
             AI 代打
           </button>
           <button
             className={styles.btnDanger}
-            disabled={!deployType}
-            onClick={() => deployType && decide({ type: deployType, uid: null } as Decision)}
+            disabled={!deployType && myPd?.type !== "deploy-block" && myPd?.type !== "free"}
+            onClick={() => {
+              if (deployType) decide({ type: deployType, uid: null } as Decision);
+              else if (myPd?.type === "deploy-block") decide({ type: "deploy-block", uids: null });
+              else if (myPd?.type === "free") decide({ type: "free", action: "lost" });
+            }}
           >
-            不登場
+            {myPd?.type === "free" ? "宣告 Lost" : "不登場"}
           </button>
           <button
             className={styles.btn}
-            disabled={pd?.type !== "defense-choice" || !canChooseBlock(engine)}
-            onClick={() => pd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "block" })}
+            disabled={myPd?.type !== "defense-choice" || !canChooseBlock(engine)}
+            onClick={() => myPd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "block" })}
           >
             攔網
           </button>
           <button
             className={styles.btn}
-            disabled={pd?.type !== "defense-choice"}
-            onClick={() => pd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "receive" })}
+            disabled={myPd?.type !== "defense-choice"}
+            onClick={() => myPd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "receive" })}
           >
             接球
           </button>
-          <button className={styles.btnGhost} disabled={!gameOver} onClick={props.onRestart}>
-            再來一場
+          <button
+            className={styles.btn}
+            disabled={myPd?.type !== "free" && myPd?.type !== "mulligan"}
+            onClick={() => {
+              if (myPd?.type === "free") decide({ type: "free", action: "pass" });
+              else if (myPd?.type === "mulligan") decide({ type: "mulligan", returnUids: boardSel });
+            }}
+          >
+            {myPd?.type === "mulligan" ? (boardSel.length ? `換 ${boardSel.length} 張` : "不換牌") : "結束步驟"}
           </button>
         </div>
+        {/* 自由步驟的技能／事件選項列 */}
+        {myPd?.type === "free" && (freeOpts.skills.length > 0 || freeOpts.events.length > 0) && (
+          <div className={styles.freeOpts}>
+            {freeOpts.skills.map((s) => (
+              <button
+                key={`s-${s.uid}-${s.skillIndex}`}
+                className={styles.btnGhost}
+                onClick={() => decide({ type: "free", action: "skill", uid: s.uid, skillIndex: s.skillIndex })}
+              >
+                ⚡ {s.label}
+              </button>
+            ))}
+            {freeOpts.events.map((e) => (
+              <button key={`e-${e.uid}`} className={styles.btnGhost} onClick={() => decide({ type: "free", action: "event", uid: e.uid })}>
+                {e.label}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 場上疊放區：沿用經典介面的 Guts popover 心智模型，點場上卡或徽章開啟。 */}
@@ -374,8 +526,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         </section>
       )}
 
-      {/* hover 手牌：中央蓋板資訊匡（左＝卡牌大圖、右＝繁中資訊）。pointer-events:none
-          ——純檢視層，不攔截 canvas hover，樣式屬第一版、待使用者回饋再修 */}
+      {/* hover 手牌：中央蓋板資訊匡（左＝卡牌大圖、右＝繁中資訊）。pointer-events:none */}
       {hoveredCard && (
         <section className={styles.cardInfo} aria-hidden>
           {hoveredCardImg ? (
@@ -422,7 +573,43 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         </section>
       )}
 
-      {/* 選名彈窗（072/073） */}
+      {/* ---- 決策蓋板（LP2/LP4/LP5）---- */}
+      {myPd?.type === "serve-rights" && <ServeRightsModal onPick={(take) => decide({ type: "serve-rights", take })} />}
+      {myPd?.type === "effect-confirm" && (
+        <EffectConfirmModal prompt={myPd.prompt ?? "要使用效果嗎？"} onPick={(accept) => decide({ type: "effect-confirm", accept })} />
+      )}
+      {myPd?.type === "effect-option" && (
+        <EffectOptionModal prompt={myPd.prompt ?? "選擇效果"} options={myPd.options ?? []} onPick={(index) => decide({ type: "effect-option", index })} />
+      )}
+      {myPd?.type === "resolve-pending" && (
+        <ResolvePendingModal state={engine} candidates={myPd.candidates ?? []} onPick={(id) => decide({ type: "resolve-pending", id })} />
+      )}
+      {myPd?.type === "effect-cards" && (
+        <EffectCardsPanel
+          key={engine.log.length}
+          db={db}
+          state={engine}
+          prompt={myPd.prompt ?? "選擇卡片"}
+          candidates={myPd.candidates ?? []}
+          min={myPd.min ?? 0}
+          max={myPd.max ?? (myPd.candidates?.length ?? 0)}
+          onConfirm={(uids) => decide({ type: "effect-cards", uids })}
+        />
+      )}
+      {myPd?.type === "deploy-block" && !blockNames && (
+        <BlockPickPanel
+          db={db}
+          state={engine}
+          selected={boardSel}
+          center={blockCenter}
+          max={blockMax}
+          onSetCenter={setBlockCenter}
+          onConfirm={confirmBlock}
+          onGiveUp={() => decide({ type: "deploy-block", uids: null })}
+        />
+      )}
+
+      {/* 選名彈窗（072/073）：單張登場 */}
       {namePick && deployType && (
         <div className={styles.modalMask}>
           <div className={styles.modal}>
@@ -442,13 +629,65 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
           </div>
         </div>
       )}
+
+      {/* 選名彈窗（072/073）：攔網多張逐一選名 */}
+      {blockNames && blockNames.queue.length > 0 && (
+        <div className={styles.modalMask}>
+          <div className={styles.modal}>
+            <div className={styles.modalTitle}>
+              {db.get(engine.cards[blockNames.queue[0]!.uid] ?? "")?.nameZh ?? "這張卡"}以哪個名字登場？
+            </div>
+            {blockNames.queue[0]!.names.map((n) => (
+              <button
+                key={n}
+                className={styles.btn}
+                onClick={() => {
+                  const [head, ...rest] = blockNames.queue;
+                  const chosen = { ...blockNames.chosen, [head!.uid]: n };
+                  if (rest.length > 0) {
+                    setBlockNames({ queue: rest, chosen });
+                  } else {
+                    setBlockNames(null);
+                    decide({ type: "deploy-block", uids: boardSel, center: blockCenter ?? boardSel[0]!, nameChoices: chosen });
+                  }
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 結算（LP1） */}
+      {gameOver && (
+        <SettlementModal
+          winner={engine.winner}
+          schools={schools}
+          setCards={[engine.players[0].setArea.length, engine.players[1].setArea.length]}
+          onRematch={props.onRematch}
+          onExit={props.onExit}
+        />
+      )}
     </div>
   );
 }
 
 export default function UiLabApp(): React.JSX.Element {
   const db: CardDb = useMemo(() => new Map((cardsJson as unknown as Card[]).map((c) => [c.id, c])), []);
-  const [round, setRound] = useState(0);
-  const seed = 20260710 + round;
-  return <LabGame key={seed} db={db} seed={seed} onRestart={() => setRound((r) => r + 1)} />;
+  const [session, setSession] = useState<{ decks: [LabDeck, LabDeck]; baseSeed: number; round: number } | null>(null);
+  if (!session) {
+    return <LabMenu onStart={(decks) => setSession({ decks, baseSeed: (Date.now() % 1000000) + 1, round: 0 })} />;
+  }
+  const seed = session.baseSeed + session.round * 7919;
+  return (
+    <LabGame
+      key={seed}
+      db={db}
+      decks={session.decks}
+      seed={seed}
+      onRematch={() => setSession({ ...session, round: session.round + 1 })}
+      onExit={() => setSession(null)}
+    />
+  );
 }

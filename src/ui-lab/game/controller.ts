@@ -3,9 +3,9 @@
 // 每手 applyDecision 前後餵 derivePresentationEvents 進 PresentationTimeline；
 // 演出節奏與互動閘（佇列清空前不開放操作）屬 renderer 層，本檔不管時間。
 //
-// M9a 人類互動範圍（spec §2 垂直切片）：deploy-serve/receive/toss/attack 拖曳登場＋defense-choice 二選一。
-// 其餘決策型別（mulligan/free/effect-*/deploy-block/serve-rights/resolve-pending/pick-set-card）
-// 暫由 heuristic 代打（spec §4 過渡期允許；M9b 逐型別補齊）。
+// LP1~LP5（[使用者 2026-07-11] 完整對局路線）：P0 的**全部**決策型別由人類親手操作
+// （serve-rights/mulligan/deploy-*/defense-choice/free/resolve-pending/effect-*/pick-set-card）；
+// 「AI 代打」按鈕仍可對任何單手委託 heuristic。對手 P1 與 chooser=對手的效果決策照舊自動。
 
 import { heuristicAiDecision } from "../../ai/heuristic";
 import { applyDecision, createGame } from "../../engine/engine";
@@ -14,9 +14,6 @@ import { derivePresentationEvents } from "../presentation/derive";
 import { PresentationTimeline, type PresentationBatch } from "../presentation/timeline";
 
 export const HUMAN: PlayerId = 0;
-
-/** M9a 由人類親手操作的決策型別；其餘代打 */
-const HUMAN_TYPES: ReadonlySet<Decision["type"]> = new Set(["deploy-serve", "deploy-receive", "deploy-toss", "deploy-attack", "defense-choice"]);
 
 export interface BatchMeta {
   /** 這批演出開始前的盤面（演出底圖） */
@@ -42,10 +39,10 @@ export class LabGameController {
     this.advance();
   }
 
-  /** 是否輪到人類親手操作（不含代打型別） */
+  /** 是否輪到人類親手操作（P0 的所有決策型別） */
   get awaitingHuman(): boolean {
     const pd = this.engine.pendingDecision;
-    return !!pd && pd.player === HUMAN && HUMAN_TYPES.has(pd.type);
+    return !!pd && pd.player === HUMAN;
   }
 
   metaOf(batch: PresentationBatch): BatchMeta | undefined {

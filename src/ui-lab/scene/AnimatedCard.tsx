@@ -15,8 +15,10 @@ export const DRAG_Y = 1.35;
 
 export interface AnimatedCardProps {
   placement: CardPlacement;
-  /** 可拖曳提示：微升＋卡緣邊框脈動 */
+  /** 可拖曳／可選取提示：微升＋卡緣邊框脈動 */
   highlighted?: boolean;
+  /** 已選取（mulligan 換牌、攔網多選）：金色定亮邊框 */
+  selected?: boolean;
   /** hover 拉出（手牌檢視）：明顯上抬＋拉向鏡頭＋放大 */
   hovered?: boolean;
   /** 拖曳中：跟隨 dragPoint（mutable ref，pointer move 直寫、不觸發 render） */
@@ -130,8 +132,10 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
           onPointerOut={props.onPointerOut}
         />
       </Suspense>
-      {/* 可拖曳提示：卡緣邊框脈動（回饋 #6——光收在邊框、不溢出） */}
-      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.highlighted && !props.dragging} position={[0, -0.012, 0]} opacityRange={[0.4, 0.85]} />
+      {/* 可拖曳／可選取提示：卡緣邊框脈動（回饋 #6——光收在邊框、不溢出） */}
+      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.highlighted && !props.selected && !props.dragging} position={[0, -0.012, 0]} opacityRange={[0.4, 0.85]} />
+      {/* 已選取：金色定亮 */}
+      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.selected} color="#ffd45e" opacityRange={[0.8, 0.95]} position={[0, -0.012, 0]} />
     </group>
   );
 }
