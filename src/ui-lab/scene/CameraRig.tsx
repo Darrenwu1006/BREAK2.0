@@ -4,9 +4,11 @@
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-const BASE = new THREE.Vector3(0, 8.8, 8.6);
-const PUSHED = new THREE.Vector3(0, 7.3, 6.8);
-const LOOK_AT = new THREE.Vector3(0, 0, 0.6);
+/** CP5c：zoom out 後的桌面基準機位；Canvas 初始值與 CameraRig 共用，避免首幀跳動。 */
+export const LAB_CAMERA_BASE: [number, number, number] = [0, 9.6, 9.9];
+const BASE = new THREE.Vector3(...LAB_CAMERA_BASE);
+const PUSHED = new THREE.Vector3(0, 8.2, 8.5);
+const LOOK_AT = new THREE.Vector3(0, 0, 0.35);
 
 export function CameraRig(props: { pushed: boolean; enabled: boolean }): null {
   useFrame((s, dtRaw) => {

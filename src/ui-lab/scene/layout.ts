@@ -7,33 +7,40 @@ import type { ZoneId } from "../presentation/events";
 
 export const CARD_W = 1;
 export const CARD_H = 1.4;
-export const CARD_T = 0.02;
+/** 單卡厚度：保留實體感，但避免 40 張牌組看成厚磚。 */
+export const CARD_T = 0.011;
 
 /** 桌墊尺寸（球場區） */
 export const MAT_W = 12.4;
-export const MAT_D = 9.6;
+export const MAT_D = 10.4;
 /** 桌面尺寸（桌墊外的木桌） */
 export const TABLE_W = 17;
-export const TABLE_D = 12.5;
+export const TABLE_D = 13.2;
 
 export interface ZoneAnchor {
   x: number;
   z: number;
 }
 
-/** P0 視角的區域錨點；P1 取鏡像（x、z 同時取負） */
+/** 卡槽外框尺寸（SlotFrame 與間距檢查共用）：卡面＋0.22 邊 */
+export const SLOT_W = CARD_W + 0.22;
+export const SLOT_H = CARD_H + 0.22;
+
+/** P0 視角的區域錨點；P1 取鏡像（x、z 同時取負）。
+ *  [使用者 2026-07-10] 格子不可互相重疊：行距／欄距皆 > SLOT 尺寸——
+ *  攔網列貼網、接/托/攻列往手牌方向拉開、Set 卡列往網子方向、左右外欄（Set/牌組/棄牌）獨立。 */
 const P0_ANCHORS: Record<ZoneId, ZoneAnchor> = {
-  blockCenter: { x: 0, z: 1.05 },
-  blockSide: { x: 1.4, z: 1.05 }, // 第 2 張 side 在 -1.4（見 blockSideAnchor）
-  receive: { x: -1.75, z: 2.5 },
-  toss: { x: 0, z: 2.5 },
-  attack: { x: 1.75, z: 2.5 },
-  serve: { x: 3.5, z: 3.7 },
-  eventArea: { x: -3.5, z: 3.2 },
-  setArea: { x: -5.15, z: 2.1 },
-  deck: { x: 5.15, z: 2.7 },
-  drop: { x: 5.15, z: 1.0 },
-  hand: { x: 0, z: 5.2 },
+  blockCenter: { x: 0, z: 1.15 },
+  blockSide: { x: 1.9, z: 1.15 }, // 第 2 張 side 在 -1.9（見 blockSideAnchor）
+  receive: { x: -2.1, z: 3.0 },
+  toss: { x: 0, z: 3.0 },
+  attack: { x: 2.1, z: 3.0 },
+  serve: { x: 3.6, z: 3.55 },
+  eventArea: { x: -3.6, z: 3.55 },
+  setArea: { x: -4.75, z: 1.4 }, // 兩張沿 x 左右展開（見 setAreaAnchor）
+  deck: { x: 5.15, z: 2.95 },
+  drop: { x: 5.15, z: 1.05 },
+  hand: { x: 0, z: 5.35 },
 };
 
 export function zoneAnchor(player: PlayerId, zone: ZoneId): ZoneAnchor {
@@ -47,15 +54,9 @@ export function blockSideAnchor(player: PlayerId, index: number): ZoneAnchor {
   return index === 0 ? a : { x: -a.x, z: a.z };
 }
 
-/** Set 區兩張並排 */
+/** Set 區兩張沿 x 左右排；player 1 反向鏡像 index，保持雙方構圖對稱。 */
 export function setAreaAnchor(player: PlayerId, index: number): ZoneAnchor {
   const a = zoneAnchor(player, "setArea");
-  const off = (index === 0 ? -0.58 : 0.58) * (player === 0 ? 1 : -1);
+  const off = (index === 0 ? -0.68 : 0.68) * (player === 0 ? 1 : -1);
   return { x: a.x + off, z: a.z };
-}
-
-/** 疊放區ガッツ的視覺外露：距頂 n 層，往網子方向退 */
-export function stackPeek(player: PlayerId, fromTop: number): ZoneAnchor {
-  const dz = -0.3 * fromTop * (player === 0 ? 1 : -1);
-  return { x: 0, z: dz };
 }

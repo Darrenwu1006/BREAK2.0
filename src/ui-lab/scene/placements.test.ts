@@ -8,6 +8,7 @@ import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
 import { applyDecision, createGame } from "../../engine/engine";
 import type { CardDb, GameState } from "../../engine/types";
+import { blockSideAnchor, setAreaAnchor, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
 import { computePlacements, mergePlacements } from "./placements";
 
 interface DeckJson {
@@ -43,6 +44,53 @@ describe("computePlacements", () => {
     for (const uid of s.players[0].hand) expect(cards.get(uid)!.faceUp).toBe(true);
     for (const uid of s.players[1].hand) expect(cards.get(uid)!.faceUp).toBe(false);
     for (const player of [0, 1] as const) for (const uid of s.players[player].setArea) expect(cards.get(uid)!.faceUp).toBe(false);
+  });
+
+  it("P0 手牌是 Pocket 式淺弧扇形，並以極小景深級距維持右卡在上", () => {
+    const s = midGame();
+    const { cards } = computePlacements(db, s, schools);
+    const hand = s.players[0].hand.map((uid) => cards.get(uid)!);
+    for (let i = 1; i < hand.length; i++) {
+      expect(hand[i]!.position[0]).toBeGreaterThan(hand[i - 1]!.position[0]);
+      expect(hand[i]!.position[2]).toBeGreaterThan(hand[i - 1]!.position[2]);
+    }
+    expect(hand[Math.floor((hand.length - 1) / 2)]!.position[1]).toBeGreaterThan(hand[0]!.position[1]);
+    expect(hand[Math.ceil((hand.length - 1) / 2)]!.position[1]).toBeGreaterThan(hand[hand.length - 1]!.position[1]);
+    expect(hand[0]!.rotation[2]).toBeGreaterThan(0);
+    expect(hand[hand.length - 1]!.rotation[2]).toBeLessThan(0);
+  });
+
+  it("P0 場上卡槽保留完整間距；接球/托球/攻擊列在 Set 卡列下方", () => {
+    const anchors = [
+      zoneAnchor(0, "blockCenter"),
+      blockSideAnchor(0, 0),
+      blockSideAnchor(0, 1),
+      zoneAnchor(0, "receive"),
+      zoneAnchor(0, "toss"),
+      zoneAnchor(0, "attack"),
+      zoneAnchor(0, "serve"),
+      zoneAnchor(0, "eventArea"),
+      setAreaAnchor(0, 0),
+      setAreaAnchor(0, 1),
+      zoneAnchor(0, "deck"),
+      zoneAnchor(0, "drop"),
+    ];
+    for (let i = 0; i < anchors.length; i++) {
+      for (let j = i + 1; j < anchors.length; j++) {
+        const a = anchors[i]!;
+        const b = anchors[j]!;
+        expect(Math.abs(a.x - b.x) >= SLOT_W || Math.abs(a.z - b.z) >= SLOT_H, `slot ${i}/${j} 不應重疊`).toBe(true);
+      }
+    }
+    expect(zoneAnchor(0, "receive").z).toBeGreaterThan(setAreaAnchor(0, 1).z);
+    expect(zoneAnchor(0, "toss").z).toBeGreaterThan(zoneAnchor(0, "blockCenter").z);
+    expect(zoneAnchor(0, "attack").z).toBeGreaterThan(zoneAnchor(0, "blockCenter").z);
+    expect(setAreaAnchor(0, 0).z).toBe(setAreaAnchor(0, 1).z);
+    expect(setAreaAnchor(0, 0).x).not.toBe(setAreaAnchor(0, 1).x);
+    expect(setAreaAnchor(0, 0).z - SLOT_H / 2).toBeGreaterThan(0);
+    expect(Math.abs(setAreaAnchor(1, 0).z) - SLOT_H / 2).toBeGreaterThan(0);
+    expect(zoneAnchor(0, "serve").z).toBeLessThan(zoneAnchor(0, "hand").z);
+    expect(zoneAnchor(0, "eventArea").z).toBeLessThan(zoneAnchor(0, "hand").z);
   });
 
   it("mergePlacements：只有 movedUids 取 target 擺位，其餘維持 base", () => {

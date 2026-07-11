@@ -6,6 +6,8 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Suspense, useRef } from "react";
 import * as THREE from "three";
 import { CardMesh } from "./CardMesh";
+import { GlowFrame } from "./GlowFrame";
+import { CARD_H, CARD_W } from "./layout";
 import type { CardPlacement } from "./placements";
 
 /** 拖曳平面高度（卡被「拿起來」的高度） */
@@ -13,7 +15,7 @@ export const DRAG_Y = 1.35;
 
 export interface AnimatedCardProps {
   placement: CardPlacement;
-  /** 可拖曳提示：微升＋底光脈動 */
+  /** 可拖曳提示：微升＋卡緣邊框脈動 */
   highlighted?: boolean;
   /** hover 拉出（手牌檢視）：明顯上抬＋拉向鏡頭＋放大 */
   hovered?: boolean;
@@ -35,7 +37,6 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
   const rot = useRef(new THREE.Euler());
   const prev = useRef(new THREE.Vector3());
   const flight = useRef({ key: "", total: 0 });
-  const glowMat = useRef<THREE.MeshBasicMaterial>(null);
 
   useFrame((_, dtRaw) => {
     const g = group.current;
@@ -60,10 +61,10 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
       tz = dp.z;
     } else if (props.hovered) {
       ty += 0.55;
-      tz -= 0.5;
+      tz += 0.4;
     } else if (props.highlighted) {
       ty += 0.16;
-      tz -= 0.1;
+      tz += 0.05;
     }
 
     // ---- 飛行弧線簿記：目標換了才重算航程 ----
@@ -107,10 +108,6 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
     const s = damp(g.scale.x, props.dragging ? 1.07 : props.hovered ? 1.12 : 1, 12, dt);
     g.scale.setScalar(s);
 
-    if (glowMat.current) {
-      const pulse = props.highlighted && !props.dragging ? 0.3 + 0.15 * Math.sin(performance.now() * 0.005) : 0;
-      glowMat.current.opacity = damp(glowMat.current.opacity, pulse, 12, dt);
-    }
   });
 
   return (
@@ -127,11 +124,8 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
           onPointerOut={props.onPointerOut}
         />
       </Suspense>
-      {/* 可拖曳底光（不動 CardMesh 材質，疊一片脈動平面） */}
-      <mesh position={[0, -0.018, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1.24, 1.66]} />
-        <meshBasicMaterial ref={glowMat} color="#5ec2ff" transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-      </mesh>
+      {/* 可拖曳提示：卡緣邊框脈動（回饋 #6——光收在邊框、不溢出） */}
+      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.highlighted && !props.dragging} position={[0, -0.012, 0]} opacityRange={[0.4, 0.85]} />
     </group>
   );
 }

@@ -94,6 +94,7 @@
   display: flex;
   gap: 8px;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
+  z-index: 4;
 }
 
 .subtitles {
@@ -167,22 +168,40 @@
 
 .promptBar {
   position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  right: 14px;
+  bottom: 14px;
+  width: min(330px, calc(100vw - 28px));
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 16px;
-  border-radius: 10px;
-  background: rgba(18, 24, 30, 0.88);
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(18, 24, 30, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
+  z-index: 4;
+}
+
+.controlHeading {
+  color: #f2f6fa;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .promptText {
   color: #dfe8f0;
-  font-size: 13px;
+  min-height: 34px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.actionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
 }
 
 .btn,
@@ -200,13 +219,16 @@
   cursor: pointer;
 }
 
-.btn:hover {
+.btn:not(:disabled):hover {
   border-color: #8fc7ff;
   background: #24384d;
 }
 
-.btn:disabled {
-  opacity: 0.35;
+.btn:disabled,
+.btnGhost:disabled,
+.btnDanger:disabled {
+  opacity: 0.3;
+  filter: grayscale(0.85);
   cursor: not-allowed;
 }
 
@@ -214,7 +236,7 @@
   background: rgba(18, 24, 30, 0.82);
 }
 
-.btnGhost:hover {
+.btnGhost:not(:disabled):hover {
   border-color: #8fc7ff;
 }
 
@@ -222,9 +244,111 @@
   background: #3a1d1d;
 }
 
-.btnDanger:hover {
+.btnDanger:not(:disabled):hover {
   border-color: #ff9d8f;
   background: #4d2424;
+}
+
+/* R3F Html：桌墊槽位文字與 Guts 張數徽章 */
+.slotLabel {
+  min-width: 70px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(12, 16, 21, 0.58);
+  color: rgba(205, 216, 225, 0.66);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.gutsBadge {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 212, 94, 0.72);
+  border-radius: 999px;
+  background: rgba(19, 24, 29, 0.94);
+  color: #ffe4a0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gutsBadge:hover {
+  border-color: #ffe6a7;
+  background: #2d2a22;
+}
+
+.gutsPanel {
+  position: absolute;
+  right: 14px;
+  bottom: 226px;
+  width: min(380px, calc(100vw - 28px));
+  padding: 12px;
+  border: 1px solid rgba(255, 212, 94, 0.42);
+  border-radius: 12px;
+  background: rgba(15, 20, 25, 0.96);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  z-index: 5;
+}
+
+.gutsPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.gutsPanelHeader > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #f2f6fa;
+  font-size: 12px;
+}
+
+.gutsPanelHeader span {
+  color: #c7b785;
+  font-size: 10px;
+}
+
+.gutsCards {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.gutsCard {
+  flex: 0 0 92px;
+  margin: 0;
+}
+
+.gutsCard img {
+  display: block;
+  width: 92px;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.32);
+}
+
+.gutsCard figcaption {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #aeb9c2;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modalMask {

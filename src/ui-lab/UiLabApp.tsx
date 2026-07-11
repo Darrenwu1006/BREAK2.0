@@ -15,10 +15,13 @@ import { heuristicAiDecision } from "../ai/heuristic";
 import type { Card } from "../data/types";
 import { canChooseBlock, deployNames, deployableUids } from "../engine/engine";
 import type { CardDb, Decision, GameState } from "../engine/types";
+import { cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { usePlayback } from "./game/usePlayback";
+import type { ZoneId } from "./presentation/events";
+import { ZONE_LABEL } from "./presentation/textRenderer";
 import { BoardScene } from "./scene/BoardScene";
-import { CameraRig } from "./scene/CameraRig";
+import { CameraRig, LAB_CAMERA_BASE } from "./scene/CameraRig";
 import { zoneAnchor } from "./scene/layout";
 import { computePlacements, mergePlacements } from "./scene/placements";
 import { RevealLayer } from "./scene/RevealLayer";
@@ -37,6 +40,9 @@ const NEKOMA = nekomaDeck as DeckJson;
 const SCHOOLS: [string, string] = [KARASUNO.school, NEKOMA.school];
 
 type DeployType = "deploy-serve" | "deploy-receive" | "deploy-toss" | "deploy-attack";
+type StackZone = "serve" | "blockCenter" | "receive" | "toss" | "attack";
+const STACK_ZONES: ReadonlySet<ZoneId> = new Set(["serve", "blockCenter", "receive", "toss", "attack"]);
+const isStackZone = (zone: ZoneId): zone is StackZone => STACK_ZONES.has(zone);
 const DEPLOY_ZONE: Record<DeployType, "serve" | "receive" | "toss" | "attack"> = {
   "deploy-serve": "serve",
   "deploy-receive": "receive",
@@ -97,6 +103,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const [namePick, setNamePick] = useState<{ uid: number; names: string[] } | null>(null);
   const [speed, setSpeedState] = useState(1);
   const [orbit, setOrbit] = useState(false);
+  const [expandedStack, setExpandedStack] = useState<{ player: 0 | 1; zone: StackZone } | null>(null);
 
   // ---- 演出視圖 → 擺位 ----
   const placements = useMemo(() => {
@@ -183,6 +190,11 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
     }
   }, [db, engine, deployType, decide]);
 
+  const toggleStack = useCallback((player: 0 | 1, zone: ZoneId): void => {
+    if (!isStackZone(zone)) return;
+    setExpandedStack((current) => (current?.player === player && current.zone === zone ? null : { player, zone }));
+  }, []);
+
   // 放手在 canvas 外的保險
   useEffect(() => {
     if (draggingUid === null) return;
@@ -195,6 +207,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
   const pushed = !!view.current && ["judge-revealed", "set-won", "match-won"].includes(view.current.event.kind);
   const gameOver = !view.playing && !engine.pendingDecision;
   const shown = view.displayed;
+  const expandedGuts = expandedStack ? shown.players[expandedStack.player][expandedStack.zone].slice(0, -1).reverse() : [];
   const opNote = engine.op && engine.op.owner !== HUMAN ? `對手 OP ${engine.op.value}——` : "";
   const prompt = view.playing
     ? "演出中…"
@@ -215,7 +228,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
       <Canvas
         className={styles.canvas}
         style={{ position: "absolute", inset: 0 }}
-        camera={{ position: [0, 8.8, 8.6], fov: 40 }}
+        camera={{ position: LAB_CAMERA_BASE, fov: 40 }}
         dpr={[1, 2]}
       >
         <color attach="background" args={["#0d1115"]} />
@@ -233,6 +246,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
             onCardPointerDown={beginDrag}
             onDragMove={onDragMove}
             onDragEnd={endDrag}
+            onStackToggle={toggleStack}
           />
           <RevealLayer reveal={view.reveal} />
         </Suspense>
@@ -249,7 +263,7 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         <span className={styles.hint}>
           第 {shown.setNo} 局・第 {shown.turnNo} 回合｜Set 卡 {SCHOOLS[0]} {shown.players[0].setArea.length}－{shown.players[1].setArea.length} {SCHOOLS[1]}
           <br />
-          你＝{SCHOOLS[0]}（近側）。對手與未實裝決策由 AI 代打。
+          你＝{SCHOOLS[0]}（近側）。本畫面直接接共用規則引擎；對手與未實裝決策由 AI 代打。
         </span>
         <a className={styles.link} href="./">
           ← 回經典介面
@@ -258,11 +272,6 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
 
       {/* 右上：演出控制 */}
       <div className={styles.controls}>
-        {view.playing && (
-          <button className={styles.btnGhost} data-testid="skip" onClick={skip}>
-            跳過演出 ⏭
-          </button>
-        )}
         <button
           className={styles.btnGhost}
           onClick={() => {
@@ -294,35 +303,73 @@ function LabGame(props: { db: CardDb; seed: number; onRestart: () => void }): Re
         </div>
       )}
 
-      {/* 底部：決策列 */}
-      <div className={styles.promptBar}>
-        <span className={styles.promptText}>{prompt}</span>
-        {deployType && (
-          <button className={styles.btnDanger} onClick={() => decide({ type: deployType, uid: null } as Decision)}>
+      {/* 右下：常駐決策控制器。所有可能出現的按鈕保留位置，只有當下合法操作會亮起。 */}
+      <section className={styles.promptBar} aria-label="對局操作">
+        <div className={styles.controlHeading}>對局操作</div>
+        <div className={styles.promptText} aria-live="polite">{prompt || "等待下一個決策…"}</div>
+        <div className={styles.actionGrid}>
+          <button className={styles.btnGhost} data-testid="skip" disabled={!view.playing} onClick={skip}>
+            跳過演出
+          </button>
+          <button
+            className={styles.btnGhost}
+            data-testid="auto-one"
+            disabled={!pd || !controller.awaitingHuman}
+            onClick={() => pd && controller.awaitingHuman && decide(heuristicAiDecision(db, engine))}
+          >
+            AI 代打
+          </button>
+          <button
+            className={styles.btnDanger}
+            disabled={!deployType}
+            onClick={() => deployType && decide({ type: deployType, uid: null } as Decision)}
+          >
             不登場
           </button>
-        )}
-        {pd && controller.awaitingHuman && (
-          <button className={styles.btnGhost} data-testid="auto-one" onClick={() => decide(heuristicAiDecision(db, engine))}>
-            AI 代打此手
+          <button
+            className={styles.btn}
+            disabled={pd?.type !== "defense-choice" || !canChooseBlock(engine)}
+            onClick={() => pd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "block" })}
+          >
+            攔網
           </button>
-        )}
-        {pd?.type === "defense-choice" && (
-          <>
-            <button className={styles.btn} disabled={!canChooseBlock(engine)} onClick={() => decide({ type: "defense-choice", choice: "block" })}>
-              攔網
-            </button>
-            <button className={styles.btn} onClick={() => decide({ type: "defense-choice", choice: "receive" })}>
-              接球
-            </button>
-          </>
-        )}
-        {gameOver && (
-          <button className={styles.btn} onClick={props.onRestart}>
+          <button
+            className={styles.btn}
+            disabled={pd?.type !== "defense-choice"}
+            onClick={() => pd?.type === "defense-choice" && decide({ type: "defense-choice", choice: "receive" })}
+          >
+            接球
+          </button>
+          <button className={styles.btnGhost} disabled={!gameOver} onClick={props.onRestart}>
             再來一場
           </button>
-        )}
-      </div>
+        </div>
+      </section>
+
+      {/* 場上疊放區：沿用經典介面的 Guts popover 心智模型，點場上卡或徽章開啟。 */}
+      {expandedStack && expandedGuts.length > 0 && (
+        <section className={styles.gutsPanel} role="dialog" aria-label={`${ZONE_LABEL[expandedStack.zone]} Guts`}>
+          <div className={styles.gutsPanelHeader}>
+            <div>
+              <strong>{expandedStack.player === HUMAN ? "我方" : "對手"}{ZONE_LABEL[expandedStack.zone]}</strong>
+              <span>Guts {expandedGuts.length}</span>
+            </div>
+            <button className={styles.btnGhost} onClick={() => setExpandedStack(null)}>關閉</button>
+          </div>
+          <div className={styles.gutsCards}>
+            {expandedGuts.map((uid) => {
+              const card = db.get(shown.cards[uid]!);
+              const src = card ? cardFrontUrl(card) : null;
+              return (
+                <figure className={styles.gutsCard} key={uid}>
+                  {src && <img src={src} alt={card?.nameZh || card?.nameJa || `卡片 ${uid}`} />}
+                  <figcaption>{card?.nameZh || card?.nameJa || `卡片 ${uid}`}</figcaption>
+                </figure>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* 選名彈窗（072/073） */}
       {namePick && deployType && (

@@ -58,19 +58,18 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
       return card ? cardFrontUrl(card) : null;
     };
 
-    // 疊放區（頂＝キャラ正面、其下ガッツ往網子方向外露）
+    // 疊放區：直上疊、不外露（卡堆不超出格子——[使用者 2026-07-10]）；
+    // ガッツ張數以徽章顯示、點擊可展開檢視（BoardScene/UiLabApp）
     for (const zone of STACK_ZONES) {
       const stack = ps[zone];
       const anchor = zoneAnchor(player, zone === "blockCenter" ? "blockCenter" : zone);
       stack.forEach((uid, depth) => {
-        const fromTop = stack.length - 1 - depth;
-        const peekZ = -0.32 * fromTop * (player === 0 ? 1 : -1);
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
-          position: [anchor.x, lift(depth), anchor.z + peekZ],
+          position: [anchor.x, lift(depth), anchor.z],
           rotation: [0, rotY + jitter(uid), 0],
           zone,
           player,
@@ -138,21 +137,25 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
         player,
       });
     }
-    // 手牌：P0＝面向鏡頭的手托——左到右、由下往上疊（右卡壓左卡右緣，
-    // 卡名在左緣故永遠可見）；y 級距 > 卡厚×傾斜投影，杜絕相鄰卡穿模破圖。
+    // 手牌：P0 參考 Pokémon TCG Pocket——中間略高、左右向內收的淺弧扇形；
+    // x 每張露出約半張，z 只用極小級距維持「右卡壓左卡右緣」的穩定遮擋順序。
+    // hover 時 AnimatedCard 再把單張往上／鏡頭方向抽出。
     // P1＝遠端蓋牌扇。
     const handA = zoneAnchor(player, "hand");
     const n = ps.hand.length;
     ps.hand.forEach((uid, i) => {
       const t = n > 1 ? i - (n - 1) / 2 : 0;
       if (player === 0) {
+        const maxT = Math.max((n - 1) / 2, 1);
+        const normalized = t / maxT;
+        const arc = 0.16 * (1 - normalized * normalized);
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
-          position: [handA.x + t * 0.66, 0.9 + i * 0.05, handA.z - 0.35 + Math.abs(t) * 0.05],
-          rotation: [0.78, -t * 0.03, -t * 0.02],
+          position: [handA.x + t * 0.46, 0.76 + arc, handA.z - 0.2 + i * 0.006],
+          rotation: [0.72, -normalized * 0.18, -normalized * 0.06],
           zone: "hand",
           player,
         });
