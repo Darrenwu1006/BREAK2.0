@@ -56,6 +56,7 @@ describe("PresentationTimeline — 佇列消費", () => {
     let idleFired = 0;
     tl.onIdle(() => idleFired++);
     tl.enqueue(batch([move, judge, move]));
+    expect(tl.pending().map((entry) => entry.event.kind)).toEqual(["card-moved", "judge-revealed", "card-moved"]);
     tl.skip();
     expect(tl.idle).toBe(true);
     expect(idleFired).toBe(1);

@@ -32,12 +32,12 @@ export const SLOT_H = CARD_H + 0.22;
 const P0_ANCHORS: Record<ZoneId, ZoneAnchor> = {
   blockCenter: { x: 0, z: 1.15 },
   blockSide: { x: 1.9, z: 1.15 }, // 第 2 張 side 在 -1.9（見 blockSideAnchor）
-  receive: { x: -2.1, z: 3.0 },
+  receive: { x: -1.9, z: 3.0 },
   toss: { x: 0, z: 3.0 },
-  attack: { x: 2.1, z: 3.0 },
+  attack: { x: 1.9, z: 3.0 },
   serve: { x: 3.6, z: 3.55 },
   eventArea: { x: -3.6, z: 3.55 },
-  setArea: { x: -4.75, z: 1.4 }, // 兩張沿 x 左右展開（見 setAreaAnchor）
+  setArea: { x: -4.75, z: 1.4 }, // 平時緊密疊放；pick-set-card 才展開（見 setAreaAnchor）
   deck: { x: 5.15, z: 2.95 },
   drop: { x: 5.15, z: 1.05 },
   hand: { x: 0, z: 5.35 },
@@ -54,9 +54,10 @@ export function blockSideAnchor(player: PlayerId, index: number): ZoneAnchor {
   return index === 0 ? a : { x: -a.x, z: a.z };
 }
 
-/** Set 區兩張沿 x 左右排；player 1 反向鏡像 index，保持雙方構圖對稱。 */
-export function setAreaAnchor(player: PlayerId, index: number): ZoneAnchor {
+/** Set 區平時緊密錯位疊放；進入 pick-set-card 才展開為兩個可點目標。 */
+export function setAreaAnchor(player: PlayerId, index: number, expanded = false): ZoneAnchor {
   const a = zoneAnchor(player, "setArea");
-  const off = (index === 0 ? -0.68 : 0.68) * (player === 0 ? 1 : -1);
-  return { x: a.x + off, z: a.z };
+  const spread = expanded ? 0.66 : 0.1;
+  const off = (index === 0 ? -spread : spread) * (player === 0 ? 1 : -1);
+  return { x: a.x + off, z: a.z + (expanded ? 0 : (index === 0 ? -0.04 : 0.04) * (player === 0 ? 1 : -1)) };
 }

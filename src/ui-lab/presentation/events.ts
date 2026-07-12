@@ -42,8 +42,22 @@ export type MoveReason =
   | "set-place" // 開局 Set 卡配置
   | "effect"; // 其他效果移動（檢索/回收/區間移動…）
 
+export interface CardMovedEvent {
+  kind: "card-moved";
+  uid: number;
+  cardId: string;
+  from: ZoneRef;
+  to: ZoneRef;
+  visibility: Visibility;
+  reason: MoveReason;
+  /** 換牌補抽使用較快的逐張發牌節奏。 */
+  motion?: "mulligan-deal";
+}
+
 export type PresentationEvent =
-  | { kind: "card-moved"; uid: number; cardId: string; from: ZoneRef; to: ZoneRef; visibility: Visibility; reason: MoveReason }
+  | CardMovedEvent
+  | { kind: "card-group-moved"; moves: CardMovedEvent[]; reason: "mulligan-return" }
+  | { kind: "deck-shuffled"; player: PlayerId }
   | { kind: "op-revealed"; player: PlayerId; source: "serve" | "block" | "attack"; value: number }
   | { kind: "dp-revealed"; player: PlayerId; source: "block" | "receive"; value: number }
   | { kind: "judge-revealed"; defense: "block" | "receive"; defender: PlayerId; opValue: number; dpValue: number; success: boolean }
@@ -56,5 +70,3 @@ export type PresentationEvent =
   | { kind: "turn-started"; player: PlayerId; setNo: number; turnNo: number; turnKind: "serve" | "normal" }
   | { kind: "defense-chosen"; player: PlayerId; choice: "block" | "receive" }
   | { kind: "decision-requested"; player: PlayerId; decisionType: Decision["type"]; prompt?: string };
-
-export type CardMovedEvent = Extract<PresentationEvent, { kind: "card-moved" }>;

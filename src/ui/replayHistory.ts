@@ -29,6 +29,9 @@ export interface ReplaySession {
   decks: [ReplayDeckSnapshot, ReplayDeckSnapshot];
   initialState: GameState;
   entries: ReplayEntry[];
+  /** 單人練習曾回退並另走新分支；戰報可據此辨識非原始線性對局。 */
+  rewound?: boolean;
+  rewindCount?: number;
 }
 
 export type ReplayGutsSource = "serve" | "receive" | "toss" | "attack" | "blockCenter";

@@ -230,17 +230,35 @@ export function blockDeployMax(state: GameState, p: PlayerId, origin: "hand" | "
  * 單卡可否登場到指定區（參數「－」†1-3-2-2、登場限制、同名禁止 †1-4-5-4-1）。
  * chosenName＝072/073 的選名（未選時以任一可行名判斷）；效果登場（deployFromDrop）也走這裡。
  */
-export function canDeployTo(db: CardDb, state: GameState, p: PlayerId, uid: number, area: CourtArea, chosenName?: string, origin: "hand" | "effect" = "hand"): boolean {
+export type DeployLegalityCode =
+  | "not-character"
+  | "no-area-param"
+  | "area-restricted"
+  | "base-param-restricted"
+  | "position-restricted"
+  | "same-name";
+
+/** null＝合法；code 供 UI／測試說明原因，判斷本身仍只有這一份規則真相。 */
+export function deployLegality(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  uid: number,
+  area: CourtArea,
+  chosenName?: string,
+  origin: "hand" | "effect" = "hand",
+): DeployLegalityCode | null {
   const c = cardOf(db, state, uid);
-  if (c.type !== "CHARACTER" || !c.params || c.params[area] === null) return false;
+  if (c.type !== "CHARACTER" || !c.params) return "not-character";
+  if (c.params[area] === null) return "no-area-param";
   for (const r of restrictionsFor(state, p, area)) {
     if (r.fromHandOnly && origin !== "hand") continue; // 「手札から」限定（P01-084/P02-097）
-    if (r.maxCount === 0) return false;
+    if (r.maxCount === 0) return "area-restricted";
     if (r.banBaseParamMin) {
       const b = baseParam(db, state, uid, r.banBaseParamMin.param);
-      if (b !== null && b >= r.banBaseParamMin.value) return false;
+      if (b !== null && b >= r.banBaseParamMin.value) return "base-param-restricted";
     }
-    if (r.banPositions && r.banPositions.some((x) => c.positions.includes(x))) return false;
+    if (r.banPositions && r.banPositions.some((x) => c.positions.includes(x))) return "position-restricted";
   }
   // 同名禁止：トス≠レシーブ、アタック≠トス（攔網同名於 deploy-block 整批驗證）
   let banned: string | null = null;
@@ -255,12 +273,16 @@ export function canDeployTo(db: CardDb, state: GameState, p: PlayerId, uid: numb
   if (banned !== null) {
     const names = deployNames(db, state, uid);
     if (chosenName !== undefined) {
-      if (normName(chosenName) === banned) return false;
+      if (normName(chosenName) === banned) return "same-name";
     } else if (names) {
-      if (names.every((n) => normName(n) === banned)) return false; // 兩個名字都撞名才不可（Q279）
-    } else if (normName(c.nameJa) === banned) return false;
+      if (names.every((n) => normName(n) === banned)) return "same-name"; // 兩個名字都撞名才不可（Q279）
+    } else if (normName(c.nameJa) === banned) return "same-name";
   }
-  return true;
+  return null;
+}
+
+export function canDeployTo(db: CardDb, state: GameState, p: PlayerId, uid: number, area: CourtArea, chosenName?: string, origin: "hand" | "effect" = "hand"): boolean {
+  return deployLegality(db, state, p, uid, area, chosenName, origin) === null;
 }
 
 // ---------- 篩選與條件 ----------
@@ -846,6 +868,44 @@ export function freeOptions(db: CardDb, state: GameState): { skills: FreeOption[
     events.push({ uid, label: `打出 ${nameOf(db, state, uid)}` }); // ターン1 無效時仍可 play（Q300）
   }
   return { skills, events };
+}
+
+/** UI 可追溯的自由步驟不可用原因；與 freeOptions 共用同一批 engine primitives，不在視覺層猜規則。 */
+export function freeCardReasons(db: CardDb, state: GameState, uid: number): string[] {
+  const available = freeOptions(db, state);
+  if (available.events.some((item) => item.uid === uid) || available.skills.some((item) => item.uid === uid)) return [];
+  if (!PHASES6.includes(state.phase)) return ["目前不是可宣告技能／事件的自由步驟"];
+  const p = state.turnPlayer;
+  const phase = state.phase as PhaseIcon;
+  const card = cardOf(db, state, uid);
+  if (card.type === "EVENT") {
+    if (!eventTimingsOf(db, state, uid).includes(phase)) return ["這張事件卡的使用時機與目前階段不符"];
+    if (!effectDefOf(db, state, uid)?.skills.some((skill) => skill.kind === "event")) return ["這張事件卡的效果尚未實作"];
+    if (state.restrictions.some((r) => r.player === p && r.banEventTimings?.some((timing) => eventTimingsOf(db, state, uid).includes(timing)) && r.setNo === state.setNo && r.activeTurn === state.turnNo)) {
+      return ["目前效果禁止使用這個時機的事件卡"];
+    }
+    return ["這張事件卡目前不可使用"];
+  }
+  const def = effectDefOf(db, state, uid);
+  const active = def?.skills.filter((skill): skill is Extract<SkillDef, { kind: "active" }> => skill.kind === "active") ?? [];
+  if (active.length === 0) return ["這張角色卡沒有可主動宣告的技能"];
+  const area = charaAreaOf(state, p, uid);
+  const inHand = state.players[p].hand.includes(uid);
+  const reasons = new Set<string>();
+  for (const skill of active) {
+    if (!skill.phaseIcons.includes(phase)) { reasons.add("技能時機與目前階段不符"); continue; }
+    const areaOk = skill.areaIcons.some((icon) => icon === "hand" ? inHand : icon === "court" ? area !== null : icon === area);
+    if (!areaOk) { reasons.add("技能要求的手牌／場區位置不符"); continue; }
+    if (state.turn1.some((item) => item.player === p && item.name === nameOf(db, state, uid) && item.setNo === state.setNo && item.turnNo === state.turnNo)) {
+      reasons.add("同名技能已受 ターン1 限制"); continue;
+    }
+    if (isSkillInvalid(db, state, p, uid)) { reasons.add("目前效果使這張卡的技能無效"); continue; }
+    if (skill.costs && !costPayable(db, state, p, uid, skill.costs)) { reasons.add("技能代價不足（Guts／手牌／事件區資源）"); continue; }
+    const pseudo = { player: p, source: uid, lastTarget: null };
+    if (skill.cond && !skill.cond.every((condition) => evalCond(db, state, pseudo, condition))) { reasons.add("技能的發動條件尚未成立"); continue; }
+    if (!couldChange(db, state, p, uid, skill.actions)) reasons.add("效果不會改變目前狀況，規則不允許宣告");
+  }
+  return [...reasons];
 }
 
 /** 宣言使用アクティブ型技能 †6-7（cost 同時執行） */

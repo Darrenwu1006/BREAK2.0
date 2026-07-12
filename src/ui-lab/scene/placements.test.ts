@@ -8,8 +8,9 @@ import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
 import { applyDecision, createGame } from "../../engine/engine";
 import type { CardDb, GameState } from "../../engine/types";
-import { blockSideAnchor, CARD_T, setAreaAnchor, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
-import { computePlacements, HAND_COS, HAND_SIN, HAND_SPAN, mergePlacements } from "./placements";
+import { capturePlayerValueFormulas } from "../presentation/valueFormula";
+import { blockSideAnchor, CARD_T, CARD_W, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
+import { applyBlockPreview, applyReadingFrame, computePlacements, HAND_COS, HAND_SIN, HAND_TILT, jitter, liftInPlaceReadingCandidates, locateReadingCard, mergePlacements, readingCardsForZone } from "./placements";
 
 interface DeckJson {
   cards: { id: string; count: number }[];
@@ -38,34 +39,42 @@ describe("computePlacements", () => {
     }
   });
 
-  it("視角：P0 手牌正面、P1 手牌背面；Set 區一律背面", () => {
+  it("hidden-information：P1 手牌／雙方 Set 不帶正面貼圖；對手公開卡朝玩家可讀", () => {
     const s = midGame();
     const { cards } = computePlacements(db, s, schools);
     for (const uid of s.players[0].hand) expect(cards.get(uid)!.faceUp).toBe(true);
-    for (const uid of s.players[1].hand) expect(cards.get(uid)!.faceUp).toBe(false);
-    for (const player of [0, 1] as const) for (const uid of s.players[player].setArea) expect(cards.get(uid)!.faceUp).toBe(false);
+    for (const uid of s.players[1].hand) {
+      expect(cards.get(uid)!.faceUp).toBe(false);
+      expect(cards.get(uid)!.frontUrl).toBeNull();
+    }
+    for (const player of [0, 1] as const) for (const uid of s.players[player].setArea) {
+      expect(cards.get(uid)!.faceUp).toBe(false);
+      expect(cards.get(uid)!.frontUrl).toBeNull();
+    }
+    for (const zone of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+      const uid = s.players[1][zone].at(-1);
+      if (uid !== undefined) expect(cards.get(uid)!.rotation[1]).toBeCloseTo(jitter(uid), 8);
+    }
   });
 
-  /** LP0 不破圖不變量（對任意手牌張數都必須成立——CP5d 的洞就是少牌時 rotY 差過大） */
+  /** [使用者 2026-07-12] 手牌＝左右並排、rotY/rotZ=0、同傾角；由左到右＝由下到上：
+   *  y 與 z 沿 index 嚴格遞增（平行層距，右壓左），保證不共面 z-fighting、相鄰不重疊。 */
   function assertHandNoClip(s: GameState): void {
     const { cards } = computePlacements(db, s, schools);
     const hand = s.players[0].hand.map((uid) => cards.get(uid)!);
-    // 平行平面族：全部 rotY=0、rotX 相同（rotZ 是卡面內滾轉、不改平面朝向）
     for (const p of hand) {
-      expect(p.rotation[1], "手牌 rotY 必須為 0（平行平面保證）").toBe(0);
-      expect(p.rotation[0]).toBe(hand[0]!.rotation[0]);
+      expect(p.rotation[1], "手牌 rotY 必須為 0").toBe(0);
+      expect(p.rotation[2], "手牌不再扇形：rotZ 必須為 0").toBe(0);
+      expect(p.rotation[0], "手牌同傾角").toBe(hand[0]!.rotation[0]);
     }
-    // x 左到右遞增、整體寬度收在固定範圍內
-    for (let i = 1; i < hand.length; i++) expect(hand[i]!.position[0]).toBeGreaterThan(hand[i - 1]!.position[0]);
-    if (hand.length > 1) expect(hand[hand.length - 1]!.position[0] - hand[0]!.position[0]).toBeLessThanOrEqual(HAND_SPAN + 1e-6);
-    // 相鄰卡沿卡面法線 n̂=(0,cosθ,sinθ) 的間距必須大於卡厚（右卡恆在左卡上方）
+    // x 左到右嚴格遞增、相鄰中心距 > 卡寬 ⇒ 水平不重疊；y/z 遞增 ⇒ 層距分離不 z-fight。
     for (let i = 1; i < hand.length; i++) {
-      const dy = hand[i]!.position[1] - hand[i - 1]!.position[1];
-      const dz = hand[i]!.position[2] - hand[i - 1]!.position[2];
-      const sep = dy * HAND_COS + dz * HAND_SIN;
-      expect(sep, `相鄰手牌 ${i - 1}/${i} 法線間距`).toBeGreaterThan(CARD_T);
+      const dx = hand[i]!.position[0] - hand[i - 1]!.position[0];
+      expect(dx, `相鄰手牌 ${i - 1}/${i} 左右並排不重疊`).toBeGreaterThan(CARD_W);
+      expect(hand[i]!.position[1], `手牌 ${i} 高於左鄰（由下到上層疊）`).toBeGreaterThan(hand[i - 1]!.position[1]);
+      expect(hand[i]!.position[2], `手牌 ${i} 較左鄰靠觀者（層距分離）`).toBeGreaterThan(hand[i - 1]!.position[2]);
     }
-    // hover/highlight 位移必須是卡面內移動（沿法線分量 ≈ 0）——平行性在互動中也不破
+    // hover/highlight 位移必須是卡面內移動（沿法線分量 ≈ 0）
     for (const p of hand) {
       for (const off of [p.hoverOffset, p.highlightOffset]) {
         expect(off, "手牌必須帶安全位移").toBeDefined();
@@ -75,16 +84,21 @@ describe("computePlacements", () => {
     }
   }
 
-  it("P0 手牌：Pocket 淺弧＋固定範圍填滿＋平行平面不破圖不變量", () => {
+  it("P0 手牌：左右並排、間距隨張數收縮、不堆疊不破圖", () => {
     const s = midGame();
     assertHandNoClip(s);
-    const { cards } = computePlacements(db, s, schools);
-    const hand = s.players[0].hand.map((uid) => cards.get(uid)!);
-    // 淺弧：中間比兩端高；外側牌帶面內滾轉角（左正右負）
-    const mid = Math.floor((hand.length - 1) / 2);
-    expect(hand[mid]!.position[1]).toBeGreaterThan(hand[0]!.position[1]);
-    expect(hand[0]!.rotation[2]).toBeGreaterThan(0);
-    expect(hand[hand.length - 1]!.rotation[2]).toBeLessThan(0);
+    const stepOf = (st: GameState): number => {
+      const { cards } = computePlacements(db, st, schools);
+      const h = st.players[0].hand;
+      return cards.get(h[1]!)!.position[0] - cards.get(h[0]!)!.position[0];
+    };
+    const ps = s.players[0];
+    while (ps.hand.length > 6) ps.deck.push(ps.hand.pop()!);
+    const stepMany = stepOf(s);
+    while (ps.hand.length > 3) ps.deck.push(ps.hand.pop()!);
+    const stepFew = stepOf(s);
+    // 越少張越鬆（間距越大）
+    expect(stepFew).toBeGreaterThan(stepMany);
   });
 
   it("P0 手牌少（2/3/4 張）時同樣不破圖——CP5d 迴歸案例", () => {
@@ -116,8 +130,7 @@ describe("computePlacements", () => {
       zoneAnchor(0, "attack"),
       zoneAnchor(0, "serve"),
       zoneAnchor(0, "eventArea"),
-      setAreaAnchor(0, 0),
-      setAreaAnchor(0, 1),
+      zoneAnchor(0, "setArea"),
       zoneAnchor(0, "deck"),
       zoneAnchor(0, "drop"),
     ];
@@ -128,15 +141,120 @@ describe("computePlacements", () => {
         expect(Math.abs(a.x - b.x) >= SLOT_W || Math.abs(a.z - b.z) >= SLOT_H, `slot ${i}/${j} 不應重疊`).toBe(true);
       }
     }
-    expect(zoneAnchor(0, "receive").z).toBeGreaterThan(setAreaAnchor(0, 1).z);
+    expect(zoneAnchor(0, "receive").z).toBeGreaterThan(zoneAnchor(0, "setArea").z);
     expect(zoneAnchor(0, "toss").z).toBeGreaterThan(zoneAnchor(0, "blockCenter").z);
     expect(zoneAnchor(0, "attack").z).toBeGreaterThan(zoneAnchor(0, "blockCenter").z);
-    expect(setAreaAnchor(0, 0).z).toBe(setAreaAnchor(0, 1).z);
-    expect(setAreaAnchor(0, 0).x).not.toBe(setAreaAnchor(0, 1).x);
-    expect(setAreaAnchor(0, 0).z - SLOT_H / 2).toBeGreaterThan(0);
-    expect(Math.abs(setAreaAnchor(1, 0).z) - SLOT_H / 2).toBeGreaterThan(0);
+    expect(zoneAnchor(0, "setArea").z - SLOT_H / 2).toBeGreaterThan(0);
+    expect(Math.abs(zoneAnchor(1, "setArea").z) - SLOT_H / 2).toBeGreaterThan(0);
     expect(zoneAnchor(0, "serve").z).toBeLessThan(zoneAnchor(0, "hand").z);
     expect(zoneAnchor(0, "eventArea").z).toBeLessThan(zoneAnchor(0, "hand").z);
+  });
+
+  it("Set 平時緊密疊放，pick-set-card 時才展開", () => {
+    const s = midGame();
+    const player = 0 as const;
+    const set = s.players[player].setArea;
+    if (set.length < 2) return;
+    const compact = computePlacements(db, s, schools).cards;
+    const compactDx = Math.abs(compact.get(set[0]!)!.position[0] - compact.get(set[1]!)!.position[0]);
+    s.pendingDecision = { player, type: "pick-set-card" };
+    const expanded = computePlacements(db, s, schools).cards;
+    const expandedDx = Math.abs(expanded.get(set[0]!)!.position[0] - expanded.get(set[1]!)!.position[0]);
+    expect(compactDx).toBeLessThan(0.3);
+    expect(expandedDx).toBeGreaterThan(1.2);
+  });
+
+  it("攔網複選在提交前預覽中央與兩側位置，可替換 center", () => {
+    const s = midGame();
+    const selected = s.players[0].hand.slice(0, 3);
+    if (selected.length < 3) return;
+    const base = computePlacements(db, s, schools);
+    const preview = applyBlockPreview(base, selected, selected[1]!);
+    expect(preview.cards.get(selected[1]!)?.zone).toBe("blockCenter");
+    expect(preview.cards.get(selected[0]!)?.zone).toBe("blockSide");
+    expect(preview.cards.get(selected[2]!)?.zone).toBe("blockSide");
+    expect(preview.cards.get(selected[1]!)?.position[0]).toBe(zoneAnchor(0, "blockCenter").x);
+  });
+
+  it("3D reading frame 展開效果候選並按來源分列，候選身份由引擎授權後正面顯示", () => {
+    const s = midGame();
+    const refs = [
+      locateReadingCard(s, s.players[0].deck[0]!)!,
+      locateReadingCard(s, s.players[0].deck[1]!)!,
+      locateReadingCard(s, s.players[1].drop.at(-1) ?? s.players[1].deck[0]!)!,
+    ];
+    const base = computePlacements(db, s, schools);
+    const reading = applyReadingFrame(base, db, s, refs, schools);
+    for (const ref of refs) {
+      expect(reading.cards.get(ref.uid)?.faceUp).toBe(true);
+      expect(reading.cards.get(ref.uid)?.position[1]).toBeGreaterThan(1);
+    }
+    const labels = refs.map((ref) => reading.cards.get(ref.uid)?.readingGroup).filter(Boolean);
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("疊放區 inspect：最上一張＝場上角色、其餘＝Guts，分列標記且傾角對齊手牌、往觀者拉近", () => {
+    const s = midGame();
+    const pool = [...s.players[0].hand];
+    const gut = pool[0]!;
+    const chara = pool[1]!;
+    // 造一個含 Guts 的 serve 疊（底＝Guts、頂＝場上角色）；同步從手牌移出避免重複擺位。
+    const state: GameState = {
+      ...s,
+      players: [
+        { ...s.players[0], serve: [gut, chara], hand: s.players[0].hand.filter((u) => u !== gut && u !== chara) },
+        s.players[1],
+      ],
+    };
+    const refs = readingCardsForZone(state, 0, "serve");
+    expect(refs[0]!.uid, "最上一張排最前").toBe(chara);
+    expect(refs[0]!.groupLabel).toContain("角色");
+    expect(refs[1]!.uid).toBe(gut);
+    expect(refs[1]!.groupLabel).toContain("ガッツ");
+    // 角色與 Guts 分成兩個不同的列鍵
+    expect(refs[0]!.groupKey).not.toBe(refs[1]!.groupKey);
+
+    const base = computePlacements(db, state, schools);
+    const framed = applyReadingFrame(base, db, state, refs, schools, "inspect");
+    const cp = framed.cards.get(chara)!;
+    const gp = framed.cards.get(gut)!;
+    expect(cp.rotation[0], "傾角對齊手牌").toBeCloseTo(HAND_TILT, 5);
+    expect(gp.rotation[0]).toBeCloseTo(HAND_TILT, 5);
+    // 角色列比 Guts 列更靠近觀者（z 較大）
+    expect(cp.position[2]).toBeGreaterThan(gp.position[2]);
+    // 兩列各有一個標籤
+    expect([cp.readingGroup, gp.readingGroup].filter(Boolean).length).toBe(2);
+  });
+
+  it("效果選卡 reading frame 與手牌同傾角、候選同尺寸", () => {
+    const s = midGame();
+    const refs = [locateReadingCard(s, s.players[0].deck[0]!)!];
+    const framed = applyReadingFrame(computePlacements(db, s, schools), db, s, refs, schools);
+    expect(framed.cards.get(refs[0]!.uid)!.rotation[0]).toBeCloseTo(HAND_TILT, 5);
+  });
+
+  it("有效值快照在引擎 modifier 清除後仍顯示基礎值＋修正結果", () => {
+    const s = midGame();
+    const zone = (["serve", "receive", "toss", "attack"] as const).find((key) => s.players[0][key].length > 0);
+    if (!zone) return;
+    const uid = s.players[0][zone].at(-1)!;
+    const before = structuredClone(s);
+    before.modifiers.push({ target: uid, param: zone, amount: 2, source: uid });
+    const formulas = capturePlayerValueFormulas(db, before, 0);
+    const shown = computePlacements(db, s, schools, formulas).cards.get(uid)!;
+    expect(shown.baseValue).not.toBeNull();
+    expect(shown.effectiveValue).toBe((shown.baseValue ?? 0) + 2);
+  });
+
+  it("混合來源 effect-cards 的可見候選保留原 x/z，只抬高避免 reading frame 遮擋", () => {
+    const s = midGame();
+    const uid = s.players[0].hand[0]!;
+    const base = computePlacements(db, s, schools);
+    const original = base.cards.get(uid)!;
+    const lifted = liftInPlaceReadingCandidates(base, new Set([uid])).cards.get(uid)!;
+    expect(lifted.position[0]).toBe(original.position[0]);
+    expect(lifted.position[2]).toBe(original.position[2]);
+    expect(lifted.position[1]).toBeGreaterThanOrEqual(1.05);
   });
 
   it("mergePlacements：只有 movedUids 取 target 擺位，其餘維持 base", () => {

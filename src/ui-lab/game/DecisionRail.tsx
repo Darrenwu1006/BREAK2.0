@@ -1,0 +1,217 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { LogEntry } from "../../engine/types";
+import type { BattleRailView, CardInspectView } from "./railViewModel";
+import type { RallyStepView } from "./railViewModel";
+import styles from "../UiLabApp.module.css";
+
+function enrichedLog(log: LogEntry[]): (LogEntry & { summary?: boolean })[] {
+  const out: (LogEntry & { summary?: boolean })[] = [];
+  let lastJudge = "";
+  for (const entry of log.filter((item) => !item.text.startsWith("──"))) {
+    out.push(entry);
+    if (entry.text.startsWith("判定：")) lastJudge = entry.text.replace("判定：", "").trim();
+    if (entry.event?.kind === "set-won" || entry.event?.kind === "match-won") {
+      const scorer = entry.event.winner === 0 ? "你得分" : "電腦得分";
+      out.push({
+        ...entry,
+        player: null,
+        text: `Turn ${entry.turnNo} ─ ${scorer}${lastJudge ? `（${lastJudge}）` : ""}`,
+        summary: true,
+      });
+      lastJudge = "";
+    }
+  }
+  return out;
+}
+
+const RALLY_LOG_TERMS: Record<RallyStepView["id"], readonly string[]> = {
+  serve: ["發球"],
+  defense: ["防守", "攔網還是接球"],
+  block: ["攔網", "DP"],
+  receive: ["接球", "DP"],
+  toss: ["托球"],
+  attack: ["攻擊", "OP"],
+  judge: ["判定", "得分", "Set", "Lost"],
+};
+
+export function DecisionRail(props: {
+  view: BattleRailView;
+  card: CardInspectView | null;
+  cardImage: string | null;
+  presentationLines: readonly string[];
+  log: LogEntry[];
+  onLogHover?: (entry: LogEntry | null) => void;
+}): React.JSX.Element {
+  const { view } = props;
+  const logRef = useRef<HTMLDivElement>(null);
+  const [logPaused, setLogPaused] = useState(false);
+  const [logExpanded, setLogExpanded] = useState(false);
+  const [rallyFocus, setRallyFocus] = useState<RallyStepView["id"] | null>(null);
+  const enrichedEntries = useMemo(() => enrichedLog(props.log), [props.log]);
+  const visibleEntries = useMemo(() => rallyFocus
+    ? enrichedEntries.filter((entry) => RALLY_LOG_TERMS[rallyFocus].some((term) => entry.text.includes(term)))
+    : enrichedEntries,
+  [enrichedEntries, rallyFocus]);
+
+  useEffect(() => {
+    if (!logPaused) {
+      logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [enrichedEntries.length, logPaused]);
+
+  const onLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    setLogPaused(el.scrollHeight - el.scrollTop - el.clientHeight > 32);
+  };
+
+  return (
+    <>
+      <aside className={styles.decisionRail} aria-label="對局資訊">
+        <header className={styles.railHeader}>
+          <div>
+            <span className={styles.railEyebrow}>UI LAB・第 {view.phaseLabel}</span>
+            <strong>{view.players[view.actionPlayer].label}・{view.actionLabel}</strong>
+          </div>
+        </header>
+
+        <section className={styles.battleBoard} aria-label="戰況板">
+          {[view.players[1], view.players[0]].map((player) => (
+            <div className={`${styles.playerSummary} ${player.player === view.actionPlayer ? styles.playerSummaryActive : ""}`} key={player.player}>
+              <div><strong>{player.label}</strong><span>{player.player === 0 ? "你" : "對手"}・{player.role}</span></div>
+              <dl>
+                <div><dt>手</dt><dd>{player.hand}</dd></div>
+                <div><dt>牌組</dt><dd>{player.deck}</dd></div>
+                <div><dt>棄牌</dt><dd>{player.drop}</dd></div>
+                <div><dt>Set</dt><dd>{player.set}</dd></div>
+              </dl>
+            </div>
+          ))}
+          <div className={styles.pointBoard}>
+            <div><span>OP</span><strong>{view.op?.value ?? "—"}</strong></div>
+            <em>VS</em>
+            <div><span>DP</span><strong>{view.dp?.value ?? "—"}</strong></div>
+            {view.judge && <b>{view.judge}</b>}
+          </div>
+        </section>
+
+        <ol className={styles.rallyTrack} aria-label="Rally 規則進度">
+          {view.rally.map((step) => (
+            <li className={`${styles[`rally_${step.status}`]} ${rallyFocus === step.id ? styles.rallyFocused : ""}`} key={step.id}>
+              <button
+                type="button"
+                disabled={step.status === "upcoming"}
+                onClick={() => {
+                  setRallyFocus((current) => current === step.id ? null : step.id);
+                  setLogExpanded(true);
+                }}
+                aria-label={`查看${step.label}紀錄`}
+              ><span /><small>{step.label}</small></button>
+            </li>
+          ))}
+        </ol>
+
+        <div className={styles.railWorkspaceWrapper}>
+          <section className={styles.railWorkspace} aria-label="情境工作區">
+          {props.card ? (
+            <div className={styles.railCardDetail}>
+              <div className={styles.railCardTop}>
+                <div className={styles.cardTitleBox}>
+                  <strong>{props.card.title}</strong>
+                  <span>{props.card.subtitle}</span>
+                  <div className={styles.cardThirdLine}>
+                    <span>{props.card.card.id}</span>
+                  </div>
+                </div>
+                <div className={styles.cardMiniMeta}>
+                  <div><span>類型</span><span>{props.card.card.type === "CHARACTER" ? "角色" : "事件"}</span></div>
+                  {props.card.card.positions.length > 0 && <div><span>位置</span><span>{props.card.card.positions.join(", ")}</span></div>}
+                  {props.card.card.grades.length > 0 && <div><span>學年</span><span>{props.card.card.grades.join(", ")}</span></div>}
+                </div>
+              </div>
+
+              <div className={styles.railParams}>
+                {props.card.params.map((param) => (
+                  <div key={param.label}>
+                    <span>{param.label}</span>
+                    <strong>{param.effective ?? "—"}</strong>
+                    {param.base !== param.effective && <small>原 {param.base ?? "—"}</small>}
+                  </div>
+                ))}
+              </div>
+
+              {(props.card.card.skillZh ?? props.card.card.skillJa) && <p className={styles.railSkill}>{props.card.card.skillZh ?? props.card.card.skillJa}</p>}
+              {props.card.card.annotationJa && <p className={styles.railAnnotation}>{props.card.card.annotationJa}</p>}
+              {props.card.unavailableReason && <p className={styles.unavailableReason}>{props.card.unavailableReason}</p>}
+              {props.card.unavailableReasons.length > 1 && (
+                <details className={styles.unavailableMore}>
+                  <summary>查看其他限制</summary>
+                  <ul>{props.card.unavailableReasons.slice(1).map((reason) => <li key={reason}>{reason}</li>)}</ul>
+                </details>
+              )}
+            </div>
+          ) : (
+            <div className={styles.railIdleInfo}>
+              <span>資訊工作區</span>
+              <p>將滑鼠移到公開卡片上，可在這裡查看詳細文字欄位、技能與有效數值。</p>
+            </div>
+          )}
+        </section>
+
+        <footer className={`${styles.railFooter} ${logExpanded ? styles.railFooterExpanded : ""}`}>
+          <div className={styles.footerHeading}>
+            <div className={styles.footerTitleGroup}>
+              <strong>對戰紀錄</strong>
+              {rallyFocus && <button className={styles.logFocusChip} onClick={() => setRallyFocus(null)}>{view.rally.find((step) => step.id === rallyFocus)?.label} ×</button>}
+              <button
+                className={styles.logExpandBtn}
+                onClick={() => setLogExpanded(!logExpanded)}
+              >
+                {logExpanded ? "收起 ▴" : "展開 ▾"}
+              </button>
+            </div>
+            {logPaused && (
+              <button
+                className={styles.logLatest}
+                onClick={() => {
+                  setLogPaused(false);
+                  logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+                }}
+              >
+                回到最新
+              </button>
+            )}
+          </div>
+          <div className={styles.logWrap}>
+            <div className={styles.logList} ref={logRef} onScroll={onLogScroll}>
+              {visibleEntries.map((entry, index) => {
+                const previous = visibleEntries[index - 1];
+                const newGroup = !previous || previous.setNo !== entry.setNo || previous.turnNo !== entry.turnNo;
+                return <div key={`${entry.setNo}-${entry.turnNo}-${index}`}>
+                  {newGroup && <div className={styles.logGroupLabel}>SET {entry.setNo} · RALLY {entry.turnNo}</div>}
+                  <div
+                  className={`${styles.logItem} ${
+                    entry.player === 0
+                      ? styles.logMe
+                      : entry.player === 1
+                      ? styles.logAi
+                      : ""
+                  } ${entry.summary ? styles.logSummary : ""}`}
+                  onPointerEnter={() => props.onLogHover?.(entry)}
+                  onPointerLeave={() => props.onLogHover?.(null)}
+                >
+                  {entry.player !== null ? `${entry.player === 0 ? "你" : "電腦"}：` : ""}
+                  {entry.text}
+                  </div>
+                </div>;
+              })}
+              {visibleEntries.length === 0 && (
+                <div className={styles.logEmpty}>等待對局開始…</div>
+              )}
+            </div>
+          </div>
+        </footer>
+        </div>
+      </aside>
+    </>
+  );
+}

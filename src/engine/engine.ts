@@ -18,11 +18,13 @@ import {
   cleanupTurn,
   clearSetScoped,
   deployCard,
+  deployLegality,
   deployNames,
   drawCards,
   effParam,
   enqueueTurnEnd,
   freeOptions,
+  freeCardReasons,
   log,
   nameOf,
   normName,
@@ -41,7 +43,8 @@ import {
 } from "./effects";
 import { cloneStateForSearch } from "./search-clone";
 
-export { freeOptions, blockDeployMax, deployNames, charasOf, effParam, nameOf } from "./effects";
+export { freeOptions, freeCardReasons, blockDeployMax, deployNames, deployLegality, charasOf, effParam, nameOf } from "./effects";
+export type { DeployLegalityCode } from "./effects";
 export { effectDefOf } from "./effects";
 
 // ---------- 工具 ----------

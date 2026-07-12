@@ -7,7 +7,7 @@ import nekomaDeck from "../../../data/decks/音駒-預組.json";
 import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
 import type { CardDb } from "../../engine/types";
-import { HUMAN, LabGameController } from "./controller";
+import { HUMAN, LAB_UNDO_LIMIT, LabGameController } from "./controller";
 
 interface DeckJson {
   cards: { id: string; count: number }[];
@@ -45,6 +45,63 @@ describe("LabGameController", () => {
     }
     expect(c.engine.pendingDecision).toBeNull();
     expect(c.engine.phase).toBe("gameOver");
+    expect(c.replay.seed).toBe(7);
+    expect(c.replay.entries.length).toBeGreaterThan(0);
+    expect(c.replay.entries.at(-1)?.after.phase).toBe("gameOver");
+    expect(c.replay.entries.some((entry) => entry.source === "player")).toBe(true);
+    expect(c.replay.entries.some((entry) => entry.source === "ai")).toBe(true);
+  });
+
+  it("replay 使用正式共用 schema，保留牌組標籤與每步可重播 state", () => {
+    const c = new LabGameController(db, decks, 314, [
+      { school: "烏野", name: "預組", total: 40, implementedCount: 40, unimplementedCount: 0 },
+      { school: "音駒", name: "預組", total: 40, implementedCount: 40, unimplementedCount: 0 },
+    ]);
+    const beforeCount = c.replay.entries.length;
+    c.decide(heuristicAiDecision(db, c.engine));
+    expect(c.replay.decks.map((deck) => deck.label)).toEqual(["烏野-預組", "音駒-預組"]);
+    expect(c.replay.entries.length).toBeGreaterThan(beforeCount);
+    for (const [index, entry] of c.replay.entries.entries()) {
+      expect(entry.index).toBe(index);
+      expect(entry.before.pendingDecision?.type).toBe(entry.pendingType);
+      expect(entry.after).toBeDefined();
+    }
+  });
+
+  it("undo 回到人類決策前、截斷 replay future、恢復 RNG 並標記 rewound", () => {
+    const c = new LabGameController(db, decks, 2718);
+    c.timeline.skip();
+    const before = structuredClone(c.engine);
+    const replayLength = c.replay.entries.length;
+    const decision = heuristicAiDecision(db, c.engine);
+    c.decide(decision);
+    expect(c.canUndo).toBe(true);
+    expect(c.replay.entries.length).toBeGreaterThan(replayLength);
+    expect(c.undo()).toBe(true);
+    expect(c.engine).toEqual(before);
+    expect(c.engine.rngState).toBe(before.rngState);
+    expect(c.replay.entries).toHaveLength(replayLength);
+    expect(c.replay).toMatchObject({ rewound: true, rewindCount: 1 });
+    expect(c.timeline.idle).toBe(true);
+
+    // 同狀態＋同行動必須重現相同 AI／RNG future。
+    c.decide(decision);
+    const firstFuture = structuredClone(c.engine);
+    expect(c.undo()).toBe(true);
+    c.decide(decision);
+    expect(c.engine).toEqual(firstFuture);
+  });
+
+  it("只保留最近 20 個實際人類決策；委託 AI 的手不建立 undo 點", () => {
+    const c = new LabGameController(db, decks, 1618);
+    c.timeline.skip();
+    c.decide(heuristicAiDecision(db, c.engine), true);
+    expect(c.undoDepth).toBe(0);
+    for (let i = 0; i < LAB_UNDO_LIMIT + 5 && c.engine.pendingDecision; i++) {
+      c.timeline.skip();
+      c.decide(heuristicAiDecision(db, c.engine));
+    }
+    expect(c.undoDepth).toBe(LAB_UNDO_LIMIT);
   });
 
   it("非人類互動時 decide 擲錯", () => {
@@ -56,5 +113,19 @@ describe("LabGameController", () => {
     // 至少驗證 awaitingHuman 與 pendingDecision 一致
     const pd = c.engine.pendingDecision;
     if (pd) expect(c.awaitingHuman).toBe(pd.player === HUMAN);
+  });
+
+  it("正式 shell defer 模式停在每個對手決策，必須由 worker 入口明確推進", () => {
+    const c = new LabGameController(db, decks, 73, undefined, { deferOpponent: true });
+    for (let step = 0; step < 20 && !c.awaitingOpponent; step++) {
+      expect(c.awaitingHuman).toBe(true);
+      c.decide(heuristicAiDecision(db, c.engine));
+      c.timeline.skip();
+    }
+    expect(c.awaitingOpponent).toBe(true);
+    const replayLength = c.replay.entries.length;
+    c.decideOpponent(heuristicAiDecision(db, c.engine));
+    expect(c.replay.entries.length).toBe(replayLength + 1);
+    expect(c.replay.entries.at(-1)?.source).toBe("ai");
   });
 });

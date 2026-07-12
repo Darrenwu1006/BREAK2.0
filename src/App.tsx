@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import cardsJson from "../data/cards.json";
 import type { Card } from "./data/types";
 import type { CardDb } from "./engine/types";
@@ -8,6 +8,11 @@ import { DeckEditor, type ApiDeck } from "./ui/DeckEditor";
 import { DeckOptimizerPreview } from "./ui/DeckOptimizerPreview";
 import type { DeckMeta } from "./ui/gameTypes";
 import type { ReplaySession } from "./ui/replayHistory";
+import { readGameEngine, writeGameEngine, type GameEngine } from "./gameEngine";
+
+const LabGame = lazy(() =>
+  import("./ui-lab/UiLabApp").then((module) => ({ default: module.UiLabGame })),
+);
 
 const expand = (d: ApiDeck): string[] => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
 
@@ -51,7 +56,8 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myDeck, setMyDeck] = useState(0);
   const [aiDeck, setAiDeck] = useState(1);
-  const [mode, setMode] = useState<"menu" | "game" | "editor" | "optimizer">("menu");
+  const [mode, setMode] = useState<"menu" | "classic-game" | "lab-game" | "editor" | "optimizer">("menu");
+  const [engine, setEngine] = useState<GameEngine>(() => readGameEngine());
   const [loadedReplay, setLoadedReplay] = useState<ReplaySession | null>(null);
   const [replays, setReplays] = useState<any[]>([]);
   const [loadingReplays, setLoadingReplays] = useState(false);
@@ -93,7 +99,7 @@ export function App() {
       if (!res.ok) throw new Error("讀取紀錄失敗");
       const session = await res.json();
       setLoadedReplay(session);
-      setMode("game");
+      setMode("classic-game");
     } catch (e) {
       alert(`載入失敗：${e}`);
     }
@@ -134,7 +140,7 @@ export function App() {
     if (!valid.has(aiDeck)) setAiDeck(battleDecks[Math.min(1, battleDecks.length - 1)]!.i);
   }, [battleDecks]);
 
-  if (mode === "game") {
+  if (mode === "classic-game") {
     if (loadedReplay) {
       const label0 = loadedReplay.decks[0].label;
       const dash0 = label0.indexOf("-");
@@ -206,6 +212,21 @@ export function App() {
     }
   }
 
+  if (mode === "lab-game" && decks[myDeck] && decks[aiDeck]) {
+    return (
+      <Suspense fallback={<div className="game-loading" role="status">載入實驗 3D 對局…</div>}>
+        <LabGame
+          db={db}
+          decks={[decks[myDeck]!, decks[aiDeck]!]}
+          onExit={() => {
+            setMode("menu");
+            void refreshReplays();
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   if (mode === "editor") {
     return <DeckEditor db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />;
   }
@@ -259,9 +280,27 @@ export function App() {
           )}
 
           <div className="menu-row menu-actions">
-            <button className="btn-start" disabled={!decks.length} onClick={() => setMode("game")}>開始對戰</button>
+            <button className="btn-start" disabled={!decks.length} onClick={() => setMode(engine === "lab" ? "lab-game" : "classic-game")}>開始對戰</button>
             <button className="btn-start btn-secondary" onClick={() => setMode("editor")}>牌組編輯</button>
             <button className="btn-start btn-secondary" onClick={() => setMode("optimizer")}>調牌提案</button>
+          </div>
+
+          <div className="ui-toggle-row">
+            <span className="ui-toggle-label">介面</span>
+            <div className="ui-toggle" role="group" aria-label="介面切換">
+              <button
+                type="button"
+                className={`ui-toggle-btn${engine === "classic" ? " is-active" : ""}`}
+                aria-pressed={engine === "classic"}
+                onClick={() => { setEngine("classic"); writeGameEngine("classic"); }}
+              >經典 2D</button>
+              <button
+                type="button"
+                className={`ui-toggle-btn${engine === "lab" ? " is-active" : ""}`}
+                aria-pressed={engine === "lab"}
+                onClick={() => { setEngine("lab"); writeGameEngine("lab"); }}
+              >實驗 3D</button>
+            </div>
           </div>
         </section>
 

@@ -10,6 +10,7 @@ import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import type { ZoneId } from "../presentation/events";
 import { renderEventText } from "../presentation/textRenderer";
 import type { PresentationBatch, TimelineEntry } from "../presentation/timeline";
+import { capturePlayerValueFormulas, type CardValueFormula } from "../presentation/valueFormula";
 import type { LabGameController } from "./controller";
 
 export interface RevealView {
@@ -31,6 +32,8 @@ export interface PlaybackView {
   reveal: RevealView;
   /** 演出字幕（headless textRenderer 重用），最新在後 */
   subtitles: readonly string[];
+  /** 最近一次進攻方 OP 揭示時的場面算式；保留到對手回合結束。 */
+  valueFormulas: ReadonlyMap<number, CardValueFormula>;
   /** true＝演出中（互動應鎖定） */
   playing: boolean;
 }
@@ -43,6 +46,10 @@ export interface Playback {
   markPlaying: () => void;
   /** 跳過全部演出，直接顯示權威盤面 */
   skip: () => void;
+  /** undo 專用：除清空演出外，也丟棄舊 future 的字幕／reveal。 */
+  reset: () => void;
+  /** inspect mode 暫停／恢復 presentation 時鐘，不改 engine state。 */
+  setPaused: (paused: boolean) => void;
   setSpeed: (x: number) => void;
 }
 
@@ -57,6 +64,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
       current: null,
       reveal: {},
       subtitles: [],
+      valueFormulas: new Map(),
       playing: !controller.timeline.idle,
     };
   });
@@ -65,6 +73,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
   const batchRef = useRef<PresentationBatch | null>(null);
   /** 佇列清空後只 finalize 一次 */
   const settled = useRef(false);
+  const paused = useRef(false);
 
   const finalize = useCallback((): void => {
     const lastAfter = batchRef.current ? controller.metaOf(batchRef.current)!.after : controller.engine;
@@ -74,6 +83,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
 
   const tick = useCallback(
     (dtMs: number): void => {
+      if (paused.current) return;
       const cur = playing.current;
       if (cur) {
         cur.remainMs -= dtMs;
@@ -98,6 +108,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
         const moved = newBatch ? new Set<number>() : new Set(v.movedUids);
         const origins = newBatch ? new Map<number, { player: PlayerId; zone: ZoneId }>() : new Map(v.origins);
         let reveal: RevealView = { ...v.reveal };
+        let valueFormulas = v.valueFormulas;
         const e = entry.event;
         // reveal 生命週期：一次攻防＝一拍。新 OP 亮出＝新一拍開始（清掉上一拍全部）；
         // OP/DP/判定跨 turn 存活（此遊戲防守發生在防守方回合，數字要陪玩家做完決策）；
@@ -107,8 +118,15 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
             moved.add(e.uid);
             origins.set(e.uid, { player: e.from.player, zone: e.from.zone });
             break;
+          case "card-group-moved":
+            for (const move of e.moves) {
+              moved.add(move.uid);
+              origins.set(move.uid, { player: move.from.player, zone: move.from.zone });
+            }
+            break;
           case "op-revealed":
             reveal = { op: { player: e.player, source: e.source, value: e.value } };
+            valueFormulas = capturePlayerValueFormulas(db, meta.before, e.player);
             break;
           case "dp-revealed":
             reveal = { ...reveal, dp: { player: e.player, source: e.source, value: e.value } };
@@ -120,10 +138,11 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
           case "set-won":
           case "match-won":
             reveal = {};
+            valueFormulas = new Map();
             break;
         }
         const subtitles = e.kind === "decision-requested" ? v.subtitles : [...v.subtitles.slice(-9), renderEventText(db, e)];
-        return { displayed, after: meta.after, movedUids: moved, origins, current: entry, reveal, subtitles, playing: true };
+        return { displayed, after: meta.after, movedUids: moved, origins, current: entry, reveal, subtitles, valueFormulas, playing: true };
       });
     },
     [controller, db, finalize],
@@ -135,20 +154,50 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
   }, [controller]);
 
   const skip = useCallback((): void => {
+    const pending = controller.timeline.pending();
     controller.timeline.skip();
     playing.current = null;
     batchRef.current = null;
     settled.current = true;
-    setView((v) => ({
-      ...v,
+    setView((v) => {
+      let valueFormulas = v.valueFormulas;
+      for (const entry of pending) {
+        if (entry.event.kind === "op-revealed") {
+          valueFormulas = capturePlayerValueFormulas(db, controller.metaOf(entry.batch)!.before, entry.event.player);
+        } else if (["lost-declared", "set-won", "match-won"].includes(entry.event.kind)) {
+          valueFormulas = new Map();
+        }
+      }
+      return {
+        ...v,
+        displayed: controller.engine,
+        after: null,
+        movedUids: new Set(),
+        origins: new Map(),
+        current: null,
+        reveal: {},
+        valueFormulas,
+        playing: false,
+      };
+    });
+  }, [controller, db]);
+
+  const reset = useCallback((): void => {
+    controller.timeline.skip();
+    playing.current = null;
+    batchRef.current = null;
+    settled.current = true;
+    setView({
       displayed: controller.engine,
       after: null,
       movedUids: new Set(),
       origins: new Map(),
       current: null,
       reveal: {},
+      subtitles: [],
+      valueFormulas: new Map(),
       playing: false,
-    }));
+    });
   }, [controller]);
 
   const setSpeed = useCallback(
@@ -158,5 +207,9 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
     [controller],
   );
 
-  return { view, tick, markPlaying, skip, setSpeed };
+  const setPaused = useCallback((value: boolean): void => {
+    paused.current = value;
+  }, []);
+
+  return { view, tick, markPlaying, skip, reset, setPaused, setSpeed };
 }

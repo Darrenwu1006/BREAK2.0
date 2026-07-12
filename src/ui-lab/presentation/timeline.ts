@@ -19,6 +19,8 @@ export interface PresentationBatch {
 /** 事件基準演出時長（ms）。M9a 手感迭代的主要調參表。 */
 export const BASE_PACE_MS: Record<PresentationEvent["kind"], number> = {
   "card-moved": 360,
+  "card-group-moved": 320,
+  "deck-shuffled": 420,
   "op-revealed": 600,
   "dp-revealed": 600,
   "judge-revealed": 900,
@@ -47,7 +49,8 @@ export function tensionOf(thinkMs: number | undefined): number {
 /** 單一事件的建議演出時長 */
 export function paceFor(event: PresentationEvent, batch: PresentationBatch, speed = 1): number {
   const tension = TENSION_KINDS.has(event.kind) ? tensionOf(batch.thinkMs) : 1;
-  return Math.round((BASE_PACE_MS[event.kind] * tension) / speed);
+  const base = event.kind === "card-moved" && event.motion === "mulligan-deal" ? 170 : BASE_PACE_MS[event.kind];
+  return Math.round((base * tension) / speed);
 }
 
 export interface TimelineEntry {
@@ -74,6 +77,11 @@ export class PresentationTimeline {
   /** 佇列頭（不出隊）；null＝空 */
   peek(): { event: PresentationEvent; batch: PresentationBatch } | null {
     return this.queue[0] ?? null;
+  }
+
+  /** renderer 在 skip 前可先折疊仍未播放的演出生命週期（不暴露可變 queue）。 */
+  pending(): readonly Readonly<{ event: PresentationEvent; batch: PresentationBatch }>[] {
+    return this.queue.map((entry) => ({ ...entry }));
   }
 
   /** 出隊開演：回傳事件＋建議時長；佇列因此清空時通知 idle */

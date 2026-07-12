@@ -85,7 +85,17 @@ export function derivePresentationEvents(db: CardDb, before: GameState, decision
   for (const [uid, to] of afterRefs) {
     const from = beforeRefs.get(uid);
     if (!from || (from.player === to.player && from.zone === to.zone)) continue;
-    rawMoves.push({ kind: "card-moved", uid, cardId: after.cards[uid]!, from, to, visibility: visibilityOf(to), reason: classifyReason(before, uid, from, to) });
+    const reason = classifyReason(before, uid, from, to);
+    rawMoves.push({
+      kind: "card-moved",
+      uid,
+      cardId: after.cards[uid]!,
+      from,
+      to,
+      visibility: visibilityOf(to),
+      reason,
+      ...(decision.type === "mulligan" && reason === "draw" ? { motion: "mulligan-deal" as const } : {}),
+    });
   }
   // ガッツ下沉：原疊頂仍在同疊但不再是頂（登場疊上時發生）
   const sinks = new Map<string, CardMovedEvent>();
@@ -181,7 +191,15 @@ export function derivePresentationEvents(db: CardDb, before: GameState, decision
   if (decision.type === "defense-choice") {
     out.push({ kind: "defense-chosen", player: before.pendingDecision?.player ?? before.turnPlayer, choice: decision.choice });
   }
-  flush(buckets.decision);
+  if (decision.type === "mulligan") {
+    const returned = buckets.decision.splice(0).filter((move) => move.reason === "mulligan");
+    if (returned.length > 0) {
+      out.push({ kind: "card-group-moved", moves: returned, reason: "mulligan-return" });
+      out.push({ kind: "deck-shuffled", player: before.pendingDecision?.player ?? before.turnPlayer });
+    }
+  } else {
+    flush(buckets.decision);
+  }
   flush(buckets.pre);
 
   // ---- 主幹：log delta 依序（turn 邊界＋結構化 GameEvent）----

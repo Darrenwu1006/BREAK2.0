@@ -1,10 +1,57 @@
 /* ui-lab 樣式全走 CSS Modules（spec §0：一行都不進 index.css） */
 
+@font-face {
+  font-family: "MasaFont";
+  src: url("./fonts/MasaFont-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 .root {
+  --rail-width: 20vw;
+  /* [Claude 2026-07-12] CP-V1 亮色黑白主題 token 層。官網風格報告 §5 定案：
+     品牌以黑白為主、彩色留給各學校；元件語言＝硬邊位移陰影＋粗描邊＋混用圓角。
+     後續 chunk（V1b 遊戲內 rail/HUD、V2 3D 場景）沿用同一組 token。 */
+  --paper: #eef0f2;        /* app 底（白紙灰） */
+  --paper-card: #ffffff;   /* 卡面／面板 */
+  --panel: rgba(255, 255, 255, 0.94);
+  --panel-2: rgba(255, 255, 255, 0.86);
+  --ink: #14181c;          /* 主文字／描邊（近黑） */
+  --ink-2: #3f4954;        /* 次文字 */
+  --ink-3: #6c7883;        /* 輔助文字 */
+  --on-ink: #f5f7f9;       /* 深底上的亮字 */
+  --line: rgba(20, 24, 28, 0.14);
+  --line-2: rgba(20, 24, 28, 0.24);
+  --line-strong: rgba(20, 24, 28, 0.9);
+  --fill-subtle: rgba(20, 24, 28, 0.045);
+  --fill-subtle-2: rgba(20, 24, 28, 0.08);
+  --accent-orange: #df600d;   /* 官網能量橙——按鈕 hover 等主動作點綴 */
+  --radius: 6px;              /* 元件圓角（留一點、不全直角） */
+  --shadow-hard: 3px 3px 0 var(--line-strong);   /* 硬邊位移陰影（偏差小、貼紙浮起感） */
   position: fixed;
   inset: 0;
-  background: #0d1115;
+  background: var(--paper);
   overflow: hidden;
+}
+
+.reducedMotion .banner,
+.reducedMotion .bannerHeavy,
+.reducedMotion .judgeHold,
+.reducedMotion .judgeBreak,
+.reducedMotion :global(.ui-lab-effective-value.is-modified) {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner, .bannerHeavy, .judgeHold, .judgeBreak, :global(.ui-lab-effective-value.is-modified) { animation: none !important; }
+  .railFooter { transition: none; }
+}
+
+.stage {
+  position: absolute;
+  inset: 0 var(--rail-width) 0 0;
+  min-width: 0;
 }
 
 .canvas {
@@ -22,6 +69,7 @@
   max-width: 300px;
   pointer-events: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
+  z-index: 11;
 }
 
 .badge {
@@ -31,9 +79,9 @@
   align-self: flex-start;
   padding: 6px 12px;
   border-radius: 8px;
-  background: rgba(18, 24, 30, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #e8edf2;
+  background: var(--paper-card);
+  border: 1.5px solid var(--line-strong);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -42,8 +90,8 @@
 .tag {
   padding: 1px 7px;
   border-radius: 999px;
-  background: #c9722e;
-  color: #14100c;
+  background: var(--ink);
+  color: var(--on-ink);
   font-size: 11px;
   font-weight: 700;
 }
@@ -51,9 +99,9 @@
 .hint {
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(18, 24, 30, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #aeb9c2;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
   font-size: 11.5px;
   line-height: 1.6;
 }
@@ -63,15 +111,17 @@
   align-self: flex-start;
   padding: 5px 11px;
   border-radius: 8px;
-  background: rgba(18, 24, 30, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #8fc7ff;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  color: #0052a4;
+  font-family: inherit;
   font-size: 12px;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .link:hover {
-  border-color: #8fc7ff;
+  border-color: #0052a4;
 }
 
 .loading {
@@ -79,8 +129,8 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #0d1115;
-  color: #aeb9c2;
+  background: var(--paper);
+  color: var(--ink-3);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 14px;
 }
@@ -113,16 +163,16 @@
 .subLineHot {
   padding: 4px 9px;
   border-radius: 6px;
-  background: rgba(18, 24, 30, 0.55);
-  color: #7c8893;
+  background: var(--panel-2);
+  color: var(--ink-3);
   font-size: 11px;
   line-height: 1.5;
 }
 
 .subLineHot {
-  background: rgba(18, 24, 30, 0.85);
+  background: var(--panel);
   border: 1px solid rgba(143, 199, 255, 0.35);
-  color: #dfe8f0;
+  color: var(--ink);
   animation: subPop 160ms ease-out;
 }
 
@@ -136,34 +186,491 @@
 .banner,
 .bannerHeavy {
   position: absolute;
-  left: 50%;
+  left: calc((100% - var(--rail-width)) / 2);
   top: 26%;
   transform: translateX(-50%);
-  padding: 10px 26px;
-  border-radius: 10px;
-  background: rgba(12, 16, 21, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: #f2f6fa;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  min-width: 420px;
+  padding: 18px 46px 20px;
+  border: 4px solid #e9e4d8;
+  border-radius: 2px;
+  background-color: #111417;
+  background-image: linear-gradient(rgba(7, 9, 11, .18), rgba(7, 9, 11, .18)), url("./textures/dark-manga-paper-v1.png");
+  background-size: cover;
+  box-shadow: 9px 9px 0 #08090a, -3px -3px 0 rgba(230, 137, 66, .75);
+  clip-path: polygon(2% 7%, 97% 0, 100% 87%, 92% 100%, 0 94%);
+  color: #f4efe4;
+  font-family: "MasaFont", "Noto Sans TC", system-ui, sans-serif;
+  font-size: 38px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-shadow: 2px 2px 0 #000;
   pointer-events: none;
-  animation: bannerPop 240ms cubic-bezier(0.2, 1.6, 0.4, 1);
+  /* [使用者 2026-07-12] #10：從舞台左側滑入→停留→往右側滑出（fill 停在右外側，不 pop） */
+  animation: bannerSlide 2600ms cubic-bezier(0.22, 1, 0.3, 1) forwards;
+  z-index: 12;
 }
+
+/* ---- CP6-0：20% informational rail＋transient drawer 骨架 ---- */
+
+.decisionRail {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: var(--rail-width);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff, #f1f3f5);
+  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.28);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  z-index: 8;
+}
+
+.railHeader {
+  display: block;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 15px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.railHeader > div:first-child { min-width: 0; }
+.railHeader strong { display: block; overflow: hidden; margin-top: 3px; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.railEyebrow { color: var(--ink-3); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; }
+
+.battleBoard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px 46px;
+  border-bottom: 1px solid var(--line);
+}
+
+.playerSummary {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--fill-subtle);
+}
+
+.playerSummaryActive { border-color: rgba(201, 114, 46, 0.72); background: rgba(201, 114, 46, 0.08); }
+.playerSummary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
+.playerSummary > div strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.playerSummary > div span { flex: none; color: var(--ink-3); font-size: 11px; }
+.playerSummary dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 7px 0 0; }
+.playerSummary dl div { text-align: center; }
+.playerSummary dt { color: var(--ink-3); font-size: 11px; }
+.playerSummary dd { margin: 1px 0 0; color: var(--ink); font-family: "IBM Plex Mono", monospace; font-size: 14px; font-weight: 700; }
+
+.pointBoard {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pointBoard > div { display: flex; align-items: baseline; gap: 5px; }
+.pointBoard span { color: var(--ink-3); font-size: 12px; font-weight: 800; }
+.pointBoard strong { min-width: 24px; color: var(--ink); font-family: "IBM Plex Mono", monospace; font-size: 26px; text-align: center; }
+.pointBoard em { color: var(--ink-3); font-size: 12px; font-style: normal; font-weight: 800; }
+.pointBoard b { position: absolute; left: 50%; top: 25px; transform: translateX(-50%); color: #c8890c; font-size: 12px; white-space: nowrap; }
+
+.rallyTrack {
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 11px 14px 9px;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+.rallyTrack li { position: relative; flex: 1; min-width: 0; text-align: center; }
+.rallyTrack button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.rallyTrack button:disabled { cursor: default; }
+.rallyTrack li:not(:last-child)::after { content: ""; position: absolute; top: 4px; left: calc(50% + 5px); width: calc(100% - 10px); height: 1px; background: var(--line); }
+.rallyTrack li span { position: relative; z-index: 1; display: block; width: 9px; height: 9px; margin: 0 auto 4px; border: 1px solid var(--line-2); border-radius: 50%; background: var(--fill-subtle-2); }
+.rallyTrack small { display: block; overflow: hidden; color: var(--ink-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.rally_done span { border-color: #6389a8 !important; background: #6389a8 !important; }
+.rally_done small { color: var(--ink-3); }
+.rally_current span { border-color: #e68942 !important; background: #e68942 !important; box-shadow: 0 0 10px rgba(230, 137, 66, 0.7); }
+.rally_current small { color: #b26a1f; font-weight: 800; }
+.rallyFocused small { color: #c8890c !important; }
+.rallyFocused span { outline: 2px solid rgba(255, 212, 94, .32); outline-offset: 2px; }
+
+.railWorkspaceWrapper {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.railWorkspace {
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 13px 14px 137px;
+}
+.railIdleInfo { display: grid; min-height: 100%; place-content: center; padding: 24px; text-align: center; }
+.railIdleInfo span { color: var(--ink-3); font-size: 12px; font-weight: 800; letter-spacing: .14em; }
+.railIdleInfo p { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; line-height: 1.55; }
+.railCardTop {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+  align-items: start;
+}
+.cardTitleBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cardTitleBox strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.cardTitleBox span {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.35;
+}
+.cardThirdLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.cardThirdLine span:first-child {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 500;
+}
+.cardThirdDivider {
+  color: var(--line-2);
+  font-size: 10px;
+}
+.cardMiniMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  background: var(--fill-subtle);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--fill-subtle-2);
+}
+.cardMiniMeta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.cardMiniMeta span:first-child {
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.cardMiniMeta span:last-child {
+  color: var(--ink);
+  text-align: right;
+  word-break: break-all;
+}
+
+.railParams { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 10px; }
+.railParams > div { padding: 5px 2px; border-radius: 6px; background: var(--fill-subtle-2); text-align: center; }
+.railParams span, .railParams small { display: block; color: var(--ink-3); font-size: 11px; }
+.railParams strong { display: block; margin: 1px 0; font-family: "IBM Plex Mono", monospace; font-size: 16px; }
+
+.railSkill { margin: 10px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--fill-subtle); font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.railAnnotation { margin: 6px 0 0; padding: 6px 8px; border-left: 2px solid var(--line-2); background: var(--fill-subtle); color: var(--ink-3); font-size: 12px; line-height: 1.45; font-style: italic; }
+.unavailableReason { margin: 7px 0 0; color: #8a5a1f; font-size: 12px; line-height: 1.45; }
+.unavailableMore { margin-top: 5px; color: var(--ink-3); font-size: 11px; }
+.unavailableMore summary { color: #8a5a1f; cursor: pointer; }
+.unavailableMore ul { margin: 5px 0 0; padding-left: 18px; }
+
+.railFooter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 124px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  transition: height 280ms cubic-bezier(0.25, 1, 0.5, 1);
+  background: var(--paper-card);
+  z-index: 10;
+}
+
+.railFooterExpanded {
+  height: 100% !important;
+  border-top: 1px solid var(--line-2);
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.5);
+  background: var(--paper-card);
+}
+
+.footerHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.footerTitleGroup { display: flex; align-items: center; gap: 8px; }
+.footerTitleGroup strong { font-size: 12px; letter-spacing: .1em; }
+
+.logExpandBtn {
+  padding: 2px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--fill-subtle);
+  color: #0052a4;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 150ms;
+}
+.logFocusChip {
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 212, 94, .35);
+  border-radius: 999px;
+  background: rgba(255, 212, 94, .08);
+  color: #c8890c;
+  font-size: 10px;
+  cursor: pointer;
+}
+.logExpandBtn:hover {
+  background: var(--line);
+}
+
+.logWrap {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.logList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+  scrollbar-color: var(--line-2) transparent;
+  scrollbar-width: thin;
+}
+
+.logList::-webkit-scrollbar {
+  width: 6px;
+}
+.logList::-webkit-scrollbar-track {
+  background: transparent;
+}
+.logList::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--line-2);
+}
+.logList::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}
+
+.logItem {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.logGroupLabel { margin: 8px 0 3px; color: var(--ink-3); font: 800 9px "IBM Plex Mono", monospace; letter-spacing: .12em; }
+
+.logMe {
+  color: #0052a4;
+}
+
+.logAi {
+  color: #c0272d;
+}
+
+.logSummary {
+  margin: 4px 0;
+  padding: 4px 0;
+  border-top: 1px dashed var(--line);
+  border-bottom: 1px dashed var(--line);
+  color: #c8890c;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: bold;
+}
+
+.logEmpty {
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.logLatest {
+  padding: 2px 8px;
+  border: 1px solid rgba(143, 199, 255, 0.4);
+  border-radius: 999px;
+  background: rgba(143, 199, 255, 0.08);
+  color: #0052a4;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 150ms;
+}
+.logLatest:hover {
+  background: rgba(143, 199, 255, 0.16);
+}
+
+.stageInteractionLayer {
+  position: absolute;
+  inset: 0 var(--rail-width) 0 0;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.stageToolbar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.stageToolbar button { padding: 5px 9px; font-size: 10px; }
+
+/* 情境式決策面板：舞台右下操作島，只留按鈕／必要的選取計數。 */
+.stageDecision {
+  position: absolute;
+  right: 22px;
+  bottom: 28px;
+  width: auto;
+  max-width: min(460px, calc(100% - 44px));
+  padding: 10px 14px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: 5px 5px 0 var(--line-strong);
+  pointer-events: auto;
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+}
+
+.stageDecision .freeOpts { margin-top: 8px; justify-content: center; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 只渲染當前決策需要的按鈕，橫向置中排列 */
+.decisionActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.decisionActions button { min-width: 92px; }
+
+.playbackControls {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.effectSelectionActions {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.effectSelectionActions span { color: var(--ink-3); font-size: 14px; }
+
+.inspectHud {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid rgba(143, 199, 255, 0.38);
+  border-radius: 10px;
+  background: var(--panel);
+  pointer-events: auto;
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+}
+.inspectHud div { display: flex; flex-direction: column; gap: 1px; }
+.inspectHud strong { color: var(--ink); font-size: 15px; }
+.inspectHud span { color: var(--ink-3); font-size: 12px; }
+.inspectHud button { padding: 5px 9px; font-size: 12px; }
+
+.thinkingHud {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid rgba(230, 137, 66, 0.42);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+}
+.thinkingHud div { display: flex; flex-direction: column; gap: 2px; }
+.thinkingHud strong { font-size: 15px; }
+.thinkingHud span { color: var(--ink-3); font-size: 12px; }
+.thinkingDots { width: 22px; height: 6px; border-radius: 999px; background: linear-gradient(90deg, #e68942 0 24%, transparent 24% 38%, #e68942 38% 62%, transparent 62% 76%, #e68942 76%); animation: thinkingPulse 800ms ease-in-out infinite alternate; }
+@keyframes thinkingPulse { to { opacity: .35; transform: translateY(-2px); } }
+
+.shellNotice {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100% - 48px));
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 190, 92, .35);
+  border-radius: 8px;
+  background: rgba(31, 24, 15, .94);
+  color: #8a5a1f;
+  font: 10px/1.45 "Noto Sans TC", system-ui, sans-serif;
+}
+
 
 .bannerHeavy {
-  font-size: 30px;
-  border-color: #ffd45e;
-  color: #ffe9ad;
-  box-shadow: 0 0 42px rgba(255, 212, 94, 0.25);
+  min-width: 540px;
+  font-size: 56px;
+  border-color: #f4efe4;
+  color: #c8890c;
+  box-shadow: 12px 12px 0 #08090a, -4px -4px 0 #c94f32;
 }
 
-@keyframes bannerPop {
-  from {
-    transform: translateX(-50%) scale(0.6);
-    opacity: 0;
-  }
+/* 從舞台左外側滑入 → 置中停留 → 往右外側滑出（total 2.6s；in≈0.36s / hold≈1.8s / out≈0.44s） */
+@keyframes bannerSlide {
+  0% { transform: translateX(calc(-50% - 78vw)); opacity: 0; }
+  14% { transform: translateX(-50%); opacity: 1; }
+  82% { transform: translateX(-50%); opacity: 1; }
+  100% { transform: translateX(calc(-50% + 78vw)); opacity: 0; }
 }
 
 .promptBar {
@@ -176,15 +683,15 @@
   gap: 8px;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(18, 24, 30, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   z-index: 4;
 }
 
 .controlHeading {
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -192,7 +699,7 @@
 }
 
 .promptText {
-  color: #dfe8f0;
+  color: var(--ink);
   min-height: 34px;
   font-size: 11.5px;
   line-height: 1.45;
@@ -204,49 +711,66 @@
   gap: 7px;
 }
 
+/* 按鈕定樣（WORKLOG 2026-07-12）：預設白底黑框黑字＋硬陰影；hover 橘底白字保留黑框。 */
 .btn,
 .btnGhost,
 .btnDanger {
   pointer-events: auto;
   padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: #1d2b3a;
-  color: #dfe8f0;
+  border-radius: var(--radius);
+  border: 2px solid var(--ink);
+  background: var(--paper-card);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease;
 }
 
-.btn:not(:disabled):hover {
-  border-color: #8fc7ff;
-  background: #24384d;
+.btn:not(:disabled):hover,
+.btnGhost:not(:disabled):hover {
+  background: var(--accent-orange);
+  color: #fff;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--line-strong);
+}
+
+.btn:not(:disabled):active,
+.btnGhost:not(:disabled):active,
+.btnDanger:not(:disabled):active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--line-strong);
 }
 
 .btn:disabled,
 .btnGhost:disabled,
 .btnDanger:disabled {
   opacity: 0.3;
+  box-shadow: none;
   filter: grayscale(0.85);
   cursor: not-allowed;
 }
 
+/* Ghost＝次要：較細框、無陰影，hover 才浮現。 */
 .btnGhost {
-  background: rgba(18, 24, 30, 0.82);
+  border-width: 1.5px;
+  border-color: var(--line-strong);
+  box-shadow: none;
 }
 
-.btnGhost:not(:disabled):hover {
-  border-color: #8fc7ff;
-}
-
+/* Danger＝紅框紅字，hover 紅底白字。 */
 .btnDanger {
-  background: #3a1d1d;
+  border-color: #c0272d;
+  color: #c0272d;
 }
 
 .btnDanger:not(:disabled):hover {
-  border-color: #ff9d8f;
-  background: #4d2424;
+  background: #c0272d;
+  color: #fff;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--line-strong);
 }
 
 /* R3F Html：桌墊槽位文字與 Guts 張數徽章 */
@@ -254,8 +778,8 @@
   min-width: 70px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(12, 16, 21, 0.58);
-  color: rgba(205, 216, 225, 0.66);
+  background: var(--panel);
+  color: var(--ink-3);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 9px;
   font-weight: 700;
@@ -265,12 +789,48 @@
   white-space: nowrap;
 }
 
+/* 檯面英文區名（[使用者 2026-07-12] #5：Noto Sans、英文、Html 呈現，好改樣式） */
+.zoneLabel {
+  font-family: "Noto Sans", "Noto Sans TC", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #1b1f24;
+  opacity: 0.6;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* OP/DP 揭示籌碼（[使用者 2026-07-12] #2：改 Html/CSS，標籤小數字大、無外框） */
+.revealChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 13px;
+  border-radius: 8px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  white-space: nowrap;
+  user-select: none;
+}
+.revealChipLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0.82;
+}
+.revealChipValue {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .gutsBadge {
   padding: 4px 8px;
   border: 1px solid rgba(255, 212, 94, 0.72);
   border-radius: 999px;
-  background: rgba(19, 24, 29, 0.94);
-  color: #ffe4a0;
+  background: var(--panel);
+  color: #c8890c;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 10px;
   font-weight: 800;
@@ -280,8 +840,70 @@
 }
 
 .gutsBadge:hover {
-  border-color: #ffe6a7;
+  border-color: #c8890c;
   background: #2d2a22;
+}
+
+:global(.ui-lab-hand-shortcut) {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font: 700 10px "IBM Plex Mono", monospace;
+}
+
+:global(.ui-lab-effective-value) {
+  display: flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, .7);
+  color: #fff;
+  font: 800 14px "IBM Plex Mono", monospace;
+}
+:global(.ui-lab-effective-value small) { color: #90e7a8; font-size: 9px; }
+:global(.ui-lab-effective-value.is-modified) { border-color: #c8890c; animation: valueInkPop 420ms cubic-bezier(.2, 1.6, .4, 1); }
+
+@keyframes valueInkPop { from { transform: scale(1.45) rotate(-5deg); filter: contrast(1.4); } }
+
+.gutsBadgeHtml {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px 3px 8px;
+  border: 1px solid rgba(255, 238, 214, .78);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 3px 9px rgba(0, 0, 0, .48);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: "IBM Plex Mono", monospace;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.gutsBadgeHtml span { color: #8a5a1f; font-size: 8px; font-weight: 800; letter-spacing: .08em; }
+.gutsBadgeHtml strong { font-size: 13px; }
+.gutsBadgeHtml:hover { border-color: #c8890c; transform: translateY(-1px); }
+
+.readingGroupLabel {
+  padding: 4px 8px;
+  border: 1px solid rgba(143, 199, 255, 0.34);
+  border-radius: 999px;
+  background: var(--panel);
+  color: #0052a4;
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .gutsPanel {
@@ -290,10 +912,10 @@
   bottom: 226px;
   width: min(380px, calc(100vw - 28px));
   padding: 12px;
-  border: 1px solid rgba(255, 212, 94, 0.42);
-  border-radius: 12px;
-  background: rgba(15, 20, 25, 0.96);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: 5px 5px 0 var(--line-strong);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   z-index: 5;
 }
@@ -310,12 +932,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 12px;
 }
 
 .gutsPanelHeader span {
-  color: #c7b785;
+  color: #7a5a1f;
   font-size: 10px;
 }
 
@@ -336,7 +958,7 @@
   width: 92px;
   aspect-ratio: 5 / 7;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--line-2);
   border-radius: 3px;
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.32);
 }
@@ -344,7 +966,7 @@
 .gutsCard figcaption {
   margin-top: 4px;
   overflow: hidden;
-  color: #aeb9c2;
+  color: var(--ink-3);
   font-size: 9px;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -356,8 +978,12 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(6, 9, 12, 0.55);
+  background: rgba(20, 24, 28, 0.35);
+  pointer-events: auto;
 }
+
+/* Global exit confirmation must stay above phase-specific modals inside stageInteractionLayer. */
+.exitModalMask { z-index: 20; }
 
 .modal {
   display: flex;
@@ -365,14 +991,15 @@
   gap: 8px;
   min-width: 260px;
   padding: 18px 20px;
-  border-radius: 12px;
-  background: #141b22;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  border: 2px solid var(--line-strong);
+  box-shadow: 6px 6px 0 var(--line-strong);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 .modalTitle {
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 14px;
   font-weight: 700;
   margin-bottom: 4px;
@@ -410,29 +1037,36 @@
 
 .judgeHold,
 .judgeBreak {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 34px;
+  font-family: "MasaFont", "masafont", "KouzanBrushFont", "KouzanBrushFontOTF", "衡山毛筆フォント", "衡山毛筆", "DFKai-SB", "BiauKai", "標楷體", "KaiTi", serif;
+  font-size: 32px;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   white-space: nowrap;
-  -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.65);
+  padding: 8px 24px;
+  background-color: #f5f0e4;
+  border: 4px solid #141210;
+  box-shadow: 6px 6px 0px #141210;
+  transform: rotate(-1.5deg) skewX(-3deg);
   animation: judgePop 320ms cubic-bezier(0.2, 1.7, 0.4, 1);
+  display: inline-block;
 }
 
 .judgeHold {
-  color: #6fd3ff;
-  text-shadow: 0 0 26px rgba(110, 210, 255, 0.6);
+  color: #1e4b75;
 }
 
 .judgeBreak {
-  color: #ffb35e;
-  text-shadow: 0 0 30px rgba(255, 140, 50, 0.7);
+  color: #b82d1d;
 }
 
 @keyframes judgePop {
   from {
-    transform: scale(2.2);
+    transform: scale(2.2) rotate(-1.5deg) skewX(-3deg);
     opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(-1.5deg) skewX(-3deg);
+    opacity: 1;
   }
 }
 
@@ -447,10 +1081,10 @@
   gap: 16px;
   width: min(640px, 78vw);
   padding: 16px;
-  border-radius: 14px;
-  background: rgba(13, 17, 22, 0.93);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  border: 2px solid var(--line-strong);
+  box-shadow: 6px 6px 0 var(--line-strong);
   pointer-events: none;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   animation: cardInfoPop 140ms ease-out;
@@ -468,7 +1102,7 @@
   width: 210px;
   align-self: flex-start;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--line-2);
 }
 
 .cardInfoImgEmpty {
@@ -477,8 +1111,8 @@
   display: grid;
   place-items: center;
   border-radius: 10px;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
-  color: #7c8893;
+  border: 1px dashed var(--line-2);
+  color: var(--ink-3);
   font-size: 12px;
 }
 
@@ -491,7 +1125,7 @@
 }
 
 .cardInfoName {
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 17px;
   font-weight: 700;
   line-height: 1.35;
@@ -499,14 +1133,14 @@
 
 .cardInfoName span {
   display: block;
-  color: #8b97a3;
+  color: var(--ink-3);
   font-size: 12px;
   font-weight: 500;
   margin-top: 2px;
 }
 
 .cardInfoMeta {
-  color: #aeb9c2;
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -524,33 +1158,33 @@
   gap: 2px;
   padding: 6px 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--fill-subtle-2);
+  border: 1px solid var(--line);
 }
 
 .paramCell span {
-  color: #8b97a3;
+  color: var(--ink-3);
   font-size: 10.5px;
 }
 
 .paramCell strong {
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 16px;
 }
 
 .cardInfoTiming {
-  color: #9fc1e0;
+  color: #0052a4;
   font-size: 12px;
 }
 
 .cardInfoSkill {
-  color: #dfe8f0;
+  color: var(--ink);
   font-size: 12.5px;
   line-height: 1.65;
   padding: 9px 11px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--fill-subtle-2);
+  border: 1px solid var(--line);
   max-height: 170px;
   overflow: hidden;
   white-space: pre-wrap;
@@ -559,7 +1193,7 @@
 .cardInfoSkill em {
   display: block;
   margin-top: 5px;
-  color: #b08d4f;
+  color: #7a5a1f;
   font-size: 11px;
   font-style: normal;
 }
@@ -579,21 +1213,55 @@
 
 .menuTitle {
   margin: 0;
-  color: #f2f6fa;
+  color: var(--ink);
   font-size: 30px;
   letter-spacing: 0.04em;
 }
 
 .menuSub {
   margin: 0;
-  color: #8b98a5;
+  color: var(--ink-3);
   font-size: 13px;
 }
 
 .menuNote {
   margin: 0;
-  color: #d9a05b;
+  color: #b26a1f;
   font-size: 12px;
+}
+
+/* 新舊介面切換（共用路口）——膠囊分段控制 */
+.uiToggle {
+  display: inline-flex;
+  gap: 2px;
+  margin-top: 14px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--fill-subtle);
+  border: 1.5px solid var(--line-strong);
+}
+
+.uiToggleBtn {
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.uiToggleBtn:not(.uiToggleActive):hover {
+  color: var(--ink);
+}
+
+.uiToggleActive {
+  background: var(--ink);
+  color: var(--on-ink);
+  cursor: default;
 }
 
 .menuRow {
@@ -607,7 +1275,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #aeb9c2;
+  color: var(--ink-3);
   font-size: 12px;
 }
 
@@ -615,16 +1283,16 @@
   min-width: 240px;
   padding: 9px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: #141b22;
-  color: #e8edf2;
+  border: 1.5px solid var(--line-strong);
+  background: var(--paper-card);
+  color: var(--ink);
   font-family: inherit;
   font-size: 13px;
 }
 
 .menuVersus {
   padding-bottom: 10px;
-  color: #c9722e;
+  color: var(--ink-2);
   font-weight: 800;
   font-size: 15px;
 }
@@ -638,23 +1306,34 @@
 
 .btnStart {
   padding: 12px 34px;
-  border-radius: 10px;
-  border: 1px solid #c9722e;
-  background: #c9722e;
-  color: #16100a;
+  border-radius: var(--radius);
+  border: 2px solid var(--ink);
+  background: var(--paper-card);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
   font-family: inherit;
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.08em;
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease;
 }
 
 .btnStart:not(:disabled):hover {
-  background: #dd8a45;
+  background: var(--accent-orange);
+  color: #fff;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--line-strong);
+}
+
+.btnStart:not(:disabled):active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--line-strong);
 }
 
 .btnStart:disabled {
   opacity: 0.4;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -664,7 +1343,7 @@
 }
 
 .settlementTitle {
-  color: #ffe9ad;
+  color: var(--ink);
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -672,7 +1351,7 @@
 
 .settlementScore {
   margin: 6px 0 12px;
-  color: #cfd9e2;
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.9;
 }
@@ -696,17 +1375,19 @@
 
 .effectPanel {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
-  width: min(560px, calc(100vw - 380px));
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(620px, calc(100% - 48px));
   max-height: 46vh;
   overflow-y: auto;
   padding: 12px;
-  border: 1px solid rgba(143, 199, 255, 0.42);
-  border-radius: 12px;
-  background: rgba(15, 20, 25, 0.96);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: 6px 6px 0 var(--line-strong);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
+  pointer-events: auto;
   z-index: 5;
 }
 
@@ -716,7 +1397,7 @@
 
 .effectGroupLabel {
   margin-bottom: 5px;
-  color: #8fc7ff;
+  color: #0052a4;
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -735,12 +1416,12 @@
 }
 
 .picked img {
-  border: 2px solid #ffd45e !important;
+  border: 2px solid #c8890c !important;
   box-shadow: 0 0 14px rgba(255, 212, 94, 0.45);
 }
 
 .picked figcaption {
-  color: #ffe4a0;
+  color: #c8890c;
 }
 
 .blockPickActions {

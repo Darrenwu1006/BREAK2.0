@@ -137,10 +137,15 @@ describe("derivePresentationEvents — 代表性決策序列", () => {
 
     const hand = r.s.players[decider].hand;
     const r2 = step(r.s, { type: "mulligan", returnUids: [hand[0]!, hand[1]!] });
+    expect(kinds(r2.ev).slice(0, 4)).toEqual(["card-group-moved", "deck-shuffled", "card-moved", "card-moved"]);
+    const returned = r2.ev[0]!;
+    expect(returned).toMatchObject({ kind: "card-group-moved", reason: "mulligan-return" });
+    if (returned.kind !== "card-group-moved") throw new Error("expected card-group-moved");
+    expect(returned.moves.map((m) => m.reason)).toEqual(["mulligan", "mulligan"]);
+    expect(returned.moves.map((m) => m.visibility)).toEqual(["hidden", "hidden"]);
     const ms = moves(r2.ev);
-    expect(ms.slice(0, 2).map((m) => m.reason)).toEqual(["mulligan", "mulligan"]);
-    expect(ms.slice(0, 2).map((m) => m.visibility)).toEqual(["hidden", "hidden"]);
-    expect(ms.slice(2).map((m) => m.reason)).toEqual(["draw", "draw"]);
+    expect(ms.map((m) => m.reason)).toEqual(["draw", "draw"]);
+    expect(ms.map((m) => m.motion)).toEqual(["mulligan-deal", "mulligan-deal"]);
     expect(r2.ev[r2.ev.length - 1]).toMatchObject({ kind: "decision-requested", decisionType: "mulligan" });
 
     const r3 = step(r2.s, { type: "mulligan", returnUids: [] });

@@ -47,6 +47,10 @@ export function renderEventText(db: CardDb, event: PresentationEvent): string {
       const face = event.visibility === "public" ? "" : "（蓋）";
       return `${name}${face}：${zoneText(event.from)} → ${zoneText(event.to)}【${REASON_LABEL[event.reason]}】`;
     }
+    case "card-group-moved":
+      return `整批收回 ${event.moves.length} 張換牌卡`;
+    case "deck-shuffled":
+      return `P${event.player} 牌組洗牌`;
     case "op-revealed":
       return `P${event.player} OP 亮出＝${event.value}（${SOURCE_LABEL[event.source]}）`;
     case "dp-revealed":

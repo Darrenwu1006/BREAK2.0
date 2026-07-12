@@ -5,10 +5,13 @@
 // AnimatedCard 對「目標改變」做緩動位移，本檔只管目標在哪。
 
 import type { Card } from "../../data/types";
+import { effParam } from "../../engine/engine";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import { cardBackUrl, cardFrontUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
-import { blockSideAnchor, CARD_T, setAreaAnchor, zoneAnchor } from "./layout";
+import { ZONE_LABEL } from "../presentation/textRenderer";
+import type { CardValueFormula } from "../presentation/valueFormula";
+import { blockSideAnchor, CARD_T, CARD_W, setAreaAnchor, zoneAnchor } from "./layout";
 
 const STACK_ZONES = ["serve", "blockCenter", "receive", "toss", "attack"] as const;
 
@@ -21,6 +24,11 @@ export interface CardPlacement {
   rotation: [number, number, number];
   zone: ZoneId;
   player: PlayerId;
+  /** 場上角色在目前區域對判定的實際貢獻值；只掛在最上層角色。 */
+  effectiveValue?: number | null;
+  baseValue?: number | null;
+  /** 3D 閱讀框中的來源群組標籤；一般盤面卡沒有。 */
+  readingGroup?: string;
   /** hover 拉出的安全位移（沿卡面內方向——與相鄰卡保持平行平面，幾何上不可能相交）。
    *  沒給的卡用 AnimatedCard 的預設世界座標抬升（平放卡安全）。 */
   hoverOffset?: [number, number, number];
@@ -57,6 +65,14 @@ export const HAND_MAX_STEP = 0.72;
 export const HAND_ARC = 0.2;
 /** 相鄰卡沿卡面法線的間距：rotY=0 後手牌是嚴格平行平面族，只需 > 卡厚（rotZ 是面內滾轉不出面） */
 export const HAND_STACK = 0.028;
+// [使用者 2026-07-11] 手牌改「左右並排、不堆疊、不扇形」：每張卡同高同深、rotZ=0，
+// 相鄰卡以 gap 隔開（越多越密、越少越鬆），gap 有下限＝不重疊也不相黏。
+/** 少牌時的相鄰間隙上限（世界單位） */
+export const HAND_GAP_MAX = 0.34;
+/** 滿手時的相鄰間隙下限（≈0.5px；只求剛好不相黏、不重疊） */
+export const HAND_GAP_MIN = 0.012;
+/** 每多一張手牌，間隙收縮量 */
+export const HAND_GAP_SHRINK = 0.05;
 /** hover 拉出距離：沿卡面「上」方向 û 滑出（平面內移動，與鄰卡平行性不變） */
 export const HAND_HOVER_SLIDE = 0.66;
 /** highlighted（可拖曳提示）微升距離：同樣沿 û */
@@ -68,7 +84,12 @@ function cardOf(db: CardDb, state: GameState, uid: number): Card | undefined {
   return db.get(state.cards[uid]!);
 }
 
-export function computePlacements(db: CardDb, state: GameState, schools: [string | undefined, string | undefined]): BoardPlacements {
+export function computePlacements(
+  db: CardDb,
+  state: GameState,
+  schools: [string | undefined, string | undefined],
+  valueFormulas: ReadonlyMap<number, CardValueFormula> = new Map(),
+): BoardPlacements {
   const cards = new Map<number, CardPlacement>();
   const piles: PilePlacement[] = [];
 
@@ -87,41 +108,54 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
       const stack = ps[zone];
       const anchor = zoneAnchor(player, zone === "blockCenter" ? "blockCenter" : zone);
       stack.forEach((uid, depth) => {
+        const param = zone === "blockCenter" ? "block" : zone;
+        const top = depth === stack.length - 1;
+        const card = cardOf(db, state, uid);
+        const formula = valueFormulas.get(uid);
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
           position: [anchor.x, lift(depth), anchor.z],
-          rotation: [0, rotY + jitter(uid), 0],
+          rotation: [0, jitter(uid), 0],
           zone,
           player,
+          ...(top ? {
+            effectiveValue: formula?.total ?? effParam(db, state, uid, param),
+            baseValue: formula?.base ?? card?.params?.[param] ?? null,
+          } : {}),
         });
       });
     }
     // サイドブロッカー（不疊放、最多 2）
     ps.blockSides.forEach((uid, i) => {
       const anchor = blockSideAnchor(player, i);
+      const card = cardOf(db, state, uid);
+      const formula = valueFormulas.get(uid);
       cards.set(uid, {
         uid,
         frontUrl: front(uid),
         backUrl: back,
         faceUp: true,
         position: [anchor.x, lift(0), anchor.z],
-        rotation: [0, rotY + jitter(uid), 0],
+        rotation: [0, jitter(uid), 0],
         zone: "blockSide",
         player,
+        effectiveValue: formula?.total ?? effParam(db, state, uid, "block"),
+        baseValue: formula?.base ?? card?.params?.block ?? null,
       });
     });
-    // Set 區（背面朝下、兩張並排）
+    // Set 區：平時同一格緊密錯位疊放；只有輪到該玩家 pick-set-card 時展開。
+    const setExpanded = state.pendingDecision?.type === "pick-set-card" && state.pendingDecision.player === player;
     ps.setArea.forEach((uid, i) => {
-      const anchor = setAreaAnchor(player, i);
+      const anchor = setAreaAnchor(player, i, setExpanded);
       cards.set(uid, {
         uid,
         frontUrl: null,
         backUrl: back,
         faceUp: false,
-        position: [anchor.x, lift(0), anchor.z],
+        position: [anchor.x, lift(setExpanded ? 0 : i), anchor.z],
         rotation: [0, rotY + jitter(uid), 0],
         zone: "setArea",
         player,
@@ -140,7 +174,7 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
         backUrl: back,
         faceUp: true,
         position: [dropA.x, (ps.drop.length - 1) * CARD_T + CARD_T / 2, dropA.z],
-        rotation: [0, rotY + jitter(dropTop), 0],
+        rotation: [0, jitter(dropTop), 0],
         zone: "drop",
         player,
       });
@@ -155,40 +189,33 @@ export function computePlacements(db: CardDb, state: GameState, schools: [string
         backUrl: back,
         faceUp: true,
         position: [evA.x, (ps.eventArea.length - 1) * CARD_T + CARD_T / 2, evA.z],
-        rotation: [0, rotY + jitter(evTop), 0],
+        rotation: [0, jitter(evTop), 0],
         zone: "eventArea",
         player,
       });
     }
-    // 手牌：P0 參考 Pokémon TCG Pocket——中間略高、左右向內收的淺弧扇形。
-    // [使用者 2026-07-11] 固定範圍填滿：手牌越多越密（step 收縮）、少牌時 step 上限。
-    // 破圖根治二輪（LP0）：手牌一律 rotY=0 ——扇形感只用 rotZ（卡面內滾轉，不改平面朝向），
-    // 所有手牌成為「嚴格平行的平面族」、層距 HAND_STACK > 卡厚 → 幾何上不可能相交。
-    // （CP5d 的殘洞＝rotY 用正規化位置 nt 算，手牌少時相鄰 Δnt 最大到 1.0，
-    //   卡緣出面擺動 0.028 ＋卡厚 > 層距，2~5 張的常見手牌必穿插。）
-    // hover/highlight 的位移也一律沿卡面內方向（HAND_UP），平行性永遠保持。
+    // 手牌：[使用者 2026-07-11] 改「左右並排、不堆疊、不扇形」——每張卡同高同深、rotY/rotZ=0、
+    // 單一傾角 HAND_TILT；相鄰以 gap 隔開，張數越多 gap 越小（下限≈0.5px＝剛好不相黏）。
+    // 因為卡片嚴格共面且不重疊，幾何上不可能穿插破圖（不再需要 CP5d 的平行平面/層距技巧）。
+    // hover/highlight 位移仍沿卡面內方向，平行性維持。
     // P1＝遠端蓋牌扇（平放卡的 rotY 就是面內滾轉，只需層距 > 卡厚）。
     const handA = zoneAnchor(player, "hand");
     const n = ps.hand.length;
+    // P0 手牌：左右並排、不堆疊不扇形；相鄰間隙隨張數動態收縮（下限＝剛好不相黏）。
+    const handGap = Math.max(HAND_GAP_MIN, HAND_GAP_MAX - (n - 1) * HAND_GAP_SHRINK);
+    const handStep = CARD_W + handGap;
     ps.hand.forEach((uid, i) => {
       const t = n > 1 ? i - (n - 1) / 2 : 0;
       if (player === 0) {
-        const maxT = Math.max((n - 1) / 2, 1);
-        const nt = t / maxT;
-        const step = n > 1 ? Math.min(HAND_MAX_STEP, HAND_SPAN / (n - 1)) : 0;
-        const arc = HAND_ARC * (1 - nt * nt); // 沿卡面「上」方向 û=(0, sinθ, -cosθ)
-        const stackUp = i * HAND_STACK; // 沿卡面法線 n̂=(0, cosθ, sinθ)：右卡恆在左卡上方
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
           backUrl: back,
           faceUp: true,
-          position: [
-            handA.x + t * step,
-            0.74 + arc * HAND_SIN + stackUp * HAND_COS,
-            handA.z - 0.2 - arc * HAND_COS + stackUp * HAND_SIN,
-          ],
-          rotation: [HAND_TILT, 0, -nt * 0.1],
+          // [使用者 2026-07-12] 由左到右＝由下到上：每張沿 index 遞增高度＋往觀者側位移，
+          // 形成平行層距（右壓左），徹底消除偶發 z-fighting 破圖。
+          position: [handA.x + t * handStep, 0.74 + i * 0.02, handA.z - 0.2 + i * 0.035],
+          rotation: [HAND_TILT, 0, 0],
           zone: "hand",
           player,
           hoverOffset: [0, HAND_HOVER_SLIDE * HAND_SIN, -HAND_HOVER_SLIDE * HAND_COS],
@@ -221,4 +248,207 @@ export function mergePlacements(base: BoardPlacements, target: BoardPlacements, 
     if (p) cards.set(uid, p);
   }
   return { cards, piles: base.piles };
+}
+
+/** 移入「未逐張擺放的牌堆」（deck／drop 底疊／event 底疊／setArea）的已演移動卡，
+ *  給一個牌堆錨點落點——否則 mergePlacements 找不到 after 擺位、卡片會卡在來源區不動
+ *  （換牌回牌組看不到「飛回牌堆」的動態就是這個原因）。卡片飛到牌堆頂後停著＝視覺上併入。 */
+export function applyMovedPileTargets(
+  base: BoardPlacements,
+  afterState: GameState,
+  movedUids: ReadonlySet<number>,
+  schools: [string | undefined, string | undefined],
+): BoardPlacements {
+  if (movedUids.size === 0) return base;
+  const cards = new Map(base.cards);
+  for (const uid of movedUids) {
+    const ref = locateReadingCard(afterState, uid);
+    if (!ref) continue;
+    const ps = afterState.players[ref.player];
+    const inPile = ref.zone === "deck"
+      || ref.zone === "setArea"
+      || (ref.zone === "drop" && ps.drop.at(-1) !== uid)
+      || (ref.zone === "eventArea" && ps.eventArea.at(-1) !== uid);
+    if (!inPile) continue;
+    const anchor = zoneAnchor(ref.player, ref.zone);
+    const existing = cards.get(uid);
+    // 進牌堆＝蓋著（回牌組不洩漏身分）；drop 底疊維持原可見度。
+    const faceUp = ref.zone === "drop" || ref.zone === "eventArea";
+    cards.set(uid, {
+      uid,
+      frontUrl: existing?.frontUrl ?? null,
+      backUrl: existing?.backUrl ?? cardBackUrl(schools[ref.player]),
+      faceUp,
+      position: [anchor.x, 0.12, anchor.z],
+      rotation: [0, ref.player === 0 ? 0 : Math.PI, 0],
+      zone: ref.zone,
+      player: ref.player,
+    });
+  }
+  return { ...base, cards };
+}
+
+/** deploy-block 尚未提交前，把已選手牌投影到中央／側邊三格；不改 engine state。 */
+export function applyBlockPreview(base: BoardPlacements, selected: readonly number[], center: number | null): BoardPlacements {
+  if (selected.length === 0) return base;
+  const cards = new Map(base.cards);
+  let sideIndex = 0;
+  for (const uid of selected) {
+    const original = cards.get(uid);
+    if (!original) continue;
+    const isCenter = uid === (center ?? selected[0]);
+    const anchor = isCenter ? zoneAnchor(0, "blockCenter") : blockSideAnchor(0, sideIndex++);
+    cards.set(uid, {
+      ...original,
+      position: [anchor.x, lift(0), anchor.z],
+      rotation: [0, jitter(uid), 0],
+      zone: isCenter ? "blockCenter" : "blockSide",
+      player: 0,
+    });
+  }
+  return { ...base, cards };
+}
+
+export type InspectZone = "serve" | "blockCenter" | "receive" | "toss" | "attack" | "drop" | "eventArea";
+
+export interface ReadingCardRef {
+  uid: number;
+  player: PlayerId;
+  zone: ZoneId;
+  /** 分列鍵：同鍵的卡排成同一列。未給時退回 `${player}:${zone}`。
+   *  疊放區 inspect 時用來把「場上角色（最上一張）」與「Guts」拆成兩列。 */
+  groupKey?: string;
+  /** 該列標籤；未給時退回 `${我方/對手}${區名}`。 */
+  groupLabel?: string;
+}
+
+const ALL_ZONE_KEYS: readonly (readonly [ZoneId, keyof GameState["players"][0]])[] = [
+  ["hand", "hand"], ["setArea", "setArea"], ["drop", "drop"], ["eventArea", "eventArea"],
+  ["serve", "serve"], ["blockCenter", "blockCenter"], ["blockSide", "blockSides"],
+  ["receive", "receive"], ["toss", "toss"], ["attack", "attack"], ["deck", "deck"],
+];
+
+export function locateReadingCard(state: GameState, uid: number): ReadingCardRef | null {
+  for (const player of [0, 1] as const) {
+    for (const [zone, key] of ALL_ZONE_KEYS) {
+      if ((state.players[player][key] as number[]).includes(uid)) return { uid, player, zone };
+    }
+  }
+  return null;
+}
+
+const STACK_ZONE_SET: ReadonlySet<string> = new Set(STACK_ZONES);
+
+export function readingCardsForZone(state: GameState, player: PlayerId, zone: InspectZone): ReadingCardRef[] {
+  const stack = state.players[player][zone];
+  const uids = [...stack].reverse(); // 頂端（最上一張＝場上角色／最新）排在最前
+  const who = player === 0 ? "我方" : "對手";
+  if (!STACK_ZONE_SET.has(zone)) {
+    return uids.map((uid) => ({ uid, player, zone }));
+  }
+  // 疊放區：最上面一張是場上角色（非 Guts），其餘才是 Guts——分兩列標記。
+  const gutsCount = Math.max(uids.length - 1, 0);
+  return uids.map((uid, index) => {
+    const isChara = index === 0;
+    return {
+      uid,
+      player,
+      zone,
+      groupKey: isChara ? `${player}:${zone}:chara` : `${player}:${zone}:guts`,
+      groupLabel: isChara ? `${who}場上角色` : `ガッツ（${gutsCount}）`,
+    };
+  });
+}
+
+/** 公開牌堆／效果候選的 3D 閱讀框；同來源卡維持同一列，不塌成無來源清單。
+ *  mode="inspect"（點牌堆檢視）：卡片拉近觀者、傾角對齊手牌（HAND_TILT），較好讀；
+ *  mode="select"（效果選卡）：全部候選轉成與手牌相同傾角、同尺寸的選牌面。 */
+export function applyReadingFrame(
+  base: BoardPlacements,
+  db: CardDb,
+  state: GameState,
+  refs: readonly ReadingCardRef[],
+  schools: [string | undefined, string | undefined],
+  mode: "select" | "inspect" = "select",
+): BoardPlacements {
+  if (refs.length === 0) return base;
+  const cards = new Map(base.cards);
+  const grouped = new Map<string, ReadingCardRef[]>();
+  for (const ref of refs) {
+    const key = ref.groupKey ?? `${ref.player}:${ref.zone}`;
+    const group = grouped.get(key) ?? [];
+    group.push(ref);
+    grouped.set(key, group);
+  }
+  const groups = [...grouped.values()];
+  const inspect = mode === "inspect";
+  const rotation: [number, number, number] = [HAND_TILT, 0, 0];
+  // inspect：整框往上（z 小、遠離手牌 z≈5.35，不再蓋手牌）＋傾角對齊手牌。
+  // 疊放區（角色＋Guts＝兩組）採左右分欄：最上一張角色在左單欄、Guts 在右邊較大格狀區。
+  const split = inspect && groups.length === 2;
+  const Y_BASE = 1.7;
+  const Z_BASE = 1.45;
+  // [使用者 2026-07-12] #1：選牌面改「橫向格狀」——所有候選以全域 index 排成置中格狀
+  // （每列最多 5 張、往遠端換列），不再每個來源群組各佔一 z 深列（那會塌成無法點選的直條）。
+  const selCols = Math.min(Math.max(refs.length, 1), 5);
+  let selCursor = 0;
+  groups.forEach((group, gi) => {
+    const first = group[0]!;
+    const label = first.groupLabel ?? `${first.player === 0 ? "我方" : "對手"}${ZONE_LABEL[first.zone]}`;
+    const columns = inspect
+      ? (split ? (gi === 0 ? 1 : Math.min(group.length, 5)) : Math.min(group.length, 6))
+      : Math.min(group.length, 6);
+    group.forEach((ref, index) => {
+      const col = index % columns;
+      const subRow = Math.floor(index / columns);
+      const card = db.get(state.cards[ref.uid] ?? "");
+      let x: number, y: number, z: number;
+      if (!inspect) {
+        // 選牌面：全域格狀，橫向優先、往遠端換列（與手牌同傾角、同尺寸）。
+        const gcol = selCursor % selCols;
+        const grow = Math.floor(selCursor / selCols);
+        x = (gcol - (selCols - 1) / 2) * 1.22;
+        y = 1.6 + grow * 0.06;
+        z = 1.55 - grow * 1.55;
+        selCursor++;
+      } else if (split && gi === 0) {
+        // 角色：左側單張，略往觀者側凸出以突顯「這是場上角色、不是 Guts」。
+        x = -3.4; y = Y_BASE; z = Z_BASE + 0.25;
+      } else if (split) {
+        // Guts：右側較大格狀區，往網子退＋升高展開。
+        x = -0.1 + col * 1.16;
+        y = Y_BASE + subRow * 0.78;
+        z = Z_BASE - subRow * 1.3;
+      } else {
+        // 單組（棄牌／事件公開堆）：置中格狀。
+        x = (col - (columns - 1) / 2) * 1.14;
+        y = Y_BASE + subRow * 0.78;
+        z = Z_BASE - subRow * 1.3;
+      }
+      cards.set(ref.uid, {
+        uid: ref.uid,
+        frontUrl: card ? cardFrontUrl(card) : null,
+        backUrl: cardBackUrl(schools[ref.player]),
+        faceUp: true,
+        position: [x, y, z],
+        rotation,
+        zone: ref.zone,
+        player: ref.player,
+        readingGroup: index === 0 ? label : undefined,
+      });
+    });
+  });
+  return { ...base, cards };
+}
+
+/** 舊版混合來源選牌相容函式；新 effect-cards 已統一進選牌面。 */
+export function liftInPlaceReadingCandidates(base: BoardPlacements, uids: ReadonlySet<number>): BoardPlacements {
+  if (uids.size === 0) return base;
+  const cards = new Map(base.cards);
+  for (const uid of uids) {
+    const card = cards.get(uid);
+    if (!card) continue;
+    cards.set(uid, { ...card, position: [card.position[0], Math.max(card.position[1], 1.05), card.position[2]] });
+  }
+  return { ...base, cards };
 }

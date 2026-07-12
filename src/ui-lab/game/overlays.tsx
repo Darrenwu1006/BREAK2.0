@@ -130,6 +130,7 @@ export function EffectOptionModal(props: { prompt: string; options: readonly str
 export function ResolvePendingModal(props: {
   state: GameState;
   candidates: readonly number[];
+  onHover?: (uid: number | null) => void;
   onPick: (id: number) => void;
 }): React.JSX.Element {
   return (
@@ -139,7 +140,13 @@ export function ResolvePendingModal(props: {
         {props.candidates.map((id) => {
           const item = props.state.pendingQueue.find((q) => q.id === id);
           return (
-            <button key={id} className={styles.btn} onClick={() => props.onPick(id)}>
+            <button
+              key={id}
+              className={styles.btn}
+              onMouseEnter={() => props.onHover?.(item?.source ?? null)}
+              onMouseLeave={() => props.onHover?.(null)}
+              onClick={() => props.onPick(id)}
+            >
               {item?.desc ?? `待機 #${id}`}
             </button>
           );

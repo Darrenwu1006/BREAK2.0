@@ -3,10 +3,10 @@
 // 動畫全在 useFrame 命令式跑，不經 React state——目標改變才觸發 re-render。
 
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { Html, useTexture } from "@react-three/drei";
 import { Suspense, useRef } from "react";
 import * as THREE from "three";
 import { CardMesh } from "./CardMesh";
-import { GlowFrame } from "./GlowFrame";
 import { CARD_H, CARD_W } from "./layout";
 import type { CardPlacement } from "./placements";
 
@@ -17,6 +17,10 @@ export interface AnimatedCardProps {
   placement: CardPlacement;
   /** 可拖曳／可選取提示：微升＋卡緣邊框脈動 */
   highlighted?: boolean;
+  /** highlight 呼吸燈色（黑↔此色）；通常＝該卡持有者的學校色。 */
+  highlightColor?: string;
+  /** 技能來源／結算焦點：優先於一般選取與可操作提示 */
+  emphasized?: boolean;
   /** 已選取（mulligan 換牌、攔網多選）：金色定亮邊框 */
   selected?: boolean;
   /** hover 拉出（手牌檢視）：明顯上抬＋拉向鏡頭＋放大 */
@@ -26,6 +30,9 @@ export interface AnimatedCardProps {
   dragPoint?: React.RefObject<THREE.Vector3>;
   /** 新掛載卡的出生點（抽牌從牌組頂飛出等）；僅首幀生效 */
   spawnFrom?: [number, number, number];
+  shortcutLabel?: string;
+  /** 閱讀／選牌面會隱藏卡上數值與快捷徽章，避免壓住候選。 */
+  showBadges?: boolean;
   onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
   onPointerOver?: (e: ThreeEvent<PointerEvent>) => void;
   onPointerOut?: (e: ThreeEvent<PointerEvent>) => void;
@@ -34,6 +41,20 @@ export interface AnimatedCardProps {
 const { damp, clamp } = THREE.MathUtils;
 
 export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
+  // Pre-load textures to suspend AnimatedCard until textures are ready,
+  // ensuring the animation starts only after loading is complete.
+  useTexture(
+    [props.placement.frontUrl ?? props.placement.backUrl, props.placement.backUrl],
+    (textures) => {
+      for (const t of Array.isArray(textures) ? textures : [textures]) {
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 16;
+        t.generateMipmaps = false;
+        t.minFilter = THREE.LinearFilter;
+      }
+    }
+  );
+
   const group = useRef<THREE.Group>(null);
   const cur = useRef<THREE.Vector3 | null>(null);
   const rot = useRef(new THREE.Euler());
@@ -68,6 +89,13 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
       tx += ox;
       ty += oy;
       tz += oz;
+    } else if (props.selected) {
+      // [使用者 2026-07-12] #1 方案 B：已選取＝綠框＋明顯抬起（沿卡面內方向拉出，
+      // 幅度大於 highlight、接近 hover——「被抽出來」的實體選牌感）。
+      const [hx, hy, hz] = p.hoverOffset ?? [0, 0.4, 0.1];
+      tx += hx * 0.75;
+      ty += hy * 0.75;
+      tz += hz * 0.75;
     } else if (props.highlighted) {
       const [ox, oy, oz] = p.highlightOffset ?? [0, 0.16, 0.05];
       tx += ox;
@@ -118,6 +146,15 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
 
   });
 
+  // [使用者 2026-07-11] highlight/selected 直接染在卡邊框上（CardMesh cap），不再另疊 GlowFrame。
+  const showEmphasis = !!props.emphasized && !props.dragging;
+  const showHighlight = !!props.highlighted && !props.selected && !showEmphasis && !props.dragging;
+  // highlight 走 glowColor（黑↔學校色呼吸），emphasis/selected 仍直接染邊框。
+  // [使用者 2026-07-12] #1 提案：selected＝實心「已選取綠」（非呼吸、非橘），語意明確；
+  //   與 highlight（黑↔學校色呼吸）、emphasis（橘）三態清楚區分。
+  const borderColor = showEmphasis ? "#ff7a3d" : props.selected ? "#22c55e" : undefined;
+  const glowColor = showHighlight ? (props.highlightColor ?? "#59c8ff") : undefined;
+
   return (
     <group ref={group} position={props.spawnFrom ?? props.placement.position} rotation={props.placement.rotation}>
       {/* 卡內 Suspense：新卡貼圖載入只讓「這張卡」晚一拍出現，不觸發外層 fallback 整場閃黑 */}
@@ -127,15 +164,29 @@ export function AnimatedCard(props: AnimatedCardProps): React.JSX.Element {
           backUrl={props.placement.backUrl}
           faceUp={props.placement.faceUp}
           position={[0, 0, 0]}
+          borderColor={borderColor}
+          glowColor={glowColor}
+          borderGlow={showHighlight || showEmphasis}
           onPointerDown={props.onPointerDown}
           onPointerOver={props.onPointerOver}
           onPointerOut={props.onPointerOut}
         />
       </Suspense>
-      {/* 可拖曳／可選取提示：卡緣邊框脈動（回饋 #6——光收在邊框、不溢出） */}
-      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.highlighted && !props.selected && !props.dragging} position={[0, -0.012, 0]} opacityRange={[0.4, 0.85]} />
-      {/* 已選取：金色定亮 */}
-      <GlowFrame width={CARD_W} height={CARD_H} visible={!!props.selected} color="#ffd45e" opacityRange={[0.8, 0.95]} position={[0, -0.012, 0]} />
+      {props.showBadges !== false && props.shortcutLabel && (
+        <Html position={[CARD_W / 2 - 0.12, 0.04, -CARD_H / 2 + 0.12]} center style={{ pointerEvents: "none" }} zIndexRange={[4, 0]}>
+          <span className="ui-lab-hand-shortcut">{props.shortcutLabel}</span>
+        </Html>
+      )}
+      {props.showBadges !== false && props.placement.effectiveValue !== undefined && props.placement.effectiveValue !== null && (
+        <Html position={[-CARD_W / 2 + 0.12, 0.045, -CARD_H / 2 + 0.12]} center style={{ pointerEvents: "none" }} zIndexRange={[4, 0]}>
+          <span className={`ui-lab-effective-value ${props.placement.baseValue !== props.placement.effectiveValue ? "is-modified" : ""}`}>
+            {props.placement.baseValue ?? props.placement.effectiveValue}
+            {props.placement.baseValue !== null && props.placement.baseValue !== undefined && props.placement.baseValue !== props.placement.effectiveValue && (
+              <small>{props.placement.effectiveValue - props.placement.baseValue > 0 ? "+" : ""}{props.placement.effectiveValue - props.placement.baseValue}</small>
+            )}
+          </span>
+        </Html>
+      )}
     </group>
   );
 }
