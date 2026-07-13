@@ -242,10 +242,16 @@ export function App() {
 
   return (
     <main className="menu">
-      <section className="menu-hero">
-        <p className="menu-kicker">Deck testing simulator</p>
-        <h1>排球少年 バボカ!!BREAK</h1>
-        <p className="dim">卡池 {db.size} 張・牌組 {decks.length} 副</p>
+      <section className="menu-hero" aria-labelledby="menu-title">
+        <div className="menu-brand-copy">
+          <p className="menu-kicker">Deck testing simulator</p>
+          <h1 id="menu-title">排球少年 <span>バボカ!!BREAK</span></h1>
+        </div>
+        <div className="menu-pool-status" aria-label="目前資料狀態">
+          <span><b>{db.size}</b> Cards</span>
+          <span><b>{decks.length}</b> Decks</span>
+          <span><b>{poolStatus.pct}%</b> Skills</span>
+        </div>
         <p className="menu-disclaimer">
           本程式為個人製作的非官方模擬器，僅供牌組測試與學習研究之用。
           『ハイキュー!!』『バボカ!!BREAK』之著作權・商標均屬 ©古舘春一／集英社・「ハイキュー!!」製作委員会・©TOMY 所有，與官方無任何關聯。請支持官方正版產品。
@@ -254,15 +260,26 @@ export function App() {
 
       <div className="menu-grid">
         <section className="menu-panel" aria-label="對戰設定">
+          <header className="menu-panel-header">
+            <div>
+              <span className="menu-panel-index">01</span>
+              <div>
+                <p>Match setup</p>
+                <h2>對戰設定</h2>
+              </div>
+            </div>
+            <span className="menu-panel-tag">Player vs AI</span>
+          </header>
+
           {loadError && <p className="danger small">{loadError}</p>}
           <div className="menu-row menu-decks">
-            <label>我的牌組
+            <label><span className="menu-field-label">我的牌組</span>
               <select value={myDeck} onChange={(e) => setMyDeck(Number(e.target.value))}>
                 {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
             </label>
             <span className="menu-versus" aria-hidden="true">VS</span>
-            <label>電腦牌組
+            <label><span className="menu-field-label">電腦牌組</span>
               <select value={aiDeck} onChange={(e) => setAiDeck(Number(e.target.value))}>
                 {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
@@ -279,33 +296,54 @@ export function App() {
             </div>
           )}
 
-          <div className="menu-row menu-actions">
-            <button className="btn-start" disabled={!decks.length} onClick={() => setMode(engine === "lab" ? "lab-game" : "classic-game")}>開始對戰</button>
-            <button className="btn-start btn-secondary" onClick={() => setMode("editor")}>牌組編輯</button>
-            <button className="btn-start btn-secondary" onClick={() => setMode("optimizer")}>調牌提案</button>
+          <div className="ui-toggle-row">
+            <div className="ui-toggle-heading">
+              <span className="ui-toggle-label">Battle view</span>
+              <b>選擇本場介面</b>
+            </div>
+            <div className="ui-toggle" aria-label="介面切換">
+              <span className={engine === "classic" ? "is-active" : ""}>經典 2D</span>
+              <button
+                type="button"
+                className="ui-toggle-switch"
+                role="switch"
+                aria-checked={engine === "lab"}
+                aria-label={`切換至${engine === "classic" ? "實驗 3D" : "經典 2D"}`}
+                onClick={() => {
+                  const next = engine === "classic" ? "lab" : "classic";
+                  setEngine(next);
+                  writeGameEngine(next);
+                }}
+              >
+                <span className="ui-toggle-thumb" aria-hidden="true" />
+              </button>
+              <span className={engine === "lab" ? "is-active" : ""}>實驗 3D</span>
+            </div>
           </div>
 
-          <div className="ui-toggle-row">
-            <span className="ui-toggle-label">介面</span>
-            <div className="ui-toggle" role="group" aria-label="介面切換">
-              <button
-                type="button"
-                className={`ui-toggle-btn${engine === "classic" ? " is-active" : ""}`}
-                aria-pressed={engine === "classic"}
-                onClick={() => { setEngine("classic"); writeGameEngine("classic"); }}
-              >經典 2D</button>
-              <button
-                type="button"
-                className={`ui-toggle-btn${engine === "lab" ? " is-active" : ""}`}
-                aria-pressed={engine === "lab"}
-                onClick={() => { setEngine("lab"); writeGameEngine("lab"); }}
-              >實驗 3D</button>
+          <div className="menu-row menu-actions">
+            <button className="btn-start menu-primary-action" disabled={!decks.length} onClick={() => setMode(engine === "lab" ? "lab-game" : "classic-game")}>
+              <span>開始對戰</span>
+              <small>{engine === "lab" ? "Experimental 3D" : "Classic 2D"}</small>
+            </button>
+            <div className="menu-tool-actions" aria-label="牌組工具">
+              <button className="btn-start btn-secondary" onClick={() => setMode("editor")}><span>牌組編輯</span><small>Deck editor</small></button>
+              <button className="btn-start btn-secondary" onClick={() => setMode("optimizer")}><span>調牌提案</span><small>Deck proposal</small></button>
             </div>
           </div>
         </section>
 
         <section className="menu-panel" aria-label="歷史對戰紀錄">
-          <h2>歷史對戰紀錄 (覆盤)</h2>
+          <header className="menu-panel-header">
+            <div>
+              <span className="menu-panel-index">02</span>
+              <div>
+                <p>Replay archive</p>
+                <h2>歷史對戰紀錄</h2>
+              </div>
+            </div>
+            <span className="menu-panel-tag">{replays.length} Recent</span>
+          </header>
           {loadingReplays ? (
             <p className="dim small">正在載入歷史對戰紀錄...</p>
           ) : replays.length === 0 ? (
