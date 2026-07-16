@@ -1,7 +1,8 @@
 // P03 稲荷崎 延後3張（039 宮侑／086 プレーは大分／091 俺のサーブの邪魔すんなや）。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { topChara, fireSelfDroppedFromEvent } from "./effects";
+import { fireSelfDroppedFromEvent } from "./effects";
+import { topChara } from "./effect-helpers";
 import { db, deckWith, grab, setup, serveWith, receiveTrack, drainCp, FILLER } from "./testkit";
 import type { GameState, Decision, PlayerId } from "./types";
 

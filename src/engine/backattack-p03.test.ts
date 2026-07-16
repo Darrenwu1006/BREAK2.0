@@ -2,7 +2,7 @@
 // 後排攻擊＝發生源をアタックエリアに登場（原攻擊手はガッツ化）、アタックポイントを N にする。OP は攻擊區頂端一人のみ。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { topChara } from "./effects";
+import { topChara } from "./effect-helpers";
 import { db, deckWith, grab, placeOnStack, seedStack, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 import type { GameState, Decision, PlayerId } from "./types";
 

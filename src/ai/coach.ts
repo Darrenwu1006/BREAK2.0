@@ -1,5 +1,4 @@
-import { applyDecision, blockDeployMax, canChooseBlock, deployableUids, deployNames, freeOptions, nameOf } from "../engine/engine";
-import { autoPickCards, canDeployTo, normName } from "../engine/effects";
+import { applyDecision, autoPickCards, blockDeployMax, canChooseBlock, canDeployTo, deployNames, deployableUids, freeOptions, nameOf, normName } from "../engine/engine";
 import { cloneStateForSearch } from "../engine/search-clone";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import type { CourtArea } from "../engine/dsl";

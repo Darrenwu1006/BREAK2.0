@@ -1,5 +1,5 @@
 import type { ParamName } from "../../engine/dsl";
-import { baseParam, effParam } from "../../engine/effects";
+import { baseParam, effParam } from "../../engine/engine";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 
 /** UI 演出快照：不改引擎 modifier 壽命，只保存玩家看見的算式。 */

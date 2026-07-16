@@ -11,44 +11,33 @@ import { validateGameDeck } from "./deck-validation";
 export { validateGameDeck } from "./deck-validation";
 export type { GameDeckValidationIssue } from "./deck-validation";
 import { nextRandom, shuffle } from "./rng";
+import { cardOf, charasOf, deployNames, effParam, log, nameOf, normName, other, removeFromHand, suppressLogsForState, topChara } from "./effect-helpers";
+import { blockDeployMax, canDeployTo, centerBlockNegated, deployLegality } from "./deploy-legality";
 import {
   applyEffectDecision,
-  centerBlockNegated,
-  blockDeployMax,
-  canDeployTo,
-  cardOf,
-  charasOf,
   cleanupTurn,
   clearSetScoped,
   deployCard,
-  deployLegality,
-  deployNames,
   drawCards,
-  effParam,
   enqueueTurnEnd,
   freeOptions,
   freeCardReasons,
-  log,
-  nameOf,
-  normName,
   onBlockSuccess,
   onLostDeclared,
-  other,
   pendingDecisionForAwaiting,
   playEvent,
   processQueue,
-  removeFromHand,
   startPendingItem,
   stepEffect,
-  suppressLogsForState,
-  topChara,
   useSkill,
 } from "./effects";
 import { cloneStateForSearch } from "./search-clone";
 
-export { freeOptions, freeCardReasons, blockDeployMax, deployNames, deployLegality, charasOf, effParam, nameOf } from "./effects";
-export type { DeployLegalityCode } from "./effects";
-export { effectDefOf } from "./effects";
+// 對 engine 外（ai/ui/ui-lab/tools）的公開門面：外部一律從本檔進，不直接 import engine 內部模組 [Claude 2026-07-16]
+export { autoPickCards, freeOptions, freeCardReasons } from "./effects";
+export { blockDeployMax, canDeployTo, deployLegality } from "./deploy-legality";
+export type { DeployLegalityCode } from "./deploy-legality";
+export { baseParam, charasOf, deployNames, effectDefOf, effParam, nameOf, normName, topChara } from "./effect-helpers";
 
 // ---------- 工具 ----------
 

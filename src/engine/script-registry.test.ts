@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import type { Card } from "../data/types";
 import type { EffectDef } from "./dsl";
-import { SCRIPTS } from "./effects";
+import { SCRIPTS } from "./scripts";
 import { db, deckWith, feed, grab, setup, serveWith } from "./testkit";
 
 /** 合成事件卡；timing 預設 [=ドロー]，effect 由參數注入 */

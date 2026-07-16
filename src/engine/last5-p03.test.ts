@@ -1,7 +1,7 @@
 // P03 最後5張（028 古森／079 影山という…／047 影山／083 火焼／PR-063 ジャンバル）。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { topChara } from "./effects";
+import { topChara } from "./effect-helpers";
 import { db, deckWith, grab, placeDeckTop, setup, serveWith, receiveTrack, drainCp, FILLER } from "./testkit";
 import type { Awaiting, GameState, Decision, PlayerId } from "./types";
 

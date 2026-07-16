@@ -1,7 +1,7 @@
 // P03 音駒（HV-P03 + HV-PR）技能逐張行為測試。033 バックアタック 延後（核心引擎，見 WORKLOG）。
 import { describe, it, expect } from "vitest";
 import { effParam } from "./engine";
-import { nameOf } from "./effects";
+import { nameOf } from "./effect-helpers";
 import { db, deckWith, grab, placeDeckTop, placeInDrop, seedStack, setup, serveWith, receiveTrack, setHandSize, FILLER } from "./testkit";
 
 describe("音駒 P03：登場 gate（孤爪／夜久／灰羽／犬岡）", () => {

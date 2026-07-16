@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { blockDeployMax, canChooseBlock, deployableUids, effParam } from "./engine";
-import { gutsFor } from "./effects";
+import { gutsFor } from "./effect-helpers";
 import { db, deckWith, feed, grab, placeOnStack, placeDeckTop, seedStack, setHandSize, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
 describe("關鍵字 †9（7 個）", () => {

@@ -1,7 +1,7 @@
 // P03 稲荷崎（HV-P03-021/041/044/045/046/092/093 + HV-PR-059）。039/086/091 延後（見 WORKLOG）。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { nameOf } from "./effects";
+import { nameOf } from "./effect-helpers";
 import { db, deckWith, grab, placeInDrop, seedStack, setup, serveWith, receiveTrack, drainCp, FILLER } from "./testkit";
 import type { GameState, Decision, PlayerId } from "./types";
 

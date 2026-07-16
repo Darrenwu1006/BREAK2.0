@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Action } from "./dsl";
-import { applyEffectDecision, drawCards, freeOptions, isSkillInvalid, stepEffect } from "./effects";
+import { isSkillInvalid } from "./conditions";
+import { applyEffectDecision, drawCards, freeOptions, stepEffect } from "./effects";
 import { effParam } from "./engine";
 import { db, deckWith, FILLER, grab, placeOnStack, setup } from "./testkit";
 import type { GameState } from "./types";

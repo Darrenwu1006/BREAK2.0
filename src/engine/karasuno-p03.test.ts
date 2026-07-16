@@ -1,7 +1,7 @@
 // P03 烏野（HV-P03-001/003/051/052/053/054/056/057/077/080/081/082/087/094/095/096 + PR-057/060）。047/PR-063 延後。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { nameOf } from "./effects";
+import { nameOf } from "./effect-helpers";
 import { db, deckWith, grab, placeInDrop, seedStack, setup, serveWith, receiveTrack, drainCp, FILLER } from "./testkit";
 import type { GameState, Decision, PlayerId } from "./types";
 

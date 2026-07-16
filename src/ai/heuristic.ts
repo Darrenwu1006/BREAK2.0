@@ -7,8 +7,7 @@
 import type { Card } from "../data/types";
 import type { Action, CharaFilter, Condition, Cost, CourtArea, EffectDef, ParamName, SkillDef } from "../engine/dsl";
 import type { Awaiting, CardDb, Decision, GameState, PendingItem, PlayerId } from "../engine/types";
-import { blockDeployMax, canChooseBlock, charasOf, deployableUids, effParam, freeOptions } from "../engine/engine";
-import { autoPickCards, topChara } from "../engine/effects";
+import { autoPickCards, blockDeployMax, canChooseBlock, charasOf, deployableUids, effParam, freeOptions, topChara } from "../engine/engine";
 import { pickDeployName } from "./util";
 
 type Area = CourtArea;

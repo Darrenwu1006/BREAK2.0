@@ -1,6 +1,6 @@
 // AI 共用：登場選名（072/073 置換）與攔網整批選擇（同名/上限/選名約束）
 import type { CardDb, GameState, PlayerId } from "../engine/types";
-import { canDeployTo, deployNames, normName } from "../engine/effects";
+import { canDeployTo, deployNames, normName } from "../engine/engine";
 import type { CourtArea } from "../engine/dsl";
 
 /** 072/073 型卡：挑一個目前合法的登場卡名（一般卡回傳 undefined） */

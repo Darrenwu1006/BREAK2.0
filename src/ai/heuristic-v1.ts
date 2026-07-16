@@ -1,7 +1,6 @@
 // M8 benchmark baseline：保留早期「點數最大、有招就用」的粗略 AI，用來量化 v2 之後的提升。
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { blockDeployMax, canChooseBlock, deployableUids, freeOptions } from "../engine/engine";
-import { autoPickCards } from "../engine/effects";
+import { autoPickCards, blockDeployMax, canChooseBlock, deployableUids, freeOptions } from "../engine/engine";
 import type { CourtArea } from "../engine/dsl";
 import { pickDeployName, selectBlockers } from "./util";
 

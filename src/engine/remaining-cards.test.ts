@@ -1,7 +1,8 @@
 // M3 長尾卡：依 docs/M3_REMAINING_94_PLAN.md 分批補完。
 import { describe, expect, it } from "vitest";
 import { blockDeployMax, effParam } from "./engine";
-import { deployCard, deployNames, nameOf } from "./effects";
+import { deployCard } from "./effects";
+import { deployNames, nameOf } from "./effect-helpers";
 import { db, deckWith, feed, grab, receiveTrack, seedStack, setHandSize, setup, serveWith, FILLER } from "./testkit";
 import type { GameState, PlayerId } from "./types";
 import cardsJson from "../../data/cards.json";

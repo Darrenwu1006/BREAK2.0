@@ -1,8 +1,7 @@
 // M4 第一版 AI：合法手中隨機選（M5 將升級為啟發式/搜索；介面不變）
 // M3 起需處理效果決策：gate 隨機接受、選卡用引擎保底邏輯（autoPickCards）
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { blockDeployMax, canChooseBlock, deployableUids } from "../engine/engine";
-import { autoPickCards } from "../engine/effects";
+import { autoPickCards, blockDeployMax, canChooseBlock, deployableUids } from "../engine/engine";
 import { pickDeployName, selectBlockers } from "./util";
 
 export function randomAiDecision(db: CardDb, state: GameState, rnd: () => number = Math.random): Decision {

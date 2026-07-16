@@ -1,7 +1,7 @@
 // P03 青葉城西（HV-P03-005/006/007 + HV-PR-061）技能逐張行為測試。
 import { describe, it, expect } from "vitest";
 import { applyDecision, effParam } from "./engine";
-import { nameOf } from "./effects";
+import { nameOf } from "./effect-helpers";
 import { db, deckWith, grab, seedStack, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 import type { GameState, Decision, PlayerId } from "./types";
 
