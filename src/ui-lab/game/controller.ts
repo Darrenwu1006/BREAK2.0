@@ -10,8 +10,8 @@
 import { heuristicAiDecision } from "../../ai/heuristic";
 import { applyDecision, createGame } from "../../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../../engine/types";
-import type { DeckMeta } from "../../ui/gameTypes";
-import { appendReplayEntry, createReplaySession, truncateReplaySession, type ReplaySession } from "../../ui/replayHistory";
+import type { DeckMeta } from "../../shared/deckMeta";
+import { appendReplayEntry, createReplaySession, truncateReplaySession, type ReplaySession } from "../../shared/replayHistory";
 import { derivePresentationEvents } from "../presentation/derive";
 import { PresentationTimeline, type PresentationBatch } from "../presentation/timeline";
 

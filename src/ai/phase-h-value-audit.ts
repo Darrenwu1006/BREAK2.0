@@ -1,6 +1,6 @@
 import { applyDecision } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import type { ReplaySession } from "../ui/replayHistory";
+import type { ReplaySession } from "../shared/replayHistory";
 import { decisionLabel } from "./coach";
 import { evaluatePressureScore, evaluateStateValue, type ValueModel } from "./rollout-value";
 

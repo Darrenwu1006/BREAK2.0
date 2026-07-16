@@ -3,7 +3,7 @@ import type { CourtArea } from "../engine/dsl";
 import { canChooseBlock } from "../engine/engine";
 import type { CardDb, GameState, PlayerId, Stack } from "../engine/types";
 import { CardBack, CardView, displayName } from "./CardView";
-import type { DeckMeta } from "./gameTypes";
+import type { DeckMeta } from "../shared/deckMeta";
 
 const AREA_LABEL: Record<CourtArea, string> = {
   serve: "發球",

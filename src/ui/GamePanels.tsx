@@ -5,7 +5,8 @@ import type { CardDb, Decision, GameState, LogEntry, Phase, PlayerId } from "../
 import type { CoachReport } from "../ai/coach";
 import type { ValueExplanation } from "../ai/rollout-value";
 import { CardView, displayName, cardRarity } from "./CardView";
-import type { DeckMeta, InspectedCard } from "./gameTypes";
+import type { DeckMeta } from "../shared/deckMeta";
+import type { InspectedCard } from "./gameTypes";
 
 export const PHASE_NAME: Record<Phase, string> = {
   setup: "準備",

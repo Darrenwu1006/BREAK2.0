@@ -6,7 +6,7 @@ import { decisionLabel, enumerateCandidates } from "../src/ai/coach";
 import { heuristicAiDecision } from "../src/ai/heuristic";
 import { runPhaseHFreeAttackGateControl } from "../src/ai/phase-h-gate-control";
 import type { Decision, GameState } from "../src/engine/types";
-import type { ReplaySession } from "../src/ui/replayHistory";
+import type { ReplaySession } from "../src/shared/replayHistory";
 import type { ValueModel } from "../src/ai/rollout-value";
 
 function argValue(name: string, fallback: string): string {

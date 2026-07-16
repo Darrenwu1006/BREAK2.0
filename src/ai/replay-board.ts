@@ -5,7 +5,7 @@
 
 import type { Card } from "../data/types";
 import type { CardDb, Decision, GameState, PlayerId, PointValue, Stack } from "../engine/types";
-import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../ui/replayHistory";
+import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
 
 const PLAYER_LABEL: Record<PlayerId, string> = { 0: "玩家", 1: "AI" };
 

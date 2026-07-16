@@ -8,7 +8,7 @@ import { createIsmctsReport } from "../src/ai/ismcts";
 import { decisionLabel, determinizeHiddenState, enumerateCandidates, inferKnownDecks } from "../src/ai/coach";
 import { heuristicAiDecision } from "../src/ai/heuristic";
 import { estimateThinkBudgetMs } from "../src/ai/think-budget";
-import type { ReplaySession } from "../src/ui/replayHistory";
+import type { ReplaySession } from "../src/shared/replayHistory";
 
 const CALIBRATED_TARGET_IPS = 2800;
 const AI_PACE_MS = 900;

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyAnchorScanToJsonl } from "../src/human-anchor";
+import { applyAnchorScanToJsonl } from "../src/shared/human-anchor";
 import cardsJson from "../data/cards.json";
 import type { Card } from "../src/data/types";
 import type { CardDb, Decision, PlayerId } from "../src/engine/types";
@@ -8,7 +8,7 @@ import { createPimcCoachReport } from "../src/ai/coach";
 import { renderBoardRange } from "../src/ai/replay-board";
 import { createReplayReviewReport, lostSetCauseLabel, type LostSetCause, type ReplayGameplanCheckpoint } from "../src/ai/replay-review";
 import { buildTriage, type TriageCandidate, type TriageCategory, type TriagePimcInput } from "../src/ai/replay-triage";
-import type { ReplaySession } from "../src/ui/replayHistory";
+import type { ReplaySession } from "../src/shared/replayHistory";
 
 interface CliOptions {
   file?: string;

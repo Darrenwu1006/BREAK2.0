@@ -11,7 +11,7 @@ import { evaluatePressureScore, extractValueFeatures, VALUE_FEATURE_NAMES } from
 import { fitPhaseHValueModel, rawPhaseHValueScore, scorePhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
 import { createFreeAttackGateState } from "../src/ai/phase-h-gate-control";
 import { auditReplaySession, summarizeGateValuePairs } from "../src/ai/phase-h-value-audit";
-import type { ReplaySession } from "../src/ui/replayHistory";
+import type { ReplaySession } from "../src/shared/replayHistory";
 import type { KnownDecks } from "../src/ai/remaining-pool";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

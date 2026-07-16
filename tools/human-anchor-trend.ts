@@ -8,7 +8,7 @@ import {
   parseHumanAnchorJsonl,
   summarizeAnchorTrend,
   type AnchorVersionSummary,
-} from "../src/human-anchor";
+} from "../src/shared/human-anchor";
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;

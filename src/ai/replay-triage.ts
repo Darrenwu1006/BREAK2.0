@@ -8,7 +8,7 @@
 // 根因在 Turn 4）。這是刻意的——triage 圈出區域，deep-dive 釘出根因。
 
 import type { CardDb, LogEntry, PlayerId } from "../engine/types";
-import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../ui/replayHistory";
+import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
 import { decisionLabel } from "./replay-board";
 import { createReplayReviewReport, type LostSetCause } from "./replay-review";
 

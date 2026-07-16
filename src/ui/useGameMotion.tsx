@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { CardDb, GameState, PlayerId } from "../engine/types";
 import { cardBackImage, cardImage, displayName } from "./CardView";
-import type { DeckMeta } from "./gameTypes";
+import type { DeckMeta } from "../shared/deckMeta";
 
 interface RectLike {
   left: number;

@@ -1,5 +1,5 @@
 import type { CardDb, GameState, PlayerId } from "../engine/types";
-import { replayEntryLogs, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "../ui/replayHistory";
+import { replayEntryLogs, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
 import type { ActionImpactStats } from "./benchmark";
 import {
   evaluateGameplanState,

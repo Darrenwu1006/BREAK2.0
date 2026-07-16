@@ -13,7 +13,7 @@ import { heuristicAiDecision } from "../ai/heuristic";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { blockDeployMax, canChooseBlock, deployLegality, deployNames, deployableUids, freeCardReasons, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry } from "../engine/types";
-import type { DeckMeta } from "../ui/gameTypes";
+import type { DeckMeta } from "../shared/deckMeta";
 import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { DecisionRail } from "./game/DecisionRail";
@@ -38,7 +38,7 @@ import { BoardScene } from "./scene/BoardScene";
 import { CameraRig, LAB_CAMERA_BASE } from "./scene/CameraRig";
 import { zoneAnchor } from "./scene/layout";
 import { applyBlockPreview, applyMovedPileTargets, applyReadingFrame, computePlacements, locateReadingCard, mergePlacements, readingCardsForZone, type InspectZone, type ReadingCardRef } from "./scene/placements";
-import { canUseInPlaceEffectSelection } from "../ui/selection";
+import { canUseInPlaceEffectSelection } from "../shared/selection";
 import { RevealLayer } from "./scene/RevealLayer";
 import styles from "./UiLabApp.module.css";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import { appendReplayEntry, createReplaySession, keyReplayEntries, stateAtReplayStep, summarizeReplaySession, truncateReplaySession } from "./replayHistory";
-import type { DeckMeta } from "./gameTypes";
+import type { DeckMeta } from "./deckMeta";
 
 function player(hand: number[] = []): PlayerState {
   return {

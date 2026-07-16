@@ -11,7 +11,7 @@ import {
   type PhaseHValueAuditOptions,
 } from "../src/ai/phase-h-value-audit";
 import type { ValueModel } from "../src/ai/rollout-value";
-import type { ReplaySession } from "../src/ui/replayHistory";
+import type { ReplaySession } from "../src/shared/replayHistory";
 
 function argValue(name: string, fallback: string): string {
   const prefix = `--${name}=`;

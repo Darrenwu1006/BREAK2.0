@@ -1,5 +1,5 @@
-import { validateGameDeck } from "./engine/deck-validation";
-import type { CardDb } from "./engine/types";
+import { validateGameDeck } from "../engine/deck-validation";
+import type { CardDb } from "../engine/types";
 
 export interface BattleDeckInput {
   school: string;

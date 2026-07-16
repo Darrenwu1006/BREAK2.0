@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import cardsJson from "../../data/cards.json";
 import type { Card } from "../data/types";
 import type { CardDb, GameState, PlayerState } from "../engine/types";
-import type { ReplaySession } from "../ui/replayHistory";
+import type { ReplaySession } from "../shared/replayHistory";
 import { createReplayReviewReport } from "./replay-review";
 
 const db: CardDb = new Map((cardsJson as Card[]).map((card) => [card.id, card]));

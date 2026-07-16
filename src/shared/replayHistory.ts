@@ -1,4 +1,4 @@
-import type { DeckMeta } from "./gameTypes";
+import type { DeckMeta } from "./deckMeta";
 import type { Decision, GameEvent, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 
 export type ReplayDecisionSource = "player" | "ai";

@@ -4,10 +4,10 @@ import type { Card } from "./data/types";
 import type { CardDb } from "./engine/types";
 import { setCardPrintings } from "./ui/CardView";
 import type { ApiDeck } from "./ui/DeckEditor";
-import type { DeckMeta } from "./ui/gameTypes";
-import type { ReplaySession } from "./ui/replayHistory";
+import type { DeckMeta } from "./shared/deckMeta";
+import type { ReplaySession } from "./shared/replayHistory";
 import { readGameEngine, writeGameEngine, type GameEngine } from "./gameEngine";
-import { buildBattleDeckWarnings } from "./battleDeckValidation";
+import { buildBattleDeckWarnings } from "./shared/battleDeckValidation";
 
 const Game = lazy(() =>
   import("./ui/Game").then((module) => ({ default: module.Game })),

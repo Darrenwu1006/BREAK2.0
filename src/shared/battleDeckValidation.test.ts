@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { db, FILLER } from "./engine/testkit";
+import { db, FILLER } from "../engine/testkit";
 import { buildBattleDeckWarnings } from "./battleDeckValidation";
 
 const deck = (name: string, count: number) => ({
