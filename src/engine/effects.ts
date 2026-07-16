@@ -1395,6 +1395,11 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       // アタックポイントを N に固定（set；Q1477）。OP は攻擊區頂端（＝this）のみ算入。
       const area = charaAreaOf(state, p, ctx.source);
       if (area === null) break; // 不是キャラ → 不執行
+      // 「登場させ」＝登場：登場禁止事項（アタック≠トス同名 †1-4-5-4-1 等）は技能でも不可（†0-2-2；Q1499/Q1500 類推）
+      if (deployLegality(db, state, p, ctx.source, "attack", nameOf(db, state, ctx.source), "effect") !== null) {
+        log(state, p, `${nameOf(db, state, ctx.source)} 因登場限制無法バックアタック登場`); // Q196 型：cost 已付仍不移動
+        break;
+      }
       if (area !== "attack") {
         const stack = area === "block" ? ps.blockCenter : ps[area];
         stack.splice(stack.indexOf(ctx.source), 1); // ガッツ留在原區
