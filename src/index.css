@@ -1747,6 +1747,49 @@ textarea { color: var(--cream); }
   backdrop-filter: blur(6px);
   animation: postmatch-overlay-in 340ms cubic-bezier(.2, .8, .3, 1) both;
 }
+
+/* 對局入口構築檢查：在 lazy renderer 掛載前攔截，避免 createGame throw 造成白畫面。 */
+.deck-start-warning-overlay {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 24, 28, .62);
+  backdrop-filter: blur(5px);
+}
+.deck-start-warning {
+  width: min(540px, 100%);
+  padding: 24px;
+  border: 3px solid #171b1f;
+  border-radius: 6px;
+  background: #f7f6f1;
+  box-shadow: 9px 9px 0 #171b1f;
+  color: #171b1f;
+}
+.deck-start-warning-kicker {
+  font: 700 11px/1.2 "IBM Plex Mono", monospace;
+  letter-spacing: .14em;
+  color: #c64d25;
+}
+.deck-start-warning h2 { margin: 7px 0 10px; font-size: 24px; }
+.deck-start-warning p { margin: 0; color: #555b60; line-height: 1.55; }
+.deck-start-warning ul {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+.deck-start-warning li {
+  padding: 10px 12px;
+  border: 1px solid #a9adb0;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.deck-start-warning .menu-primary-action { width: 100%; }
 @keyframes postmatch-overlay-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -2117,16 +2160,24 @@ textarea { color: var(--cream); }
 .editor .sidebar { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border-left: 1.5px solid var(--line-dim); background: var(--bg-panel); }
 .deck-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding: var(--sp-3); border-bottom: 1.5px solid var(--line-dim); }
 .deck-list { flex: 1; overflow-y: auto; padding: var(--sp-2); }
+.deck-section + .deck-section { margin-top: var(--sp-3); }
+.deck-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin: 0 0 var(--sp-1); padding: 5px 6px; border-bottom: 1px solid var(--line); color: var(--cream); font-size: 13px; }
+.deck-section-heading small { color: var(--text-dim); font-family: var(--font-num); font-size: 10px; font-weight: 500; }
 .deck-row { display: flex; align-items: center; gap: var(--sp-1); padding: 5px 6px; border-radius: var(--radius-card); font-size: 12px; }
 .deck-row:hover { background: var(--panel-hover); }
 .deck-row-zero { opacity: 0.45; }
 .deck-row-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-row-inspect { min-height: 28px; padding: 2px 4px; overflow: hidden; border-color: transparent; background: transparent; color: var(--cream); font-size: 12px; text-align: left; text-overflow: ellipsis; }
+.deck-row-inspect[aria-pressed="true"] { border-color: var(--line); background: var(--bg-panel-raised); }
 .deck-row-controls { display: flex; align-items: center; gap: 2px; }
 .deck-row-controls button { min-height: 28px; padding: 2px 7px; border-color: var(--line); background: transparent; color: var(--cream); font-size: 12px; }
 .deck-row-controls b { min-width: 20px; text-align: center; }
 .btn-x { border-color: var(--p-op) !important; color: var(--p-op) !important; }
 .printing-sel { min-height: 28px !important; max-width: 66px; padding: 2px 4px !important; font-size: 10px !important; }
-.editor .detail { max-height: 46dvh; padding: var(--sp-3); overflow-y: auto; border-top: 1.5px solid var(--line-dim); font-size: 12px; }
+.editor .detail { min-height: 220px; flex: 0 0 clamp(220px, 32dvh, 330px); padding: var(--sp-3); overflow-y: auto; border-top: 1.5px solid var(--line-dim); font-size: 12px; }
+.detail-state-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.detail-state { color: var(--gold); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.detail-clear { min-height: 26px; padding: 2px 7px; border-color: var(--line); background: transparent; color: var(--text-dim); font-size: 10px; }
 /* 牌組編輯器詳情面板自身已捲動；技能文不再嵌第二層捲動框，效果註釋(glossary)才不會被擠到面板外看不到 */
 .editor .detail .skill-text { max-height: none; overflow: visible; border: 0; border-radius: 0; padding: 0; background: transparent; }
 .btn-start-sm { background: var(--success); color: var(--ink); }

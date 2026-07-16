@@ -10,6 +10,7 @@
 
 .root {
   --rail-width: 20vw;
+  --drawer-width: min(420px, 36vw);
   /* [Claude 2026-07-12] CP-V1 亮色黑白主題 token 層。官網風格報告 §5 定案：
      品牌以黑白為主、彩色留給各學校；元件語言＝硬邊位移陰影＋粗描邊＋混用圓角。
      後續 chunk（V1b 遊戲內 rail/HUD、V2 3D 場景）沿用同一組 token。 */
@@ -39,12 +40,13 @@
 .reducedMotion .bannerHeavy,
 .reducedMotion .judgeHold,
 .reducedMotion .judgeBreak,
+.reducedMotion .railDrawer,
 .reducedMotion :global(.ui-lab-effective-value.is-modified) {
   animation: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .banner, .bannerHeavy, .judgeHold, .judgeBreak, :global(.ui-lab-effective-value.is-modified) { animation: none !important; }
+  .banner, .bannerHeavy, .judgeHold, .judgeBreak, .railDrawer, :global(.ui-lab-effective-value.is-modified) { animation: none !important; }
   .railFooter { transition: none; }
 }
 
@@ -57,6 +59,50 @@
 .canvas {
   position: absolute !important;
   inset: 0;
+}
+
+.statusSlot {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 12;
+  box-sizing: border-box;
+  width: min(420px, calc(80vw - 360px));
+  min-height: 48px;
+  padding: 10px 13px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-hard);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  animation: statusSlotIn 180ms ease-out both;
+}
+.statusSlotInteractive { width: min(940px, calc(80vw - 230px)); }
+.statusSlotDrawerOpen { width: min(680px, calc(80vw - var(--drawer-width) - 36px)); }
+.statusTopRow { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 14px; }
+.statusSlotInteractive .statusTopRow { grid-template-columns: minmax(220px, 1fr) auto; }
+.statusSummary { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.statusSummary strong { font-size: 15px; }
+.statusSummary > span { color: var(--ink-2); font-size: 12px; line-height: 1.45; }
+.statusDecisionArea { min-width: 0; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+.statusDecisionArea > .freeOpts { max-width: 230px; max-height: 66px; justify-content: flex-end; }
+.statusDecisionArea .decisionActions { flex-wrap: nowrap; }
+.statusDecisionArea .decisionActions button { white-space: nowrap; }
+@keyframes statusSlotIn { from { opacity: 0; transform: translateY(-4px); } }
+.effectChips { display: flex; gap: 5px; margin-top: 5px; overflow: hidden; }
+.effectChips span { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 6px; border: 1px solid var(--line-2); background: var(--fill-subtle); font-size: 10px; }
+
+.assetLoading {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 12;
+  padding: 7px 10px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--ink-2);
+  font: 11px/1.3 "IBM Plex Mono", monospace;
 }
 
 .overlay {
@@ -218,7 +264,7 @@
   inset: 0 0 0 auto;
   width: var(--rail-width);
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   border-left: 1px solid var(--line);
   background: linear-gradient(180deg, #ffffff, #f1f3f5);
   box-shadow: -18px 0 42px rgba(0, 0, 0, 0.28);
@@ -226,6 +272,18 @@
   font-family: "Noto Sans TC", system-ui, sans-serif;
   z-index: 8;
 }
+
+.railTabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
+}
+.railTabs button { min-width: 0; padding: 6px 2px; border: 1px solid var(--line); background: transparent; color: var(--ink-3); font-size: 11px; font-weight: 700; cursor: pointer; }
+.railTabs button:hover { border-color: var(--line-strong); color: var(--ink); }
+.railTabs .railTabActive { border-color: var(--line-strong); background: var(--ink); color: var(--on-ink); }
 
 .railHeader {
   display: block;
@@ -315,15 +373,39 @@
   box-sizing: border-box;
   padding: 13px 14px 137px;
 }
+.railDrawer {
+  position: absolute;
+  top: 0;
+  right: var(--rail-width);
+  bottom: 0;
+  z-index: 10;
+  width: var(--drawer-width);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: 2px solid var(--line-strong);
+  border-right: 1px solid var(--line);
+  background: var(--paper-card);
+  box-shadow: -10px 0 0 rgba(20, 24, 28, .12);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  animation: drawerIn 180ms ease-out both;
+}
+@keyframes drawerIn { from { opacity: 0; transform: translateX(18px); } }
+.railDrawer > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 2px solid var(--line-strong); }
+.railDrawer > header > div { display: grid; gap: 2px; }
+.railDrawer > header span { color: var(--ink-3); font: 10px/1.2 "IBM Plex Mono", monospace; letter-spacing: .12em; }
+.railDrawer > header strong { font-size: 18px; }
+.railDrawerBody { min-height: 0; overflow-y: auto; }
 .railIdleInfo { display: grid; min-height: 100%; place-content: center; padding: 24px; text-align: center; }
 .railIdleInfo span { color: var(--ink-3); font-size: 12px; font-weight: 800; letter-spacing: .14em; }
 .railIdleInfo p { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; line-height: 1.55; }
 .railCardTop {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: 54px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
+.railCardTop .cardMiniMeta { grid-column: 1 / -1; }
 .cardTitleBox {
   display: flex;
   flex-direction: column;
@@ -391,6 +473,51 @@
 .railAnnotation { margin: 6px 0 0; padding: 6px 8px; border-left: 2px solid var(--line-2); background: var(--fill-subtle); color: var(--ink-3); font-size: 12px; line-height: 1.45; font-style: italic; }
 .unavailableReason { margin: 7px 0 0; color: #8a5a1f; font-size: 12px; line-height: 1.45; }
 .unavailableMore { margin-top: 5px; color: var(--ink-3); font-size: 11px; }
+
+.railSettings { display: grid; gap: 14px; }
+.railSettings section { display: grid; gap: 7px; }
+.railSettings section > strong { font-size: 12px; }
+.railSettings label { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
+.railSettings input { accent-color: var(--accent-orange); }
+.segmented { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.segmented button { padding: 7px 4px; border: 1px solid var(--line-2); background: var(--paper-card); color: var(--ink-2); cursor: pointer; }
+.segmented .segmentedActive { border-color: var(--line-strong); background: var(--ink); color: var(--on-ink); }
+.settingsDanger { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+.settingsDanger button { width: 100%; }
+
+.drawerTool { display: grid; gap: 12px; padding: 14px; }
+.drawerToolHeading { display: flex; justify-content: space-between; gap: 10px; }
+.drawerToolHeading > div { display: grid; gap: 2px; }
+.drawerToolHeading strong { font-size: 17px; }
+.drawerToolHeading span, .drawerHint { color: var(--ink-3); font-size: 12px; }
+.drawerHint { margin: 0; line-height: 1.55; }
+.drawerEmpty { display: grid; min-height: 100%; place-content: center; padding: 32px; text-align: center; }
+.drawerEmpty strong { font-size: 20px; }
+.drawerEmpty p { color: var(--ink-3); font-size: 13px; }
+.drawerError { margin: 0; color: #a02b31; font-size: 12px; line-height: 1.5; }
+.counterList { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.counterList li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 9px; border: 1px solid var(--line); background: var(--fill-subtle); }
+.counterList li > span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.counterList li > b { flex: none; font: 700 15px/1 "IBM Plex Mono", monospace; }
+.counterList li small { color: var(--ink-3); font-size: 11px; }
+.counterList .counterZero { opacity: .5; }
+.coachBest { display: grid; gap: 8px; padding: 12px; border: 2px solid var(--line-strong); background: var(--fill-subtle); box-shadow: 3px 3px 0 var(--line-strong); }
+.coachBest > small { color: var(--ink-3); font-size: 11px; }
+.coachBest > strong { font-size: 17px; line-height: 1.35; }
+.coachBest p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+.coachMetrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.coachMetrics span { display: grid; gap: 2px; padding: 7px; background: var(--paper-card); color: var(--ink-3); font-size: 11px; }
+.coachMetrics b { color: var(--ink); font: 700 19px/1 "IBM Plex Mono", monospace; }
+.coachList { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.coachList li { display: grid; gap: 4px; padding: 9px; border: 1px solid var(--line); background: var(--fill-subtle); }
+.coachList li > div { display: flex; justify-content: space-between; gap: 8px; }
+.coachList li > div b { color: var(--accent-orange); font-family: "IBM Plex Mono", monospace; }
+.coachList li small { color: var(--ink-3); font-size: 11px; }
+.coachList li p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 1.45; }
+.coachLoading { display: flex; justify-content: center; gap: 5px; padding: 12px; }
+.coachLoading span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-orange); animation: thinkingPulse 800ms ease-in-out infinite alternate; }
+.coachLoading span:nth-child(2) { animation-delay: 120ms; }
+.coachLoading span:nth-child(3) { animation-delay: 240ms; }
 .unavailableMore summary { color: #8a5a1f; cursor: pointer; }
 .unavailableMore ul { margin: 5px 0 0; padding-left: 18px; }
 
@@ -543,24 +670,14 @@
 }
 
 .stageToolbar button { padding: 5px 9px; font-size: 10px; }
+.gameMenu { position: relative; font-size: 10px; }
+.gameMenu summary { cursor: pointer; list-style: none; padding: 5px 9px; border: 1px solid var(--line-2); background: var(--paper-card); }
+.gameMenu[open] button { position: absolute; right: 0; top: calc(100% + 5px); width: 120px; }
 
-/* 情境式決策面板：舞台右下操作島，只留按鈕／必要的選取計數。 */
-.stageDecision {
-  position: absolute;
-  right: 22px;
-  bottom: 28px;
-  width: auto;
-  max-width: min(460px, calc(100% - 44px));
-  padding: 10px 14px;
-  border: 2px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--paper-card);
-  box-shadow: 5px 5px 0 var(--line-strong);
-  pointer-events: auto;
-  font-family: "Noto Sans TC", system-ui, sans-serif;
-}
-
-.stageDecision .freeOpts { margin-top: 8px; justify-content: center; }
+.numericContext { margin-bottom: 7px; color: var(--ink); font: 700 12px/1.35 "IBM Plex Mono", monospace; }
+.dangerDivider { width: 1px; min-height: 28px; margin: 0 4px; background: var(--line-2); }
+.actionChip { width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 8px; border: 1px solid var(--line-strong); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+.actionChip:hover { background: var(--accent-orange); color: #fff; }
 
 .srOnly {
   position: absolute;
@@ -601,26 +718,6 @@
 
 .effectSelectionActions span { color: var(--ink-3); font-size: 14px; }
 
-.inspectHud {
-  position: absolute;
-  left: 50%;
-  top: 18px;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 10px 8px 14px;
-  border: 1px solid rgba(143, 199, 255, 0.38);
-  border-radius: 10px;
-  background: var(--panel);
-  pointer-events: auto;
-  font-family: "Noto Sans TC", system-ui, sans-serif;
-}
-.inspectHud div { display: flex; flex-direction: column; gap: 1px; }
-.inspectHud strong { color: var(--ink); font-size: 15px; }
-.inspectHud span { color: var(--ink-3); font-size: 12px; }
-.inspectHud button { padding: 5px 9px; font-size: 12px; }
-
 .thinkingHud {
   position: absolute;
   left: 50%;
@@ -654,6 +751,20 @@
   background: rgba(31, 24, 15, .94);
   color: #8a5a1f;
   font: 10px/1.45 "Noto Sans TC", system-ui, sans-serif;
+}
+
+.actionNotice {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100% - 48px));
+  padding: 8px 12px;
+  border: 2px solid var(--line-strong);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-hard);
+  color: var(--ink);
+  font: 12px/1.4 "Noto Sans TC", sans-serif;
 }
 
 
@@ -905,6 +1016,21 @@
   font-weight: 700;
   white-space: nowrap;
 }
+
+.readingPanelHeader {
+  display: grid;
+  min-width: 124px;
+  gap: 2px;
+  padding: 5px 8px;
+  border-left: 4px solid var(--accent-orange);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 2px 2px 0 rgba(27, 33, 40, .82);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  white-space: nowrap;
+}
+.readingPanelHeader strong { font-size: 12px; line-height: 1.2; }
+.readingPanelHeader span { color: var(--ink-3); font: 700 10px/1.2 "IBM Plex Mono", monospace; }
 
 .gutsPanel {
   position: absolute;
@@ -1360,11 +1486,18 @@
 
 .freeOpts {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
   max-height: 180px;
   overflow-y: auto;
 }
+
+.blockValueCard { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.blockValueCard > strong { font-size: 11px; color: var(--ink); }
+.namePickCard { display: block; width: 126px; margin: 0 auto 10px; border: 1px solid var(--line-2); }
+.railCardImage { width: 54px; align-self: flex-start; border: 1px solid var(--line-2); }
+.railCardImageEmpty { width: 54px; aspect-ratio: .716; border: 1px dashed var(--line-2); background: var(--fill-subtle); }
 
 .freeOpts button {
   text-align: left;

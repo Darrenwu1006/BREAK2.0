@@ -127,6 +127,21 @@ describe("derivePresentationEvents — 代表性決策序列", () => {
     expect(r.ev[1]).toMatchObject({ uid: kurokawa, reason: "drop", from: { player: 0, zone: "hand" }, to: { player: 0, zone: "drop" } });
   });
 
+  it("待機效果進入結算 skill-resolved 不冒充玩家宣告 skill-declared", () => {
+    const before = setup(deckWith(FILLER), deckWith(FILLER), 0);
+    const uid = grab(before, 0, FILLER);
+    const after = structuredClone(before);
+    after.log.push({
+      setNo: after.setNo,
+      turnNo: after.turnNo,
+      player: 0,
+      text: "待機效果開始結算",
+      event: { kind: "skill-resolved", player: 0, uid },
+    });
+    const events = derivePresentationEvents(db, before, { type: "deploy-serve", uid: null }, after);
+    expect(events.some((event) => event.kind === "skill-declared")).toBe(false);
+  });
+
   it("換牌：serve-rights 發 12 張 → mulligan 換 2 張 → Set 卡配置＋發球回合開始", () => {
     let s = createGame(db, { seed: 7, decks: [deckWith(FILLER), deckWith(FILLER)], skipDeckValidation: true });
     const decider = s.pendingDecision!.player;

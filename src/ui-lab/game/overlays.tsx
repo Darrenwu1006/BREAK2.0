@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import type { Card } from "../../data/types";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
+import { effParam } from "../../engine/engine";
 import { cardFrontUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
 import { ZONE_LABEL } from "../presentation/textRenderer";
@@ -65,8 +66,8 @@ export const groupLabel = (g: CandidateGroup): string => `${g.owner === HUMAN ? 
 
 // ---- 小元件 ----
 
-function CardThumb(props: { card: Card | undefined; uid: number; selected?: boolean; onClick?: () => void }): React.JSX.Element {
-  const src = props.card ? cardFrontUrl(props.card) : null;
+function CardThumb(props: { card: Card | undefined; uid: number; printing?: string; selected?: boolean; onClick?: () => void }): React.JSX.Element {
+  const src = props.card ? cardFrontUrl(props.card, props.printing) : null;
   const name = props.card?.nameZh || props.card?.nameJa || `卡片 ${props.uid}`;
   return (
     <figure className={`${styles.gutsCard} ${props.onClick ? styles.pickable : ""} ${props.selected ? styles.picked : ""}`} onClick={props.onClick}>
@@ -165,6 +166,7 @@ export function EffectCardsPanel(props: {
   candidates: readonly number[];
   min: number;
   max: number;
+  printingByUid?: ReadonlyMap<number, string>;
   onConfirm: (uids: number[]) => void;
 }): React.JSX.Element {
   const [picked, setPicked] = useState<number[]>([]);
@@ -191,7 +193,7 @@ export function EffectCardsPanel(props: {
           <div className={styles.effectGroupLabel}>{groupLabel(g)}</div>
           <div className={styles.gutsCards}>
             {g.uids.map((uid) => (
-              <CardThumb key={uid} uid={uid} card={props.db.get(props.state.cards[uid] ?? "")} selected={picked.includes(uid)} onClick={() => toggle(uid)} />
+              <CardThumb key={uid} uid={uid} card={props.db.get(props.state.cards[uid] ?? "")} printing={props.printingByUid?.get(uid)} selected={picked.includes(uid)} onClick={() => toggle(uid)} />
             ))}
           </div>
         </div>
@@ -208,10 +210,13 @@ export function BlockPickPanel(props: {
   selected: readonly number[];
   center: number | null;
   max: number;
+  printingByUid?: ReadonlyMap<number, string>;
   onSetCenter: (uid: number) => void;
   onConfirm: () => void;
   onGiveUp: () => void;
 }): React.JSX.Element {
+  const opponentOp = props.state.op?.owner === HUMAN ? null : props.state.op?.value ?? null;
+  const estimatedDp = props.selected.reduce((sum, uid) => sum + (effParam(props.db, props.state, uid, "block") ?? 0), 0);
   return (
     <section className={styles.effectPanel} role="dialog" aria-label="攔網登場">
       <div className={styles.gutsPanelHeader}>
@@ -226,6 +231,9 @@ export function BlockPickPanel(props: {
                   return card?.nameZh || card?.nameJa || "?";
                 })()}`}
           </span>
+          <span className={styles.numericContext}>
+            預估 DP {estimatedDp}{opponentOp !== null ? ` vs OP ${opponentOp}` : ""}
+          </span>
         </div>
         <div className={styles.blockPickActions}>
           <button className={styles.btn} disabled={props.selected.length === 0 || props.center === null} onClick={props.onConfirm}>
@@ -239,7 +247,10 @@ export function BlockPickPanel(props: {
       {props.selected.length > 0 && (
         <div className={styles.gutsCards}>
           {props.selected.map((uid) => (
-            <CardThumb key={uid} uid={uid} card={props.db.get(props.state.cards[uid] ?? "")} selected={props.center === uid} onClick={() => props.onSetCenter(uid)} />
+            <div key={uid} className={styles.blockValueCard}>
+              <CardThumb uid={uid} card={props.db.get(props.state.cards[uid] ?? "")} printing={props.printingByUid?.get(uid)} selected={props.center === uid} onClick={() => props.onSetCenter(uid)} />
+              <strong>攔網 {effParam(props.db, props.state, uid, "block") ?? "—"}</strong>
+            </div>
           ))}
         </div>
       )}

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LogEntry } from "../../engine/types";
 import type { BattleRailView, CardInspectView } from "./railViewModel";
 import type { RallyStepView } from "./railViewModel";
 import styles from "../UiLabApp.module.css";
+import type { RailTool } from "./RailTools";
 
 function enrichedLog(log: LogEntry[]): (LogEntry & { summary?: boolean })[] {
   const out: (LogEntry & { summary?: boolean })[] = [];
@@ -40,6 +41,11 @@ export function DecisionRail(props: {
   cardImage: string | null;
   presentationLines: readonly string[];
   log: LogEntry[];
+  tool: RailTool;
+  settingsContent: ReactNode;
+  drawerContent: ReactNode | null;
+  onToolChange: (tool: RailTool) => void;
+  onDrawerClose: () => void;
   onLogHover?: (entry: LogEntry | null) => void;
 }): React.JSX.Element {
   const { view } = props;
@@ -110,11 +116,18 @@ export function DecisionRail(props: {
           ))}
         </ol>
 
+        <nav className={styles.railTabs} role="tablist" aria-label="Rail 工具">
+          {([ ["detail", "詳情"], ["coach", "教練"], ["counter", "算牌"], ["settings", "設定"] ] as const).map(([tool, label]) => (
+            <button key={tool} role="tab" aria-selected={props.tool === tool} className={props.tool === tool ? styles.railTabActive : ""} onClick={() => props.onToolChange(tool)}>{label}</button>
+          ))}
+        </nav>
+
         <div className={styles.railWorkspaceWrapper}>
           <section className={styles.railWorkspace} aria-label="情境工作區">
           {props.card ? (
             <div className={styles.railCardDetail}>
               <div className={styles.railCardTop}>
+                {props.cardImage ? <img className={styles.railCardImage} src={props.cardImage} alt="" aria-hidden="true" /> : <div className={styles.railCardImageEmpty} aria-hidden="true" />}
                 <div className={styles.cardTitleBox}>
                   <strong>{props.card.title}</strong>
                   <span>{props.card.subtitle}</span>
@@ -149,10 +162,12 @@ export function DecisionRail(props: {
                 </details>
               )}
             </div>
+          ) : props.tool === "settings" ? (
+            props.settingsContent
           ) : (
             <div className={styles.railIdleInfo}>
-              <span>資訊工作區</span>
-              <p>將滑鼠移到公開卡片上，可在這裡查看詳細文字欄位、技能與有效數值。</p>
+              <span>{props.tool === "detail" ? "資訊工作區" : props.tool === "coach" ? "COACH DRAWER" : "CARD COUNTER"}</span>
+              <p>{props.tool === "detail" ? "將滑鼠移到公開卡片上，可在這裡查看詳細文字欄位、技能與有效數值。" : "深度工具已向牌桌側展開；目前戰況與決策仍保留在原位。"}</p>
             </div>
           )}
         </section>
@@ -212,6 +227,12 @@ export function DecisionRail(props: {
         </footer>
         </div>
       </aside>
+      {props.drawerContent && (
+        <aside className={styles.railDrawer} aria-label={props.tool === "coach" ? "Coach drawer" : "算牌 drawer"}>
+          <header><div><span>RAIL TOOL</span><strong>{props.tool === "coach" ? "教練" : "算牌"}</strong></div><button className={styles.btnGhost} onClick={props.onDrawerClose} aria-label="關閉 drawer">關閉（Esc）</button></header>
+          <div className={styles.railDrawerBody}>{props.drawerContent}</div>
+        </aside>
+      )}
     </>
   );
 }

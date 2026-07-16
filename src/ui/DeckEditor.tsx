@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Card } from "../data/types";
 import type { CardDb } from "../engine/types";
-import { CardView, displayName } from "./CardView";
+import { CARD_BACK_SCHOOLS, CardView, displayName } from "./CardView";
 import { CardSkillInfo } from "./GamePanels";
 
 export interface ApiDeck {
@@ -13,6 +13,50 @@ export interface ApiDeck {
 }
 
 interface Entry { count: number; printing?: string }
+
+interface DeckRow {
+  id: string;
+  card: Card;
+  count: number;
+  printing?: string;
+}
+
+export function groupDeckRows<T extends { id: string; card: Pick<Card, "type"> }>(rows: readonly T[]): {
+  characters: T[];
+  events: T[];
+} {
+  const byId = (a: T, b: T) => a.id.localeCompare(b.id);
+  return {
+    characters: rows.filter((row) => row.card.type === "CHARACTER").sort(byId),
+    events: rows.filter((row) => row.card.type === "EVENT").sort(byId),
+  };
+}
+
+export interface CardBackChoice {
+  value: string;
+  label: string;
+}
+
+export function buildCardBackChoices(decks: readonly ApiDeck[]): {
+  custom: CardBackChoice[];
+  fallback: CardBackChoice[];
+} {
+  const customSet = new Set(CARD_BACK_SCHOOLS);
+  const fallbackValues = new Set(["混合學校"]);
+  for (const deck of decks) {
+    if (!customSet.has(deck.school)) fallbackValues.add(deck.school);
+  }
+
+  return {
+    custom: CARD_BACK_SCHOOLS.map((value) => ({ value, label: value })),
+    fallback: [...fallbackValues]
+      .sort((a, b) => (a === "混合學校" ? -1 : b === "混合學校" ? 1 : a.localeCompare(b)))
+      .map((value) => ({
+        value,
+        label: value === "混合學校" ? "通用卡背（混合學校）" : `${value}（通用卡背）`,
+      })),
+  };
+}
 
 // 彈別（卡片出自哪一個商品／彈）：取卡號中字母開頭的段（D01/P02/PR/HVBP…）
 function expansionOf(id: string): string {
@@ -42,6 +86,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
     () => [...new Set(allCards.map((c) => expansionOf(c.id)))].sort((a, b) => expansionRank(a) - expansionRank(b) || a.localeCompare(b)),
     [allCards],
   );
+  const cardBackChoices = useMemo(() => buildCardBackChoices(props.decks), [props.decks]);
 
   // 編輯中的牌組
   const [school, setSchool] = useState("");
@@ -55,6 +100,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
   const [fExp, setFExp] = useState("");
   const [fText, setFText] = useState("");
   const [hovered, setHovered] = useState<Card | null>(null);
+  const [inspected, setInspected] = useState<Card | null>(null);
 
   const total = [...entries.values()].reduce((s, e) => s + e.count, 0);
   const eventCount = [...entries.entries()].reduce((s, [id, e]) => s + (db.get(id)?.type === "EVENT" ? e.count : 0), 0);
@@ -64,6 +110,8 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
     setSchool(d.school);
     setName(d.name);
     setEntries(new Map(d.cards.map((c) => [c.id, { count: c.count, printing: c.printing }])));
+    setHovered(null);
+    setInspected(null);
     setDirty(false);
     setMessage(null);
   }
@@ -82,6 +130,8 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
 
   function removeEntry(id: string) {
     setEntries((prev) => { const n = new Map(prev); n.delete(id); return n; });
+    if (hovered?.id === id) setHovered(null);
+    if (inspected?.id === id) setInspected(null);
     setDirty(true);
   }
 
@@ -100,7 +150,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
       setMessage("GitHub Pages 為唯讀模式；請在本機開發環境儲存 CSV");
       return;
     }
-    if (!school.trim() || !name.trim()) { setMessage("⚠ 請填寫學校與牌組名稱"); return; }
+    if (!school.trim() || !name.trim()) { setMessage("⚠ 請選擇卡背並填寫牌組名稱"); return; }
     const cards = [...entries.entries()].map(([id, e]) => ({ id, count: e.count, printing: e.printing }));
     const res = await fetch("/api/decks", {
       method: "POST",
@@ -140,7 +190,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
     const json = await res.json();
     if (!res.ok) { setMessage(`⚠ 刪除失敗：${json.error}`); return; }
     setMessage(`✓ 已刪除 ${json.deleted}`);
-    setSchool(""); setName(""); setEntries(new Map()); setDirty(false);
+    setSchool(""); setName(""); setEntries(new Map()); setHovered(null); setInspected(null); setDirty(false);
     await props.onSaved();
   }
 
@@ -156,9 +206,50 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
     return true;
   });
 
-  const deckRows = [...entries.entries()]
-    .map(([id, e]) => ({ id, card: db.get(id)!, ...e }))
-    .sort((a, b) => (b.count - a.count) || a.id.localeCompare(b.id));
+  const deckRows: DeckRow[] = [...entries.entries()]
+    .map(([id, e]) => ({ id, card: db.get(id)!, ...e }));
+  const groupedDeckRows = groupDeckRows(deckRows);
+  const visibleDetail = hovered ?? inspected;
+  const previewingDetail = hovered !== null && hovered.id !== inspected?.id;
+
+  function renderDeckSection(title: string, rows: DeckRow[]) {
+    if (rows.length === 0) return null;
+    const copies = rows.reduce((sum, row) => sum + row.count, 0);
+    return (
+      <section className="deck-section" aria-labelledby={`deck-section-${title}`}>
+        <h3 className="deck-section-heading" id={`deck-section-${title}`}>
+          <span>{title}</span>
+          <small>{copies} 張・{rows.length} 種</small>
+        </h3>
+        {rows.map(({ id, card, count, printing }) => (
+          <div key={id} className={"deck-row" + (count === 0 ? " deck-row-zero" : "")}
+            onMouseEnter={() => setHovered(card)} onMouseLeave={() => setHovered(null)}>
+            <button
+              type="button"
+              className="deck-row-name deck-row-inspect"
+              aria-pressed={inspected?.id === id}
+              title="固定顯示此卡詳情"
+              onClick={() => setInspected(card)}
+            >
+              {displayName(card)}<span className="dim small"> {id.replace("HV-", "")}</span>
+            </button>
+            {card.printings.length > 1 && (
+              <select className="printing-sel" value={printing ?? ""} onChange={(e) => setPrinting(id, e.target.value)} title="卡面">
+                <option value="">{card.printings[0]!.rarity}</option>
+                {card.printings.slice(1).map((p) => <option key={p.rarity} value={p.imageEnd ?? p.rarity}>{p.rarity}</option>)}
+              </select>
+            )}
+            <span className="deck-row-controls">
+              <button onClick={() => adjust(id, -1)}>−</button>
+              <b>{count}</b>
+              <button onClick={() => adjust(id, +1)}>＋</button>
+              <button className="btn-x" title="移除（含候補記錄）" onClick={() => removeEntry(id)}>✕</button>
+            </span>
+          </div>
+        ))}
+      </section>
+    );
+  }
 
   return (
     <div className="editor">
@@ -168,8 +259,26 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
             <option value="" disabled>載入現有牌組…</option>
             {props.decks.map((d, i) => <option key={d.source} value={i}>{d.school}／{d.name}</option>)}
           </select>
-          <button onClick={() => { setSchool(""); setName(""); setEntries(new Map()); setDirty(false); setMessage(null); }}>新牌組</button>
-          <input placeholder="學校" value={school} onChange={(e) => { setSchool(e.target.value); setDirty(true); }} style={{ width: 110 }} />
+          <button onClick={() => { setSchool(""); setName(""); setEntries(new Map()); setHovered(null); setInspected(null); setDirty(false); setMessage(null); }}>新牌組</button>
+          <select
+            aria-label="卡背"
+            title="決定對戰時使用的卡背"
+            value={school}
+            onChange={(e) => { setSchool(e.target.value); setDirty(true); }}
+            style={{ width: 150 }}
+          >
+            <option value="" disabled>選擇卡背…</option>
+            <optgroup label="學校卡背">
+              {cardBackChoices.custom.map((choice) => (
+                <option key={choice.value} value={choice.value}>{choice.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="通用卡背">
+              {cardBackChoices.fallback.map((choice) => (
+                <option key={choice.value} value={choice.value}>{choice.label}</option>
+              ))}
+            </optgroup>
+          </select>
           <input placeholder="牌組名稱" value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} style={{ width: 150 }} />
           <button className="btn-start-sm" onClick={save}>{import.meta.env.DEV ? `儲存${dirty ? "＊" : ""}` : "線上唯讀"}</button>
           {import.meta.env.DEV && existingDeck && (
@@ -224,38 +333,26 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
           {!legal && <span className="dim small">{total !== 40 ? "張數須正好 40" : "事件卡超過 8 張"}</span>}
         </div>
         <div className="deck-list">
-          {deckRows.map(({ id, card, count, printing }) => (
-            <div key={id} className={"deck-row" + (count === 0 ? " deck-row-zero" : "")}
-              onMouseEnter={() => setHovered(card)} onMouseLeave={() => setHovered(null)}>
-              <span className="deck-row-name">{displayName(card)}<span className="dim small"> {id.replace("HV-", "")}</span></span>
-              {card.printings.length > 1 && (
-                <select className="printing-sel" value={printing ?? ""} onChange={(e) => setPrinting(id, e.target.value)} title="卡面">
-                  <option value="">{card.printings[0]!.rarity}</option>
-                  {card.printings.slice(1).map((p) => <option key={p.rarity} value={p.imageEnd ?? p.rarity}>{p.rarity}</option>)}
-                </select>
-              )}
-              <span className="deck-row-controls">
-                <button onClick={() => adjust(id, -1)}>−</button>
-                <b>{count}</b>
-                <button onClick={() => adjust(id, +1)}>＋</button>
-                <button className="btn-x" title="移除（含候補記錄）" onClick={() => removeEntry(id)}>✕</button>
-              </span>
-            </div>
-          ))}
+          {renderDeckSection("角色卡", groupedDeckRows.characters)}
+          {renderDeckSection("事件卡", groupedDeckRows.events)}
           {deckRows.length === 0 && <p className="dim small">點左側卡片加入牌組。數量 0 的列會保留為「候補」記錄存回 CSV。</p>}
         </div>
-        <div className="detail">
-          {hovered ? (
+        <div className="detail" data-mode={previewingDetail ? "preview" : inspected ? "locked" : "empty"}>
+          {visibleDetail ? (
             <>
-              <b>{displayName(hovered)}</b> <span className="dim small">{hovered.id}</span>
-              {hovered.params && (
+              <div className="detail-state-row">
+                <span className="detail-state">{previewingDetail ? "暫時預覽" : "已固定"}</span>
+                {inspected && <button type="button" className="detail-clear" onClick={() => setInspected(null)}>清除固定</button>}
+              </div>
+              <b>{displayName(visibleDetail)}</b> <span className="dim small">{visibleDetail.id}</span>
+              {visibleDetail.params && (
                 <div className="dim small">
-                  發{hovered.params.serve ?? "－"}／攔{hovered.params.block ?? "－"}／接{hovered.params.receive ?? "－"}／托{hovered.params.toss ?? "－"}／攻{hovered.params.attack ?? "－"}
+                  發{visibleDetail.params.serve ?? "－"}／攔{visibleDetail.params.block ?? "－"}／接{visibleDetail.params.receive ?? "－"}／托{visibleDetail.params.toss ?? "－"}／攻{visibleDetail.params.attack ?? "－"}
                 </div>
               )}
-              <CardSkillInfo card={hovered} />
+              <CardSkillInfo card={visibleDetail} />
             </>
-          ) : <span className="dim small">滑過卡片查看詳情</span>}
+          ) : <span className="dim small">滑過卡片快速預覽；點右側卡名可固定詳情。</span>}
         </div>
       </div>
     </div>

@@ -91,17 +91,29 @@ export class LabGameController {
   }
 
   /** 人類決策入口：套用後自動推進到下一個人類互動點 */
-  decide(decision: Decision, delegated = false): void {
-    if (!this.awaitingHuman) throw new Error("目前不是人類互動決策");
-    if (!delegated) {
-      this.undoHistory.push({
-        state: structuredClone(this.engine) as GameState,
-        replayLength: this.replay.entries.length,
-      });
-      if (this.undoHistory.length > LAB_UNDO_LIMIT) this.undoHistory.splice(0, this.undoHistory.length - LAB_UNDO_LIMIT);
+  decide(decision: Decision, delegated = false): boolean {
+    // UI event handlers may retain a render-time closure while the engine has
+    // already advanced (including across the human/opponent boundary). A stale
+    // input is harmless and must never end a match or surface a scary toast.
+    const pending = this.engine.pendingDecision;
+    if (!pending || pending.player !== HUMAN || pending.type !== decision.type) return false;
+    const checkpoint = !delegated ? {
+      state: structuredClone(this.engine) as GameState,
+      replayLength: this.replay.entries.length,
+    } : null;
+    try {
+      this.step(decision, delegated);
+      if (checkpoint) {
+        this.undoHistory.push(checkpoint);
+        if (this.undoHistory.length > LAB_UNDO_LIMIT) this.undoHistory.splice(0, this.undoHistory.length - LAB_UNDO_LIMIT);
+      }
+      // If an unexpected auto-advance failure happens after the human step,
+      // retain the checkpoint so the fatal recovery modal can genuinely undo.
+      this.advance();
+      return true;
+    } catch (error) {
+      throw error;
     }
-    this.step(decision, delegated);
-    this.advance();
   }
 
   /** CP6C worker 回傳的對手決策入口。 */

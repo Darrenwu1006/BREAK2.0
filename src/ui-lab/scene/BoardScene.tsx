@@ -373,6 +373,7 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
   const { placements, origins, draggableUids, draggingUid, dragPoint } = props;
   const cards = useMemo(() => [...placements.cards.values()], [placements]);
   const readingGroups = useMemo(() => cards.filter((card) => card.readingGroup), [cards]);
+  const readingPanels = placements.readingPanels ?? [];
 
   /** 佔用區（槽位標籤隱藏）＋ガッツ徽章資料 */
   const { occupied, badges, stackKeys } = useMemo(() => {
@@ -421,6 +422,35 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
             <planeGeometry args={[12.6, 9.4]} />
             <meshStandardMaterial color="#20252b" transparent opacity={0.62} roughness={0.9} depthWrite={false} />
           </mesh>
+          {readingPanels.map((panel) => (
+            <group key={panel.key} position={panel.position}>
+              <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <planeGeometry args={[panel.width, panel.depth]} />
+                <meshStandardMaterial color="#f7f4ed" transparent opacity={0.94} roughness={0.98} depthWrite={false} />
+              </mesh>
+              {[
+                { position: [0, 0.012, -panel.depth / 2] as [number, number, number], size: [panel.width, 0.018, 0.035] as [number, number, number] },
+                { position: [0, 0.012, panel.depth / 2] as [number, number, number], size: [panel.width, 0.018, 0.035] as [number, number, number] },
+                { position: [-panel.width / 2, 0.012, 0] as [number, number, number], size: [0.035, 0.018, panel.depth] as [number, number, number] },
+                { position: [panel.width / 2, 0.012, 0] as [number, number, number], size: [0.035, 0.018, panel.depth] as [number, number, number] },
+              ].map((edge, index) => (
+                <mesh key={index} position={edge.position}>
+                  <boxGeometry args={edge.size} />
+                  <meshBasicMaterial color="#1b2128" transparent opacity={0.82} />
+                </mesh>
+              ))}
+              <Html
+                position={[-panel.width / 2 + 0.2, 0.18, -panel.depth / 2 + 0.26]}
+                style={{ pointerEvents: "none" }}
+                zIndexRange={[6, 0]}
+              >
+                <div className={styles.readingPanelHeader}>
+                  <strong>{panel.label}</strong>
+                  <span>{panel.detail}</span>
+                </div>
+              </Html>
+            </group>
+          ))}
           {readingGroups.map((card) => (
             <Html
               key={card.readingGroup}

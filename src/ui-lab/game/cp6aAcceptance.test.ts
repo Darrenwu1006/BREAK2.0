@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import cardsJson from "../../../data/cards.json";
 import karasunoDeck from "../../../data/decks/烏野-預組.json";
-import nekomaDeck from "../../../data/decks/音駒-預組.json";
+import nekomaDeck from "../../../data/decks/音駒-音駒-三彈官方.json";
 import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
 import { canChooseBlock } from "../../engine/engine";

@@ -31,6 +31,7 @@ function parseCSV(text: string): string[][] {
 const csvField = (s: string) => (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
 function deckApi(root: string): Plugin {
+  let command: "build" | "serve" = "serve";
   const deckDir = join(root, "decks");
   const dataDeckDir = join(root, "data", "decks");
   const adoptionLogPath = join(root, "data", "deck-optimizer-adoptions.jsonl");
@@ -86,7 +87,11 @@ function deckApi(root: string): Plugin {
 
   return {
     name: "deck-api",
+    configResolved(config) {
+      command = config.command;
+    },
     buildStart() {
+      if (command !== "build") return;
       this.emitFile({
         type: "asset",
         fileName: "decks.json",

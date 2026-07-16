@@ -8,6 +8,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import type { ZoneId } from "../presentation/events";
+import type { PresentationEvent } from "../presentation/events";
 import { renderEventText } from "../presentation/textRenderer";
 import type { PresentationBatch, TimelineEntry } from "../presentation/timeline";
 import { capturePlayerValueFormulas, type CardValueFormula } from "../presentation/valueFormula";
@@ -51,6 +52,24 @@ export interface Playback {
   /** inspect mode 暫停／恢復 presentation 時鐘，不改 engine state。 */
   setPaused: (paused: boolean) => void;
   setSpeed: (x: number) => void;
+}
+
+/** Shared reveal reducer for normal playback and Space/visibility fast-forward. */
+export function nextRevealSnapshot(current: RevealView, event: PresentationEvent): RevealView {
+  switch (event.kind) {
+    case "op-revealed":
+      return { op: { player: event.player, source: event.source, value: event.value } };
+    case "dp-revealed":
+      return { ...current, dp: { player: event.player, source: event.source, value: event.value } };
+    case "judge-revealed":
+      return { ...current, judge: { defense: event.defense, defender: event.defender, opValue: event.opValue, dpValue: event.dpValue, success: event.success } };
+    case "lost-declared":
+    case "set-won":
+    case "match-won":
+      return {};
+    default:
+      return current;
+  }
 }
 
 export function usePlayback(controller: LabGameController, db: CardDb): Playback {
@@ -110,6 +129,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
         let reveal: RevealView = { ...v.reveal };
         let valueFormulas = v.valueFormulas;
         const e = entry.event;
+        reveal = nextRevealSnapshot(reveal, e);
         // reveal 生命週期：一次攻防＝一拍。新 OP 亮出＝新一拍開始（清掉上一拍全部）；
         // OP/DP/判定跨 turn 存活（此遊戲防守發生在防守方回合，數字要陪玩家做完決策）；
         // 得失分（lost/set/match）＝rally 收束，全清。
@@ -125,14 +145,11 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
             }
             break;
           case "op-revealed":
-            reveal = { op: { player: e.player, source: e.source, value: e.value } };
             valueFormulas = capturePlayerValueFormulas(db, meta.before, e.player);
             break;
           case "dp-revealed":
-            reveal = { ...reveal, dp: { player: e.player, source: e.source, value: e.value } };
             break;
           case "judge-revealed":
-            reveal = { ...reveal, judge: { defense: e.defense, defender: e.defender, opValue: e.opValue, dpValue: e.dpValue, success: e.success } };
             break;
           case "lost-declared":
           case "set-won":
@@ -161,7 +178,9 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
     settled.current = true;
     setView((v) => {
       let valueFormulas = v.valueFormulas;
+      let reveal: RevealView = { ...v.reveal };
       for (const entry of pending) {
+        reveal = nextRevealSnapshot(reveal, entry.event);
         if (entry.event.kind === "op-revealed") {
           valueFormulas = capturePlayerValueFormulas(db, controller.metaOf(entry.batch)!.before, entry.event.player);
         } else if (["lost-declared", "set-won", "match-won"].includes(entry.event.kind)) {
@@ -175,7 +194,7 @@ export function usePlayback(controller: LabGameController, db: CardDb): Playback
         movedUids: new Set(),
         origins: new Map(),
         current: null,
-        reveal: {},
+        reveal,
         valueFormulas,
         playing: false,
       };

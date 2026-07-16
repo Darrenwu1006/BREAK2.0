@@ -5,8 +5,11 @@ import type { Card } from "../data/types";
 
 const publicAsset = (path: string): string => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 
-export function cardFrontUrl(card: Card): string | null {
-  const p = card.printings[0];
+export function cardFrontUrl(card: Card, printing?: string): string | null {
+  const selected = printing
+    ? card.printings.find((candidate) => (candidate.imageEnd ?? candidate.rarity) === printing)
+    : undefined;
+  const p = selected?.image ? selected : card.printings[0];
   return p?.image ? publicAsset(p.image) : null;
 }
 

@@ -243,8 +243,14 @@ export function derivePresentationEvents(db: CardDb, before: GameState, decision
         out.push({ kind: "match-won", winner: e.winner, loser: e.loser });
         break;
       case "skill-used":
-      case "skill-resolved":
         out.push({ kind: "skill-declared", player: e.player, uid: e.uid, name: nameOf(db, after, e.uid) });
+        flushEffectFor(e.uid);
+        flush(buckets.effect);
+        break;
+      case "skill-resolved":
+        // A waiting effect becoming eligible is not the same as the player
+        // declaring/accepting it. Keep its emphasis/effect motions, but do not
+        // announce a false "skill activated" banner.
         flushEffectFor(e.uid);
         flush(buckets.effect);
         break;

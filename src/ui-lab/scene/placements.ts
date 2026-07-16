@@ -36,6 +36,17 @@ export interface CardPlacement {
   highlightOffset?: [number, number, number];
 }
 
+/** effect-cards 選牌面的來源分區底盤。卡片仍是 3D mesh；底盤負責把來源區變成
+ * 真正的 layout unit，而不是只在全域格狀中的第一張卡旁補一顆標籤。 */
+export interface ReadingPanelPlacement {
+  key: string;
+  label: string;
+  detail: string;
+  position: [number, number, number];
+  width: number;
+  depth: number;
+}
+
 export interface PilePlacement {
   key: string;
   count: number;
@@ -47,6 +58,7 @@ export interface PilePlacement {
 export interface BoardPlacements {
   cards: Map<number, CardPlacement>;
   piles: PilePlacement[];
+  readingPanels?: ReadingPanelPlacement[];
 }
 
 /** 每 uid 一點固定微旋（弧度），給「人手擺的」物性 */
@@ -89,6 +101,8 @@ export function computePlacements(
   state: GameState,
   schools: [string | undefined, string | undefined],
   valueFormulas: ReadonlyMap<number, CardValueFormula> = new Map(),
+  handValue?: { player: PlayerId; param: "serve" | "block" | "receive" | "toss" | "attack"; uids: ReadonlySet<number> },
+  printingByUid: ReadonlyMap<number, string> = new Map(),
 ): BoardPlacements {
   const cards = new Map<number, CardPlacement>();
   const piles: PilePlacement[] = [];
@@ -99,7 +113,7 @@ export function computePlacements(
     const back = cardBackUrl(schools[player]);
     const front = (uid: number): string | null => {
       const card = cardOf(db, state, uid);
-      return card ? cardFrontUrl(card) : null;
+      return card ? cardFrontUrl(card, printingByUid.get(uid)) : null;
     };
 
     // 疊放區：直上疊、不外露（卡堆不超出格子——[使用者 2026-07-10]）；
@@ -207,6 +221,8 @@ export function computePlacements(
     ps.hand.forEach((uid, i) => {
       const t = n > 1 ? i - (n - 1) / 2 : 0;
       if (player === 0) {
+        const showValue = handValue?.player === player && handValue.uids.has(uid);
+        const handCard = cardOf(db, state, uid);
         cards.set(uid, {
           uid,
           frontUrl: front(uid),
@@ -220,6 +236,10 @@ export function computePlacements(
           player,
           hoverOffset: [0, HAND_HOVER_SLIDE * HAND_SIN, -HAND_HOVER_SLIDE * HAND_COS],
           highlightOffset: [0, HAND_HIGHLIGHT_SLIDE * HAND_SIN, -HAND_HIGHLIGHT_SLIDE * HAND_COS],
+          ...(showValue ? {
+            effectiveValue: effParam(db, state, uid, handValue.param),
+            baseValue: handCard?.params?.[handValue.param] ?? null,
+          } : {}),
         });
       } else {
         cards.set(uid, {
@@ -370,6 +390,8 @@ export function applyReadingFrame(
   refs: readonly ReadingCardRef[],
   schools: [string | undefined, string | undefined],
   mode: "select" | "inspect" = "select",
+  printingByUid: ReadonlyMap<number, string> = new Map(),
+  selectedUids: ReadonlySet<number> = new Set(),
 ): BoardPlacements {
   if (refs.length === 0) return base;
   const cards = new Map(base.cards);
@@ -380,7 +402,12 @@ export function applyReadingFrame(
     group.push(ref);
     grouped.set(key, group);
   }
-  const groups = [...grouped.values()];
+  const zoneOrder: readonly ZoneId[] = ["serve", "blockCenter", "blockSide", "receive", "toss", "attack", "hand", "eventArea", "drop", "setArea", "deck"];
+  const groups = [...grouped.values()].sort((a, b) => {
+    const player = a[0]!.player - b[0]!.player;
+    if (player !== 0) return player;
+    return zoneOrder.indexOf(a[0]!.zone) - zoneOrder.indexOf(b[0]!.zone);
+  });
   const inspect = mode === "inspect";
   const rotation: [number, number, number] = [HAND_TILT, 0, 0];
   // inspect：整框往上（z 小、遠離手牌 z≈5.35，不再蓋手牌）＋傾角對齊手牌。
@@ -388,29 +415,78 @@ export function applyReadingFrame(
   const split = inspect && groups.length === 2;
   const Y_BASE = 1.7;
   const Z_BASE = 1.45;
-  // [使用者 2026-07-12] #1：選牌面改「橫向格狀」——所有候選以全域 index 排成置中格狀
-  // （每列最多 5 張、往遠端換列），不再每個來源群組各佔一 z 深列（那會塌成無法點選的直條）。
-  const selCols = Math.min(Math.max(refs.length, 1), 5);
-  let selCursor = 0;
+  const readingPanels: ReadingPanelPlacement[] = [];
+  // [使用者 2026-07-16] 選牌面把來源區提升為有邊界的分區盤。每盤內仍維持同尺寸、
+  // 同傾角格狀；最多三盤一列，更多來源換到第二列，不縮小卡片犧牲可讀性。
+  const selectLayouts = !inspect ? groups.map((group) => {
+    const columns = Math.min(group.length, groups.length >= 3 ? 2 : 3);
+    const rows = Math.ceil(group.length / Math.max(columns, 1));
+    return {
+      group,
+      columns,
+      rows,
+      width: columns * CARD_W + Math.max(columns - 1, 0) * 0.18 + 0.52,
+      depth: rows * 1.48 + 0.7,
+    };
+  }) : [];
+  const selectRows = !inspect
+    ? Array.from({ length: Math.ceil(selectLayouts.length / 3) }, (_, row) => selectLayouts.slice(row * 3, row * 3 + 3))
+    : [];
+  const layoutByGroup = new Map<ReadingCardRef[], { x: number; z: number; columns: number; width: number; depth: number }>();
+  if (!inspect) {
+    const rowDepths = selectRows.map((row) => Math.max(...row.map((item) => item.depth)));
+    const totalDepth = rowDepths.reduce((sum, depth) => sum + depth, 0) + Math.max(rowDepths.length - 1, 0) * 0.3;
+    let rowBack = 0.7 - totalDepth / 2;
+    selectRows.forEach((row, rowIndex) => {
+      const rowWidth = row.reduce((sum, item) => sum + item.width, 0) + Math.max(row.length - 1, 0) * 0.28;
+      let left = -rowWidth / 2;
+      const rowDepth = rowDepths[rowIndex]!;
+      const z = rowBack + rowDepth / 2;
+      row.forEach((item) => {
+        const x = left + item.width / 2;
+        layoutByGroup.set(item.group, { x, z, columns: item.columns, width: item.width, depth: item.depth });
+        left += item.width + 0.28;
+      });
+      rowBack += rowDepth + 0.3;
+    });
+  }
   groups.forEach((group, gi) => {
     const first = group[0]!;
     const label = first.groupLabel ?? `${first.player === 0 ? "我方" : "對手"}${ZONE_LABEL[first.zone]}`;
+    const layout = layoutByGroup.get(group);
     const columns = inspect
       ? (split ? (gi === 0 ? 1 : Math.min(group.length, 5)) : Math.min(group.length, 6))
-      : Math.min(group.length, 6);
+      : layout!.columns;
+    if (!inspect) {
+      const stateKey = ALL_ZONE_KEYS.find(([zone]) => zone === first.zone)?.[1];
+      const stack = stateKey ? state.players[first.player][stateKey] as number[] : [];
+      const stackGuts = STACK_ZONE_SET.has(first.zone) ? new Set(stack.slice(0, -1)) : null;
+      const allCandidatesAreGuts = stackGuts !== null && group.every((ref) => stackGuts.has(ref.uid));
+      const picked = group.filter((ref) => selectedUids.has(ref.uid)).length;
+      const detail = allCandidatesAreGuts
+        ? `Guts ${stackGuts.size}・已選 ${picked} → 剩 ${Math.max(stackGuts.size - picked, 0)}`
+        : `候選 ${group.length}・已選 ${picked}`;
+      readingPanels.push({
+        key: first.groupKey ?? `${first.player}:${first.zone}`,
+        label,
+        detail,
+        position: [layout!.x, 1.17, layout!.z],
+        width: layout!.width,
+        depth: layout!.depth,
+      });
+    }
     group.forEach((ref, index) => {
       const col = index % columns;
       const subRow = Math.floor(index / columns);
       const card = db.get(state.cards[ref.uid] ?? "");
       let x: number, y: number, z: number;
       if (!inspect) {
-        // 選牌面：全域格狀，橫向優先、往遠端換列（與手牌同傾角、同尺寸）。
-        const gcol = selCursor % selCols;
-        const grow = Math.floor(selCursor / selCols);
-        x = (gcol - (selCols - 1) / 2) * 1.22;
-        y = 1.6 + grow * 0.06;
-        z = 1.55 - grow * 1.55;
-        selCursor++;
+        // 分區盤內橫向優先；盤與盤之間保留實體空隙與底板，不再跨區連成一張全域格狀。
+        const col = index % columns;
+        const row = Math.floor(index / columns);
+        x = layout!.x + (col - (columns - 1) / 2) * 1.18;
+        y = 1.6 + row * 0.055;
+        z = layout!.z - layout!.depth / 2 + 1.15 + row * 1.48;
       } else if (split && gi === 0) {
         // 角色：左側單張，略往觀者側凸出以突顯「這是場上角色、不是 Guts」。
         x = -3.4; y = Y_BASE; z = Z_BASE + 0.25;
@@ -427,18 +503,18 @@ export function applyReadingFrame(
       }
       cards.set(ref.uid, {
         uid: ref.uid,
-        frontUrl: card ? cardFrontUrl(card) : null,
+        frontUrl: card ? cardFrontUrl(card, printingByUid.get(ref.uid)) : null,
         backUrl: cardBackUrl(schools[ref.player]),
         faceUp: true,
         position: [x, y, z],
         rotation,
         zone: ref.zone,
         player: ref.player,
-        readingGroup: index === 0 ? label : undefined,
+        readingGroup: inspect && index === 0 ? label : undefined,
       });
     });
   });
-  return { ...base, cards };
+  return { ...base, cards, readingPanels: inspect ? undefined : readingPanels };
 }
 
 /** 舊版混合來源選牌相容函式；新 effect-cards 已統一進選牌面。 */

@@ -2,13 +2,24 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import cardsJson from "../data/cards.json";
 import type { Card } from "./data/types";
 import type { CardDb } from "./engine/types";
-import { Game } from "./ui/Game";
 import { setCardPrintings } from "./ui/CardView";
-import { DeckEditor, type ApiDeck } from "./ui/DeckEditor";
-import { DeckOptimizerPreview } from "./ui/DeckOptimizerPreview";
+import type { ApiDeck } from "./ui/DeckEditor";
 import type { DeckMeta } from "./ui/gameTypes";
 import type { ReplaySession } from "./ui/replayHistory";
 import { readGameEngine, writeGameEngine, type GameEngine } from "./gameEngine";
+import { buildBattleDeckWarnings } from "./battleDeckValidation";
+
+const Game = lazy(() =>
+  import("./ui/Game").then((module) => ({ default: module.Game })),
+);
+
+const DeckEditor = lazy(() =>
+  import("./ui/DeckEditor").then((module) => ({ default: module.DeckEditor })),
+);
+
+const DeckOptimizerPreview = lazy(() =>
+  import("./ui/DeckOptimizerPreview").then((module) => ({ default: module.DeckOptimizerPreview })),
+);
 
 const LabGame = lazy(() =>
   import("./ui-lab/UiLabApp").then((module) => ({ default: module.UiLabGame })),
@@ -61,6 +72,7 @@ export function App() {
   const [loadedReplay, setLoadedReplay] = useState<ReplaySession | null>(null);
   const [replays, setReplays] = useState<any[]>([]);
   const [loadingReplays, setLoadingReplays] = useState(false);
+  const [deckStartWarning, setDeckStartWarning] = useState<string[] | null>(null);
   // 預設只撈最近 10 場（列表只讀後端輕量 index、不碰 16MB 大檔）；展開後撈全部
   const [replaysExpanded, setReplaysExpanded] = useState(false);
 
@@ -140,6 +152,29 @@ export function App() {
     if (!valid.has(aiDeck)) setAiDeck(battleDecks[Math.min(1, battleDecks.length - 1)]!.i);
   }, [battleDecks]);
 
+  useEffect(() => {
+    if (!deckStartWarning) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDeckStartWarning(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deckStartWarning]);
+
+  const startBattle = (): void => {
+    const playerDeck = decks[myDeck];
+    const opponentDeck = decks[aiDeck];
+    if (!playerDeck || !opponentDeck) return;
+    const selected = [playerDeck, opponentDeck] as const;
+    const issues = buildBattleDeckWarnings(db, selected[0], selected[1]);
+    if (issues.length > 0) {
+      setDeckStartWarning(issues);
+      return;
+    }
+    setDeckStartWarning(null);
+    setMode(engine === "lab" ? "lab-game" : "classic-game");
+  };
+
   if (mode === "classic-game") {
     if (loadedReplay) {
       const label0 = loadedReplay.decks[0].label;
@@ -176,17 +211,19 @@ export function App() {
       setCardPrintings(new Map());
 
       return (
-        <Game
-          db={db}
-          decks={decksData}
-          deckMeta={[deckMeta0, deckMeta1]}
-          loadedReplay={loadedReplay}
-          onExit={() => {
-            setLoadedReplay(null);
-            setMode("menu");
-            void refreshReplays();
-          }}
-        />
+        <Suspense fallback={<div className="game-loading" role="status">載入經典 2D 對局…</div>}>
+          <Game
+            db={db}
+            decks={decksData}
+            deckMeta={[deckMeta0, deckMeta1]}
+            loadedReplay={loadedReplay}
+            onExit={() => {
+              setLoadedReplay(null);
+              setMode("menu");
+              void refreshReplays();
+            }}
+          />
+        </Suspense>
       );
     }
 
@@ -199,15 +236,17 @@ export function App() {
       }
       setCardPrintings(printings);
       return (
-        <Game
-          db={db}
-          decks={[expand(selectedDecks[0]), expand(selectedDecks[1])]}
-          deckMeta={[deckMeta(db, selectedDecks[0]), deckMeta(db, selectedDecks[1])]}
-          onExit={() => {
-            setMode("menu");
-            void refreshReplays();
-          }}
-        />
+        <Suspense fallback={<div className="game-loading" role="status">載入經典 2D 對局…</div>}>
+          <Game
+            db={db}
+            decks={[expand(selectedDecks[0]), expand(selectedDecks[1])]}
+            deckMeta={[deckMeta(db, selectedDecks[0]), deckMeta(db, selectedDecks[1])]}
+            onExit={() => {
+              setMode("menu");
+              void refreshReplays();
+            }}
+          />
+        </Suspense>
       );
     }
   }
@@ -228,11 +267,19 @@ export function App() {
   }
 
   if (mode === "editor") {
-    return <DeckEditor db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />;
+    return (
+      <Suspense fallback={<div className="game-loading" role="status">載入牌組編輯器…</div>}>
+        <DeckEditor db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />
+      </Suspense>
+    );
   }
 
   if (mode === "optimizer") {
-    return <DeckOptimizerPreview db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />;
+    return (
+      <Suspense fallback={<div className="game-loading" role="status">載入調牌提案…</div>}>
+        <DeckOptimizerPreview db={db} decks={decks} onExit={() => setMode("menu")} onSaved={refreshDecks} />
+      </Suspense>
+    );
   }
 
   const deckLabel = (d: ApiDeck) => `${d.school}／${d.name}（${d.cards.reduce((s, c) => s + c.count, 0)}張）`;
@@ -274,13 +321,13 @@ export function App() {
           {loadError && <p className="danger small">{loadError}</p>}
           <div className="menu-row menu-decks">
             <label><span className="menu-field-label">我的牌組</span>
-              <select value={myDeck} onChange={(e) => setMyDeck(Number(e.target.value))}>
+              <select value={myDeck} onChange={(e) => { setMyDeck(Number(e.target.value)); setDeckStartWarning(null); }}>
                 {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
             </label>
             <span className="menu-versus" aria-hidden="true">VS</span>
             <label><span className="menu-field-label">電腦牌組</span>
-              <select value={aiDeck} onChange={(e) => setAiDeck(Number(e.target.value))}>
+              <select value={aiDeck} onChange={(e) => { setAiDeck(Number(e.target.value)); setDeckStartWarning(null); }}>
                 {battleDecks.map(({ d, i }) => <option key={d.source} value={i}>{deckLabel(d)}</option>)}
               </select>
             </label>
@@ -322,13 +369,13 @@ export function App() {
           </div>
 
           <div className="menu-row menu-actions">
-            <button className="btn-start menu-primary-action" disabled={!decks.length} onClick={() => setMode(engine === "lab" ? "lab-game" : "classic-game")}>
+            <button aria-label="開始對戰" className="btn-start menu-primary-action" disabled={!decks.length} onClick={startBattle}>
               <span>開始對戰</span>
               <small>{engine === "lab" ? "Experimental 3D" : "Classic 2D"}</small>
             </button>
             <div className="menu-tool-actions" aria-label="牌組工具">
-              <button className="btn-start btn-secondary" onClick={() => setMode("editor")}><span>牌組編輯</span><small>Deck editor</small></button>
-              <button className="btn-start btn-secondary" onClick={() => setMode("optimizer")}><span>調牌提案</span><small>Deck proposal</small></button>
+              <button aria-label="牌組編輯" className="btn-start btn-secondary" onClick={() => setMode("editor")}><span>牌組編輯</span><small>Deck editor</small></button>
+              <button aria-label="調牌提案" className="btn-start btn-secondary" onClick={() => setMode("optimizer")}><span>調牌提案</span><small>Deck proposal</small></button>
             </div>
           </div>
         </section>
@@ -398,6 +445,24 @@ export function App() {
       </div>
 
       <div className="version-stamp">v{APP_VERSION} ・ 收錄 {poolStatus.exps} ・ 技能 {poolStatus.implemented}/{poolStatus.withSkill}（{poolStatus.pct}%）</div>
+
+      {deckStartWarning && (
+        <div className="deck-start-warning-overlay" onMouseDown={() => setDeckStartWarning(null)}>
+          <section
+            className="deck-start-warning"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deck-start-warning-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <span className="deck-start-warning-kicker">DECK CHECK</span>
+            <h2 id="deck-start-warning-title">無法開始對戰</h2>
+            <p>對戰牌組必須符合構築規則，請先回到牌組編輯器修正：</p>
+            <ul>{deckStartWarning.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            <button className="btn-start menu-primary-action" autoFocus onClick={() => setDeckStartWarning(null)}>返回牌組選擇</button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

@@ -14,9 +14,10 @@ import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { blockDeployMax, canChooseBlock, deployLegality, deployNames, deployableUids, freeCardReasons, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry } from "../engine/types";
 import type { DeckMeta } from "../ui/gameTypes";
-import { cardFrontUrl } from "./assets";
+import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { DecisionRail } from "./game/DecisionRail";
+import { LabCardCounter, LabCoachPanel, LabSettingsPanel, type LabCoachState, type RailTool } from "./game/RailTools";
 import {
   BlockPickPanel,
   EffectConfirmModal,
@@ -27,11 +28,12 @@ import {
 } from "./game/overlays";
 import { usePlayback } from "./game/usePlayback";
 import { buildBattleRailView, buildCardInspectView, deployLegalityText } from "./game/railViewModel";
-import { expandDeck, type LabDeck } from "./deck";
+import { buildPrintingByUid, expandDeck, printingSelections, type LabDeck } from "./deck";
 import { schoolMatColor } from "./scene/schoolColors";
 import type { ZoneId } from "./presentation/events";
 import { ZONE_LABEL } from "./presentation/textRenderer";
 import type { TimelineEntry } from "./presentation/timeline";
+import { replaceBannerDismissTimer } from "./presentation/bannerHold";
 import { BoardScene } from "./scene/BoardScene";
 import { CameraRig, LAB_CAMERA_BASE } from "./scene/CameraRig";
 import { zoneAnchor } from "./scene/layout";
@@ -104,6 +106,14 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     },
     [db, expanded, props.decks, seed],
   );
+  const printingByPlayer = useMemo(
+    () => [printingSelections(props.decks[0]), printingSelections(props.decks[1])] as const,
+    [props.decks],
+  );
+  const printingByUid = useMemo(
+    () => buildPrintingByUid(controller.engine.cards, props.decks),
+    [controller, props.decks],
+  );
   const { view, tick, markPlaying, skip, reset, setPaused, setSpeed } = usePlayback(controller, db);
 
   // ---- 互動狀態（拖曳／點擊出牌／hover／多選） ----
@@ -124,6 +134,12 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
   /** 觀戰模式：我方決策全部自動委託 heuristic（LP6 全流程驗證兼觀戰用） */
   const [autoPlay, setAutoPlay] = useState(false);
+  const [opponentEngine, setOpponentEngine] = useState<"strong" | "heuristic">(() => {
+    try { return localStorage.getItem("breaktcg-opponent-engine") === "heuristic" ? "heuristic" : "strong"; }
+    catch { return "strong"; }
+  });
+  const [railTool, setRailTool] = useState<RailTool>("detail");
+  const [coach, setCoach] = useState<LabCoachState>({ status: "idle" });
   const [inspectTarget, setInspectTarget] = useState<InspectTarget | null>(null);
   /** 多選（mulligan 換牌／攔網登場）＋攔網中央指定＋攔網選名佇列 */
   const [boardSel, setBoardSel] = useState<number[]>([]);
@@ -135,8 +151,44 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const [aiThinking, setAiThinking] = useState<{ budgetMs: number; startedAt: number } | null>(null);
   const [thinkingNow, setThinkingNow] = useState(Date.now());
   const [shellNotice, setShellNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [confirmLost, setConfirmLost] = useState(false);
+  const [assetProgress, setAssetProgress] = useState({ loaded: 0, total: 0, done: false });
   const aiRequestRef = useRef(0);
+  const coachRequestRef = useRef(0);
+  const coachWorkerRef = useRef<Worker | null>(null);
+  const coachCacheRef = useRef<{ key: string; state: LabCoachState } | null>(null);
+
+  useEffect(() => {
+    const urls = new Set<string>(schools.map((school) => cardBackUrl(school)));
+    for (const player of [0, 1] as const) for (const id of expanded[player]) {
+      const card = db.get(id);
+      const url = card ? cardFrontUrl(card, printingByPlayer[player].get(id)) : null;
+      if (url) urls.add(url);
+    }
+    let cancelled = false;
+    let loaded = 0;
+    setAssetProgress({ loaded: 0, total: urls.size, done: urls.size === 0 });
+    for (const url of urls) {
+      const img = new Image();
+      const settle = () => {
+        if (cancelled) return;
+        loaded += 1;
+        setAssetProgress({ loaded, total: urls.size, done: loaded >= urls.size });
+      };
+      img.onload = settle;
+      img.onerror = settle;
+      img.src = url;
+    }
+    return () => { cancelled = true; };
+  }, [db, expanded, printingByPlayer, schools[0], schools[1]]);
+
+  useEffect(() => {
+    if (!actionNotice) return;
+    const id = window.setTimeout(() => setActionNotice(null), 2600);
+    return () => window.clearTimeout(id);
+  }, [actionNotice]);
 
   // ---- 互動閘：佇列清空前不開放（spec §1.1） ----
   const engine: GameState = controller.engine;
@@ -156,24 +208,31 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   }, [inspectTarget, view.displayed, effectSelectionSurface, effectCandidates, engine]);
   const readingFrameActive = readingRefs.length > 0;
 
+  const deployType = myPd && myPd.type in DEPLOY_ZONE ? (myPd.type as DeployType) : null;
+  const zone = deployType ? DEPLOY_ZONE[deployType] : null;
+  const valueParam = myPd?.type === "deploy-block" ? "block" : zone;
+  const contextualHandUids = useMemo(
+    () => valueParam ? new Set(deployableUids(db, engine, HUMAN, valueParam === "block" ? "block" : valueParam)) : new Set<number>(),
+    [db, engine, valueParam],
+  );
+  const handValue = valueParam ? { player: HUMAN, param: valueParam, uids: contextualHandUids } as const : undefined;
+
   // ---- 演出視圖 → 擺位 ----
   const placements = useMemo(() => {
-    const base = computePlacements(db, view.displayed, schools, view.valueFormulas);
+    const base = computePlacements(db, view.displayed, schools, view.valueFormulas, handValue, printingByUid);
     const mergedBase = !view.after || view.movedUids.size === 0
       ? base
-      : mergePlacements(base, computePlacements(db, view.after, schools, view.valueFormulas), view.movedUids);
+      : mergePlacements(base, computePlacements(db, view.after, schools, view.valueFormulas, handValue, printingByUid), view.movedUids);
     // 移入牌堆的移動（換牌回牌組等）給牌堆錨點落點，才有「飛回牌堆」動態。
     const merged = view.after ? applyMovedPileTargets(mergedBase, view.after, view.movedUids, schools) : mergedBase;
     const previewed = myPd?.type === "deploy-block" ? applyBlockPreview(merged, boardSel, blockCenter) : merged;
     if (!readingFrameActive) return previewed;
-    return applyReadingFrame(previewed, db, inspectTarget ? view.displayed : engine, readingRefs, schools, inspectTarget ? "inspect" : "select");
-  }, [db, view.displayed, view.after, view.movedUids, view.valueFormulas, schools[0], schools[1], myPd?.type, boardSel, blockCenter, readingFrameActive, readingRefs, inspectTarget, engine]);
+    return applyReadingFrame(previewed, db, inspectTarget ? view.displayed : engine, readingRefs, schools, inspectTarget ? "inspect" : "select", printingByUid, new Set(boardSel));
+  }, [db, view.displayed, view.after, view.movedUids, view.valueFormulas, schools[0], schools[1], myPd?.type, boardSel, blockCenter, readingFrameActive, readingRefs, inspectTarget, engine, handValue, printingByUid]);
 
-  const deployType = myPd && myPd.type in DEPLOY_ZONE ? (myPd.type as DeployType) : null;
-  const zone = deployType ? DEPLOY_ZONE[deployType] : null;
   const draggableUids = useMemo(
-    () => (zone ? new Set(deployableUids(db, engine, HUMAN, zone)) : new Set<number>()),
-    [db, engine, zone],
+    () => (zone ? contextualHandUids : new Set<number>()),
+    [zone, contextualHandUids],
   );
   const dropAnchor = zone ? zoneAnchor(HUMAN, zone) : null;
 
@@ -183,6 +242,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     setBlockCenter(null);
     setBlockNames(null);
     setNamePick(null);
+    setConfirmLost(false);
   }, [pd]);
 
   /** 自由步驟可用選項（技能宣告／事件卡） */
@@ -233,17 +293,23 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const shufflingPlayer = view.current?.event.kind === "deck-shuffled" ? view.current.event.player : null;
 
   const decide = useCallback(
-    (decision: Decision, delegated = false): void => {
+    (decision: Decision, delegated = false): boolean => {
       try {
-        controller.decide(decision, delegated);
+        const applied = controller.decide(decision, delegated);
+        if (!applied) return false;
       } catch (err) {
         console.error("[ui-lab] decide 失敗", err);
-        setFatalError(err instanceof Error ? err.message : String(err));
-        return;
+        setActionNotice(`這個操作目前不能執行：${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      }
+      if (!delegated && "uid" in decision && typeof decision.uid === "number") {
+        const card = db.get(controller.engine.cards[decision.uid] ?? "");
+        setActionNotice(`已${decision.type === "free" ? "發動" : "登場"} ${card?.nameZh || card?.nameJa || "卡片"}・Cmd+Z 撤回`);
       }
       markPlaying();
+      return true;
     },
-    [controller, markPlaying],
+    [controller, db, markPlaying],
   );
 
   const undoDecision = useCallback((): void => {
@@ -359,6 +425,10 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       }
       if (event.key === "Escape") {
         event.preventDefault();
+        if (railTool === "coach" || railTool === "counter") {
+          setRailTool("detail");
+          return;
+        }
         setInspectTarget(null);
         setPaused(false);
         setHoveredUid(null);
@@ -395,7 +465,15 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undoDecision, view.playing, skip, namePick, blockNames, myPd, boardSel, decide, confirmBlock, engine, activateHandShortcut, setPaused, effectCandidates]);
+  }, [undoDecision, view.playing, skip, namePick, blockNames, myPd, boardSel, decide, confirmBlock, engine, activateHandShortcut, setPaused, effectCandidates, railTool]);
+
+  useEffect(() => {
+    const onVisibility = (): void => {
+      if (document.hidden && view.playing) skip();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [skip, view.playing]);
 
   // ---- 拖曳／點擊出牌流程 ----
   const beginDrag = useCallback(
@@ -465,6 +543,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   }, [setPaused]);
 
   const inspectPile = useCallback((player: 0 | 1, zone: "drop" | "eventArea"): void => {
+    setRailTool("detail");
     setInspectTarget({ player, zone });
     setPaused(true);
   }, [setPaused]);
@@ -493,7 +572,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     return () => window.clearTimeout(t);
   }, [autoPlay, view.playing, controller, db, decide, pd]);
 
-  // CP6C：對手決策由既有 SO-ISMCTS worker 執行；失敗時明示並退回 heuristic，確保對局不鎖死。
+  // 對手設定：強敵走 SO-ISMCTS worker；快速走 heuristic。兩者共用相同決策入口。
   useEffect(() => {
     if (fatalError || view.playing || inspectTarget || !controller.awaitingOpponent) {
       setAiThinking(null);
@@ -502,11 +581,10 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     const state = controller.engine;
     const requestNo = ++aiRequestRef.current;
     const requestId = `ui-lab-${requestNo}`;
-    const budgetMs = estimateThinkBudgetMs(state);
+    const budgetMs = opponentEngine === "strong" ? estimateThinkBudgetMs(state) : 180;
     const startedAt = Date.now();
     setAiThinking({ budgetMs, startedAt });
     setShellNotice(null);
-    const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
     const applyOpponent = (decision: Decision): void => {
       if (aiRequestRef.current !== requestNo) return;
       try {
@@ -526,6 +604,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         setFatalError(error instanceof Error ? error.message : String(error));
       }
     };
+    if (opponentEngine === "heuristic") {
+      const timer = window.setTimeout(() => applyOpponent(heuristicAiDecision(db, state)), budgetMs);
+      return () => window.clearTimeout(timer);
+    }
+    const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
       if (aiRequestRef.current !== requestNo || event.data.requestId !== requestId) return;
       worker.terminate();
@@ -554,7 +637,72 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     return () => {
       worker.terminate();
     };
-  }, [controller, db, expanded, fatalError, inspectTarget, markPlaying, view.playing, pd]);
+  }, [controller, db, expanded, fatalError, inspectTarget, markPlaying, view.playing, pd, opponentEngine]);
+
+  // Coach 僅在 drawer 開啟時啟動，並以當前 replay/pending/rng 快取。
+  useEffect(() => {
+    coachWorkerRef.current?.terminate();
+    coachWorkerRef.current = null;
+    const requestNo = ++coachRequestRef.current;
+    if (railTool !== "coach" || view.playing || !myPd || inspectTarget) {
+      setCoach({ status: "idle" });
+      return;
+    }
+    const state = controller.engine;
+    const cacheKey = `${controller.replay.entries.length}:${state.rngState}:${myPd.type}`;
+    if (coachCacheRef.current?.key === cacheKey) {
+      setCoach(coachCacheRef.current.state);
+      return;
+    }
+    let fallback: Decision;
+    try {
+      fallback = heuristicAiDecision(db, state);
+      setCoach({ status: "loading", fallback });
+    } catch (error) {
+      setCoach({ status: "error", fallback: null, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
+      coachWorkerRef.current = worker;
+      const requestId = `ui-lab-coach-${requestNo}`;
+      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
+        if (coachRequestRef.current !== requestNo || event.data.requestId !== requestId) return;
+        const next: LabCoachState = event.data.ok ? { status: "ready", report: event.data.report } : { status: "error", fallback, error: event.data.error };
+        coachCacheRef.current = { key: cacheKey, state: next };
+        setCoach(next);
+        worker.terminate();
+        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
+      };
+      worker.onerror = (event) => {
+        if (coachRequestRef.current !== requestNo) return;
+        const next: LabCoachState = { status: "error", fallback, error: event.message || "Coach worker 發生錯誤" };
+        coachCacheRef.current = { key: cacheKey, state: next };
+        setCoach(next);
+        worker.terminate();
+        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
+      };
+      worker.postMessage({
+        requestId,
+        state,
+        options: {
+          perspectivePlayer: HUMAN,
+          knownDecks: expanded,
+          gameplanDeckLabels: [`${props.decks[0].school}-${props.decks[0].name}`, `${props.decks[1].school}-${props.decks[1].name}`],
+          seed: state.rngState,
+          sampleCount: 4,
+          candidateLimit: 6,
+          rolloutMaxSteps: 1400,
+          timeLimitMs: 1200,
+        },
+      });
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      coachWorkerRef.current?.terminate();
+      coachWorkerRef.current = null;
+    };
+  }, [controller, db, expanded, inspectTarget, myPd, props.decks, railTool, view.playing]);
 
   useEffect(() => {
     if (!aiThinking) return;
@@ -569,13 +717,22 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   // 把最後一次非空 banner 鎖存 2.4s，讓「左滑入→停留→右滑出」完整跑完。
   const [heldBanner, setHeldBanner] = useState<{ text: string; heavy: boolean } | null>(null);
   const bannerKey = useRef(0);
+  const bannerDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!banner) return;
     bannerKey.current += 1;
     setHeldBanner(banner);
-    const timer = setTimeout(() => setHeldBanner(null), 2400);
-    return () => clearTimeout(timer);
+    bannerDismissTimer.current = replaceBannerDismissTimer(
+      bannerDismissTimer.current,
+      () => {
+        bannerDismissTimer.current = null;
+        setHeldBanner(null);
+      },
+    );
   }, [banner?.text, banner?.heavy]);
+  useEffect(() => () => {
+    if (bannerDismissTimer.current !== null) clearTimeout(bannerDismissTimer.current);
+  }, []);
   const pushed = !!view.current && ["judge-revealed", "set-won", "match-won"].includes(view.current.event.kind);
   const gameOver = !view.playing && !engine.pendingDecision;
   const shown = view.displayed;
@@ -594,7 +751,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const inspectedCard = infoUid !== null && draggingUid === null
     ? buildCardInspectView(db, shown, infoUid, legalCardUids, !!myPd, detailedUnavailableReason)
     : null;
-  const hoveredCardImg = inspectedCard ? cardFrontUrl(inspectedCard.card) : null;
+  const hoveredCardImg = inspectedCard && infoUid !== null ? cardFrontUrl(inspectedCard.card, printingByUid.get(infoUid)) : null;
   const railView = buildBattleRailView(engine, schools);
   const onLogHover = useCallback((entry: LogEntry | null): void => {
     if (!entry?.event) {
@@ -614,6 +771,8 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     setHoveredUid(null);
   }, [engine]);
   const opNote = engine.op && engine.op.owner !== HUMAN ? `對手 OP ${engine.op.value}——` : "";
+  const opponentOp = engine.op && engine.op.owner !== HUMAN ? engine.op.value : null;
+  const freeActionCount = freeOpts.skills.length + freeOpts.events.length;
   const prompt = view.playing
     ? "演出中…"
     : deployType
@@ -635,7 +794,33 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
                     : pd
                       ? "對手行動中…"
                       : "";
+  const decisionContext = myPd?.type === "defense-choice" && opponentOp !== null
+    ? `對手 OP ${opponentOp}・接球／攔網需 ${opponentOp}+`
+    : myPd?.type === "deploy-receive" && opponentOp !== null
+      ? `對手 OP ${opponentOp}・接球需 ${opponentOp}+`
+      : deployType && opponentOp !== null
+        ? `對手 OP ${opponentOp}`
+        : "";
+  const activeEffects = Array.from(new Set([
+    ...engine.restrictions.map((item) => item.desc),
+    ...engine.watchers.map((item) => item.desc),
+  ].filter(Boolean))).slice(0, 3);
+  const drawerOpen = railTool === "coach" || railTool === "counter";
+  const changeSpeed = (next: number): void => {
+    setSpeedState(next);
+    setSpeed(next);
+  };
+  const changeOpponentEngine = (next: "strong" | "heuristic"): void => {
+    setOpponentEngine(next);
+    try { localStorage.setItem("breaktcg-opponent-engine", next); } catch { /* in-memory setting remains usable */ }
+  };
+  const applyCoach = (decision: Decision): void => {
+    if (!decide(decision)) return;
+    setRailTool("detail");
+    setActionNotice("已採用 Coach 建議・Cmd+Z 撤回");
+  };
   const hasDecisionOverlay = !!myPd && ["serve-rights", "effect-confirm", "effect-option", "resolve-pending", "deploy-block"].includes(myPd.type);
+  const showIntegratedDecision = !!myPd && !hasDecisionOverlay && !gameOver && !inspectTarget;
 
   // [Codex 2026-07-11] CP6 前置：ui-lab 沿用正式 ReplaySession，完整場結束只存一次。
   useEffect(() => {
@@ -711,12 +896,75 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         </Canvas>
       </div>
 
-      {/* 舞台左上：離開對戰。 */}
-      <div className={styles.overlay}>
-        <button className={styles.link} type="button" onClick={() => setConfirmExit(true)}>
-          離開對戰
-        </button>
-      </div>
+      <section
+        className={`${styles.statusSlot} ${showIntegratedDecision || inspectTarget ? styles.statusSlotInteractive : ""} ${drawerOpen ? styles.statusSlotDrawerOpen : ""}`}
+        aria-label={inspectTarget ? "牌堆閱讀模式" : showIntegratedDecision ? "目前狀態與決策" : "目前狀態"}
+      >
+        <div className={styles.statusTopRow}>
+          <div className={styles.statusSummary} role="status" aria-live="polite" aria-atomic="true">
+            {inspectTarget ? (
+              <><strong>{inspectTarget.player === HUMAN ? "我方" : "對手"}{ZONE_LABEL[inspectTarget.zone]}</strong><span>牌堆閱讀模式・{readingRefs.length} 張公開卡</span></>
+            ) : aiThinking ? (
+              <><strong>對手思考中</strong><span>{Math.max(0, (thinkingNow - aiThinking.startedAt) / 1000).toFixed(1)} 秒・最多 {(aiThinking.budgetMs / 1000).toFixed(1)} 秒</span></>
+            ) : myPd && !view.playing ? (
+              <><strong>{railView.actionLabel}</strong><span>{prompt || myPd.prompt || myPd.type}</span>{decisionContext && <span className={styles.numericContext}>{decisionContext}</span>}</>
+            ) : !view.playing ? <><strong>{railView.actionLabel}</strong><span>規則結算中</span></> : null}
+            {activeEffects.length > 0 && <div className={styles.effectChips}>{activeEffects.map((text) => <span key={text} title={text}>持續・{text}</span>)}</div>}
+          </div>
+
+          {inspectTarget ? (
+            <div className={styles.statusDecisionArea}>
+              <button className={styles.btnGhost} onClick={closeInspect}>關閉（Esc）</button>
+            </div>
+          ) : showIntegratedDecision && (
+            <div className={styles.statusDecisionArea} aria-label="目前決策">
+              {myPd.type === "effect-cards" ? (
+                <div className={styles.effectSelectionActions}>
+                  <span>已選 {boardSel.length}／{myPd.min ?? 0}–{myPd.max ?? effectCandidates.length} 張</span>
+                  <button className={styles.btnGhost} disabled={boardSel.length === 0} onClick={() => setBoardSel([])}>清除</button>
+                  <button
+                    className={styles.btn}
+                    disabled={boardSel.length < (myPd.min ?? 0) || boardSel.length > (myPd.max ?? effectCandidates.length)}
+                    onClick={() => decide({ type: "effect-cards", uids: boardSel })}
+                  >確認選擇</button>
+                </div>
+              ) : (
+                <div className={styles.decisionActions}>
+                  {deployType && (
+                    <button className={styles.btnDanger} onClick={() => decide({ type: deployType, uid: null } as Decision)}>不登場</button>
+                  )}
+                  {myPd.type === "defense-choice" && (
+                    <>
+                      <button className={styles.btn} disabled={!canChooseBlock(engine)} onClick={() => decide({ type: "defense-choice", choice: "block" })}>攔網</button>
+                      <button className={styles.btn} onClick={() => decide({ type: "defense-choice", choice: "receive" })}>接球</button>
+                    </>
+                  )}
+                  {myPd.type === "mulligan" && (
+                    <button className={styles.btn} onClick={() => decide({ type: "mulligan", returnUids: boardSel })}>{boardSel.length ? `換 ${boardSel.length} 張` : "不換牌"}</button>
+                  )}
+                  {myPd.type === "free" && (
+                    <>
+                      <button className={styles.btn} onClick={() => decide({ type: "free", action: "pass" })}>結束步驟{freeActionCount ? `（放棄 ${freeActionCount} 個行動）` : ""}</button>
+                      <span className={styles.dangerDivider} aria-hidden="true" />
+                      <button className={styles.btnDanger} onClick={() => confirmLost ? decide({ type: "free", action: "lost" }) : setConfirmLost(true)}>{confirmLost ? "再次確認 Lost" : "宣告 Lost"}</button>
+                    </>
+                  )}
+                </div>
+              )}
+              {myPd.type === "free" && freeActionCount > 0 && (
+                <div className={styles.freeOpts} aria-label="可用事件與技能">
+                  {freeOpts.events.map((event) => <button key={`e-${event.uid}`} className={styles.actionChip} title={event.label} onMouseEnter={() => setHoveredUid(event.uid)} onMouseLeave={() => setHoveredUid(null)} onClick={() => decide({ type: "free", action: "event", uid: event.uid })}>{handShortcuts.get(event.uid) ? `${handShortcuts.get(event.uid)} ` : ""}{event.label}</button>)}
+                  {freeOpts.skills.map((s) => <button key={`s-${s.uid}-${s.skillIndex}`} className={styles.actionChip} title={s.label} onMouseEnter={() => setHoveredUid(s.uid)} onMouseLeave={() => setHoveredUid(null)} onClick={() => decide({ type: "free", action: "skill", uid: s.uid, skillIndex: s.skillIndex })}>⚡ {handShortcuts.get(s.uid) ? `${handShortcuts.get(s.uid)} ` : ""}{s.label}</button>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {!assetProgress.done && (
+        <div className={styles.assetLoading} role="status">載入本場卡圖 {assetProgress.loaded}/{assetProgress.total}</div>
+      )}
 
       {/* 中央 banner（鎖存 2.4s 讓滑入→停留→滑出完整跑完） */}
       {heldBanner && !readingFrameActive && (
@@ -731,6 +979,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         cardImage={hoveredCardImg}
         presentationLines={view.subtitles}
         log={engine.log}
+        tool={railTool}
+        onToolChange={setRailTool}
+        onDrawerClose={() => setRailTool("detail")}
+        settingsContent={<LabSettingsPanel speed={speed} reducedMotion={reducedMotion} autoPlay={autoPlay} opponentEngine={opponentEngine} onSpeed={changeSpeed} onReducedMotion={setReducedMotion} onAutoPlay={setAutoPlay} onOpponentEngine={changeOpponentEngine} onExit={() => setConfirmExit(true)} />}
+        drawerContent={railTool === "coach" ? <LabCoachPanel state={engine} coach={coach} onApply={applyCoach} /> : railTool === "counter" ? <LabCardCounter db={db} state={engine} /> : null}
         onLogHover={onLogHover}
       />
 
@@ -738,81 +991,13 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       <div className={styles.stageInteractionLayer}>
         <div className={styles.stageToolbar}>
           <button className={styles.btnGhost} disabled={!controller.canUndo} onClick={undoDecision}>Undo {controller.undoDepth ? `(${controller.undoDepth})` : ""}</button>
-          <button className={styles.btnGhost} onClick={() => {
-            const next = speed === 1 ? 2 : 1;
-            setSpeedState(next);
-            setSpeed(next);
-          }}>節奏 {speed}x</button>
-          <button className={reducedMotion ? styles.btn : styles.btnGhost} onClick={() => setReducedMotion((value) => !value)}>{reducedMotion ? "恢復鏡頭動態" : "減少鏡頭動態"}</button>
           {import.meta.env.DEV && <button className={styles.btnGhost} onClick={() => setOrbit((o) => !o)}>{orbit ? "鎖定鏡頭" : "開發視角"}</button>}
-          <button className={autoPlay ? styles.btn : styles.btnGhost} data-testid="autoplay" onClick={() => setAutoPlay((a) => !a)}>{autoPlay ? "停止代打" : "AI 代打到底"}</button>
         </div>
-
-        {inspectTarget && (
-          <section className={styles.inspectHud} aria-label="牌堆閱讀模式">
-            <div><strong>{inspectTarget.player === HUMAN ? "我方" : "對手"}{ZONE_LABEL[inspectTarget.zone]}</strong><span>{readingRefs.length} 張公開卡</span></div>
-            <button className={styles.btnGhost} onClick={closeInspect}>關閉（Esc）</button>
-          </section>
-        )}
-
-        {aiThinking && !inspectTarget && (
-          <section className={styles.thinkingHud} role="status" aria-live="polite">
-            <span className={styles.thinkingDots} aria-hidden="true" />
-            <div><strong>對手思考中</strong><span>{Math.max(0, (thinkingNow - aiThinking.startedAt) / 1000).toFixed(1)} 秒・最多 {(aiThinking.budgetMs / 1000).toFixed(1)} 秒</span></div>
-          </section>
-        )}
 
         {shellNotice && !fatalError && (
           <div className={styles.shellNotice} role="status">{shellNotice}</div>
         )}
-
-
-
-        {/* 目前決策：只在輪到我方做決策時出現，且只給該決策需要的按鈕；其他時候消失。 */}
-        {myPd && !hasDecisionOverlay && !gameOver && !inspectTarget && (
-          <section className={styles.stageDecision} aria-label="目前決策">
-            <div className={styles.srOnly} aria-live="polite">{prompt || (myPd.prompt ?? myPd.type)}</div>
-            {myPd.type === "effect-cards" ? (
-              <div className={styles.effectSelectionActions}>
-                <span>已選 {boardSel.length}／{myPd.min ?? 0}–{myPd.max ?? effectCandidates.length} 張</span>
-                <button className={styles.btnGhost} disabled={boardSel.length === 0} onClick={() => setBoardSel([])}>清除</button>
-                <button
-                  className={styles.btn}
-                  disabled={boardSel.length < (myPd.min ?? 0) || boardSel.length > (myPd.max ?? effectCandidates.length)}
-                  onClick={() => decide({ type: "effect-cards", uids: boardSel })}
-                >確認選擇</button>
-              </div>
-            ) : (
-              <div className={styles.decisionActions}>
-                {deployType && (
-                  <button className={styles.btnDanger} onClick={() => decide({ type: deployType, uid: null } as Decision)}>不登場</button>
-                )}
-                {myPd.type === "defense-choice" && (
-                  <>
-                    <button className={styles.btn} disabled={!canChooseBlock(engine)} onClick={() => decide({ type: "defense-choice", choice: "block" })}>攔網</button>
-                    <button className={styles.btn} onClick={() => decide({ type: "defense-choice", choice: "receive" })}>接球</button>
-                  </>
-                )}
-                {myPd.type === "mulligan" && (
-                  <button className={styles.btn} onClick={() => decide({ type: "mulligan", returnUids: boardSel })}>{boardSel.length ? `換 ${boardSel.length} 張` : "不換牌"}</button>
-                )}
-                {myPd.type === "free" && (
-                  <>
-                    <button className={styles.btnDanger} onClick={() => decide({ type: "free", action: "lost" })}>宣告 Lost</button>
-                    <button className={styles.btn} onClick={() => decide({ type: "free", action: "pass" })}>結束步驟</button>
-                  </>
-                )}
-              </div>
-            )}
-            {/* 事件卡回歸實體卡片互動：點亮起的手牌打出，不放面板（[使用者 2026-07-11]）。
-                角色技能仍以按鈕呈現——一張角色可能有多個 skillIndex，逐一列出較清楚。 */}
-            {myPd.type === "free" && freeOpts.skills.length > 0 && (
-              <div className={styles.freeOpts}>
-                {freeOpts.skills.map((s) => <button key={`s-${s.uid}-${s.skillIndex}`} className={styles.btnGhost} onClick={() => decide({ type: "free", action: "skill", uid: s.uid, skillIndex: s.skillIndex })}>⚡ {s.label}</button>)}
-              </div>
-            )}
-          </section>
-        )}
+        {actionNotice && !fatalError && <div className={styles.actionNotice} role="status">{actionNotice}</div>}
 
         {/* ---- 決策蓋板（LP2/LP4/LP5）；定位基準＝左側舞台自身。 ---- */}
         {myPd?.type === "serve-rights" && <ServeRightsModal onPick={(take) => decide({ type: "serve-rights", take })} />}
@@ -832,6 +1017,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
           selected={boardSel}
           center={blockCenter}
           max={blockMax}
+          printingByUid={printingByUid}
           onSetCenter={setBlockCenter}
           onConfirm={confirmBlock}
           onGiveUp={() => decide({ type: "deploy-block", uids: null })}
@@ -843,6 +1029,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         <div className={styles.modalMask}>
           <div className={styles.modal}>
             <div className={styles.modalTitle}>以哪個名字登場？</div>
+            {(() => {
+              const card = db.get(engine.cards[namePick.uid] ?? "");
+              const src = card ? cardFrontUrl(card, printingByUid.get(namePick.uid)) : null;
+              return src ? <img className={styles.namePickCard} src={src} alt={card?.nameZh || card?.nameJa || "選名卡片"} /> : null;
+            })()}
             {namePick.names.map((n) => (
               <button
                 key={n}
@@ -866,6 +1057,12 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
             <div className={styles.modalTitle}>
               {db.get(engine.cards[blockNames.queue[0]!.uid] ?? "")?.nameZh ?? "這張卡"}以哪個名字登場？
             </div>
+            {(() => {
+              const uid = blockNames.queue[0]!.uid;
+              const card = db.get(engine.cards[uid] ?? "");
+              const src = card ? cardFrontUrl(card, printingByUid.get(uid)) : null;
+              return src ? <img className={styles.namePickCard} src={src} alt={card?.nameZh || card?.nameJa || "選名卡片"} /> : null;
+            })()}
             {blockNames.queue[0]!.names.map((n) => (
               <button
                 key={n}
@@ -904,6 +1101,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
             <div className={styles.modal}>
               <div className={styles.modalTitle}>這場對局暫時無法繼續</div>
               <p className={styles.promptText}>{fatalError}</p>
+              {controller.canUndo && <button className={styles.btn} onClick={() => { setFatalError(null); undoDecision(); }}>退回上一步（Undo）</button>}
               <button className={styles.btn} onClick={props.onRematch}>重新開始這組對戰</button>
               <button className={styles.btnGhost} onClick={props.onExit}>回牌組選擇</button>
             </div>

@@ -45,6 +45,9 @@ const BACK_EXTENSIONS: Record<string, "png" | "jpg"> = {
   音駒: "png",
 };
 
+/** 目前有專屬卡背素材、可在牌組編輯器直接選擇的學校。 */
+export const CARD_BACK_SCHOOLS = Object.freeze(Object.keys(BACK_EXTENSIONS));
+
 function normalizedSchool(school?: string): string | undefined {
   if (school === "稻荷崎") return "稲荷崎";
   return school;

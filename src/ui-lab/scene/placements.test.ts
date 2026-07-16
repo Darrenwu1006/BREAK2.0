@@ -3,10 +3,10 @@
 import { describe, expect, it } from "vitest";
 import cardsJson from "../../../data/cards.json";
 import karasunoDeck from "../../../data/decks/烏野-預組.json";
-import nekomaDeck from "../../../data/decks/音駒-預組.json";
+import nekomaDeck from "../../../data/decks/音駒-音駒-三彈官方.json";
 import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
-import { applyDecision, createGame } from "../../engine/engine";
+import { applyDecision, createGame, effParam } from "../../engine/engine";
 import type { CardDb, GameState } from "../../engine/types";
 import { capturePlayerValueFormulas } from "../presentation/valueFormula";
 import { blockSideAnchor, CARD_T, CARD_W, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
@@ -27,6 +27,33 @@ function midGame(): GameState {
 }
 
 describe("computePlacements", () => {
+  it("3D 實體卡會使用該 uid 所屬牌組指定的卡面版本", () => {
+    const s = midGame();
+    const uid = s.players[0].hand[0]!;
+    const id = s.cards[uid]!;
+    const source = db.get(id)!;
+    const localDbMutable = new Map(db);
+    localDbMutable.set(id, { ...source, printings: [...source.printings, { rarity: "ALT", image: "cards/alternate.webp" }] });
+    const localDb: CardDb = localDbMutable;
+    const shown = computePlacements(localDb, s, schools, new Map(), undefined, new Map([[uid, "ALT"]])).cards.get(uid)!;
+    expect(shown.frontUrl).toContain("cards/alternate.webp");
+  });
+
+  it("deploy/block 決策可只替合法手牌掛上該區有效值 badge", () => {
+    const s = midGame();
+    const [shownUid, hiddenUid] = s.players[0].hand;
+    expect(shownUid).toBeDefined();
+    expect(hiddenUid).toBeDefined();
+    const cards = computePlacements(db, s, schools, new Map(), {
+      player: 0,
+      param: "receive",
+      uids: new Set([shownUid!]),
+    }).cards;
+    expect(cards.get(shownUid!)!.effectiveValue).toBe(effParam(db, s, shownUid!, "receive"));
+    expect(cards.get(shownUid!)!.baseValue).toBe(db.get(s.cards[shownUid!]!)?.params?.receive ?? null);
+    expect(cards.get(hiddenUid!)!.effectiveValue).toBeUndefined();
+  });
+
   it("非牌堆藏牌外的所有 uid 都有擺位；牌組卡不單獨擺（厚度疊表現）", () => {
     const s = midGame();
     const { cards, piles } = computePlacements(db, s, schools);
@@ -176,7 +203,7 @@ describe("computePlacements", () => {
     expect(preview.cards.get(selected[1]!)?.position[0]).toBe(zoneAnchor(0, "blockCenter").x);
   });
 
-  it("3D reading frame 展開效果候選並按來源分列，候選身份由引擎授權後正面顯示", () => {
+  it("3D reading frame 展開效果候選並按來源分區盤，候選身份由引擎授權後正面顯示", () => {
     const s = midGame();
     const refs = [
       locateReadingCard(s, s.players[0].deck[0]!)!,
@@ -189,8 +216,38 @@ describe("computePlacements", () => {
       expect(reading.cards.get(ref.uid)?.faceUp).toBe(true);
       expect(reading.cards.get(ref.uid)?.position[1]).toBeGreaterThan(1);
     }
-    const labels = refs.map((ref) => reading.cards.get(ref.uid)?.readingGroup).filter(Boolean);
-    expect(labels.length).toBeGreaterThanOrEqual(2);
+    expect(reading.readingPanels).toHaveLength(2);
+    expect(reading.readingPanels?.[0]?.label).toBe("我方牌組");
+    expect(reading.readingPanels?.[1]?.label).toMatch(/^對手/);
+    const [first, second] = reading.readingPanels!;
+    expect(first!.position[0]).not.toBe(second!.position[0]);
+  });
+
+  it("跨三個場上區支付 Guts 時，各區保有獨立底盤並即時顯示支付後剩餘", () => {
+    const s = midGame();
+    const pool = [...s.players[0].hand, ...s.players[0].deck].slice(0, 9);
+    expect(pool.length).toBeGreaterThanOrEqual(9);
+    const state: GameState = {
+      ...s,
+      players: [
+        {
+          ...s.players[0],
+          hand: s.players[0].hand.filter((uid) => !pool.includes(uid)),
+          deck: s.players[0].deck.filter((uid) => !pool.includes(uid)),
+          receive: pool.slice(0, 3),
+          toss: pool.slice(3, 6),
+          attack: pool.slice(6, 9),
+        },
+        s.players[1],
+      ],
+    };
+    const candidates = [state.players[0].receive[0]!, state.players[0].receive[1]!, state.players[0].toss[0]!, state.players[0].toss[1]!, state.players[0].attack[0]!, state.players[0].attack[1]!];
+    const refs = candidates.map((uid) => locateReadingCard(state, uid)!);
+    const framed = applyReadingFrame(computePlacements(db, state, schools), db, state, refs, schools, "select", new Map(), new Set([candidates[0]!, candidates[2]!, candidates[4]!]));
+    expect(framed.readingPanels?.map((panel) => panel.label)).toEqual(["我方接球區", "我方托球區", "我方攻擊區"]);
+    expect(framed.readingPanels?.every((panel) => panel.detail === "Guts 2・已選 1 → 剩 1")).toBe(true);
+    const panelXs = framed.readingPanels!.map((panel) => panel.position[0]);
+    expect(new Set(panelXs).size).toBe(3);
   });
 
   it("疊放區 inspect：最上一張＝場上角色、其餘＝Guts，分列標記且傾角對齊手牌、往觀者拉近", () => {

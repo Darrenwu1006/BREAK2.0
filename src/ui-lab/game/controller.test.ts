@@ -3,10 +3,10 @@
 import { describe, expect, it } from "vitest";
 import cardsJson from "../../../data/cards.json";
 import karasunoDeck from "../../../data/decks/烏野-預組.json";
-import nekomaDeck from "../../../data/decks/音駒-預組.json";
+import nekomaDeck from "../../../data/decks/音駒-音駒-三彈官方.json";
 import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
-import type { CardDb } from "../../engine/types";
+import type { CardDb, Decision } from "../../engine/types";
 import { HUMAN, LAB_UNDO_LIMIT, LabGameController } from "./controller";
 
 interface DeckJson {
@@ -55,11 +55,11 @@ describe("LabGameController", () => {
   it("replay 使用正式共用 schema，保留牌組標籤與每步可重播 state", () => {
     const c = new LabGameController(db, decks, 314, [
       { school: "烏野", name: "預組", total: 40, implementedCount: 40, unimplementedCount: 0 },
-      { school: "音駒", name: "預組", total: 40, implementedCount: 40, unimplementedCount: 0 },
+      { school: "音駒", name: "音駒-三彈官方", total: 40, implementedCount: 40, unimplementedCount: 0 },
     ]);
     const beforeCount = c.replay.entries.length;
     c.decide(heuristicAiDecision(db, c.engine));
-    expect(c.replay.decks.map((deck) => deck.label)).toEqual(["烏野-預組", "音駒-預組"]);
+    expect(c.replay.decks.map((deck) => deck.label)).toEqual(["烏野-預組", "音駒-音駒-三彈官方"]);
     expect(c.replay.entries.length).toBeGreaterThan(beforeCount);
     for (const [index, entry] of c.replay.entries.entries()) {
       expect(entry.index).toBe(index);
@@ -104,15 +104,43 @@ describe("LabGameController", () => {
     expect(c.undoDepth).toBe(LAB_UNDO_LIMIT);
   });
 
-  it("非人類互動時 decide 擲錯", () => {
-    const c = new LabGameController(db, decks, 42);
-    c.decide(heuristicAiDecision(db, c.engine));
-    if (!c.awaitingHuman) {
-      expect(() => c.decide({ type: "defense-choice", choice: "receive" })).toThrow();
+  it("跨到非人類互動後收到舊 closure 輸入會靜默忽略", () => {
+    const c = new LabGameController(db, decks, 42, undefined, { deferOpponent: true });
+    for (let i = 0; i < 20 && !c.awaitingOpponent; i++) {
+      c.decide(heuristicAiDecision(db, c.engine));
+      c.timeline.skip();
     }
-    // 至少驗證 awaitingHuman 與 pendingDecision 一致
-    const pd = c.engine.pendingDecision;
-    if (pd) expect(c.awaitingHuman).toBe(pd.player === HUMAN);
+    expect(c.awaitingOpponent).toBe(true);
+    const before = structuredClone(c.engine);
+    expect(c.decide({ type: "defense-choice", choice: "receive" })).toBe(false);
+    expect(c.engine).toEqual(before);
+  });
+
+  it("忽略 render closure 送出的過期 decision type，且不建立 undo 點", () => {
+    const c = new LabGameController(db, decks, 42);
+    const currentType = c.engine.pendingDecision!.type;
+    const stale: Decision = currentType === "defense-choice"
+      ? { type: "mulligan", returnUids: [] }
+      : { type: "defense-choice", choice: "receive" };
+    const before = structuredClone(c.engine);
+    expect(c.decide(stale)).toBe(false);
+    expect(c.engine).toEqual(before);
+    expect(c.undoDepth).toBe(0);
+  });
+
+  it("不合法的人類決策不改盤面、不污染 undo history", () => {
+    const c = new LabGameController(db, decks, 42);
+    for (let i = 0; i < 20 && !c.engine.pendingDecision?.type.startsWith("deploy-"); i++) {
+      c.decide(heuristicAiDecision(db, c.engine), true);
+      c.timeline.skip();
+    }
+    const before = structuredClone(c.engine);
+    const current = c.engine.pendingDecision!;
+    expect(current.type.startsWith("deploy-")).toBe(true);
+    const invalid = { type: current.type, uid: 999999 } as Parameters<typeof c.decide>[0];
+    expect(() => c.decide(invalid)).toThrow();
+    expect(c.engine).toEqual(before);
+    expect(c.undoDepth).toBe(0);
   });
 
   it("正式 shell defer 模式停在每個對手決策，必須由 worker 入口明確推進", () => {
