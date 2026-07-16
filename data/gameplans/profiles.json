@@ -12,6 +12,12 @@
       "堆墓",
       "角名"
      ]
+    },
+    {
+     "labelIncludes": [
+      "稲荷崎",
+      "三彈改"
+     ]
     }
    ],
    "stageLabels": [
@@ -103,12 +109,18 @@
   {
    "id": "aoba-johsai-p02-control-v1",
    "enabled": true,
-   "displayName": "青葉城西二彈改",
+   "displayName": "青葉城西控制軸",
    "deckMatchers": [
     {
      "labelIncludes": [
       "青葉城西",
       "二彈改"
+     ]
+    },
+    {
+     "labelIncludes": [
+      "青葉城西",
+      "第三彈測試"
      ]
     }
    ],

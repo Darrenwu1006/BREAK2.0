@@ -6,41 +6,22 @@ import type { Card } from "../data/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes } from "./heuristic";
 import { randomAiDecision } from "./random";
 import cardsJson from "../../data/cards.json";
-import deckAoba2 from "../../data/decks/青葉城西-二彈改.json";
-import deckAobaFast from "../../data/decks/青葉城西-快攻軸.json";
-import deckDateBlock from "../../data/decks/伊達工業-攔網軸.json";
-import deckDateBlock2 from "../../data/decks/伊達工業-攔網軸改.json";
-import deckFukurodani2 from "../../data/decks/梟谷-爆發軸二.json";
-import deckFukurodaniHigh from "../../data/decks/梟谷-高爆發軸.json";
-import deckGarbage from "../../data/decks/混合學校-垃圾場.json";
-import deckInarizaki6 from "../../data/decks/稲荷崎-六名軸.json";
-import deckInarizakiPrecon from "../../data/decks/稲荷崎-預組.json";
-import deckKarasunoAttack from "../../data/decks/烏野-日影攻擊軸.json";
-import deckKarasunoBlock from "../../data/decks/烏野-山月攔網軸.json";
-import deckKarasuno from "../../data/decks/烏野-預組.json";
-import deckNekoma from "../../data/decks/音駒-預組.json";
-import deckShiratorizawa from "../../data/decks/白鳥沢-白板軸.json";
 
 const db: CardDb = new Map((cardsJson as Card[]).map((c) => [c.id, c]));
-const expand = (d: { cards: { id: string; count: number }[] }) => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
+type DeckFixture = { cards: { id: string; count: number }[] };
+const deckModules = import.meta.glob<DeckFixture>("../../data/decks/*.json", { eager: true, import: "default" });
+const allDecks: { name: string; deck: DeckFixture }[] = Object.entries(deckModules)
+  .map(([path, deck]) => ({ name: path.split("/").at(-1)!.replace(/\.json$/, ""), deck }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+const fixture = (name: string): DeckFixture => {
+  const found = allDecks.find((item) => item.name === name)?.deck;
+  if (!found) throw new Error(`找不到現存測試牌組：${name}`);
+  return found;
+};
+const deckKarasuno = fixture("烏野-預組");
+const deckNekoma = fixture("音駒-音駒-三彈官方");
+const expand = (d: DeckFixture) => d.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
 const fillerDeck = Array(40).fill("HV-D01-006") as string[];
-
-const allDecks: { name: string; deck: { cards: { id: string; count: number }[] } }[] = [
-  { name: "青葉城西-二彈改", deck: deckAoba2 },
-  { name: "青葉城西-快攻軸", deck: deckAobaFast },
-  { name: "伊達工業-攔網軸", deck: deckDateBlock },
-  { name: "伊達工業-攔網軸改", deck: deckDateBlock2 },
-  { name: "梟谷-爆發軸二", deck: deckFukurodani2 },
-  { name: "梟谷-高爆發軸", deck: deckFukurodaniHigh },
-  { name: "混合學校-垃圾場", deck: deckGarbage },
-  { name: "稲荷崎-六名軸", deck: deckInarizaki6 },
-  { name: "稲荷崎-預組", deck: deckInarizakiPrecon },
-  { name: "烏野-日影攻擊軸", deck: deckKarasunoAttack },
-  { name: "烏野-山月攔網軸", deck: deckKarasunoBlock },
-  { name: "烏野-預組", deck: deckKarasuno },
-  { name: "音駒-預組", deck: deckNekoma },
-  { name: "白鳥沢-白板軸", deck: deckShiratorizawa },
-];
 
 function seededRnd(seed: number): () => number {
   let s = seed >>> 0;
@@ -305,7 +286,7 @@ describe("M5 Heuristic v2 決策品質", () => {
     expect(heuristicAiDecision(db, s, "heuristic-v2-burst")).toEqual({ type: "effect-confirm", accept: true });
   });
 
-  it("14 副牌組皆可用 heuristic v2 跑完整場且維持 40 張不變量", () => {
+  it("現存牌組皆可用 heuristic v2 跑完整場且維持 40 張不變量", () => {
     for (let i = 0; i < allDecks.length; i++) {
       const a = allDecks[i]!;
       const b = allDecks[(i + 1) % allDecks.length]!;

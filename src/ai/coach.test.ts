@@ -6,7 +6,7 @@ import { createPimcCoachReport, decisionLabel } from "./coach";
 
 function setupServeDecision(): { state: GameState; decks: readonly [readonly string[], readonly string[]] } {
   const deckA = findBenchmarkDeck("烏野-預組");
-  const deckB = findBenchmarkDeck("音駒-預組");
+  const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
   let state = createGame(benchmarkDb, { seed: 710, decks: [deckA.ids, deckB.ids] });
   state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
   state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
@@ -106,7 +106,7 @@ describe("M8 Phase A PIMC coach", () => {
   });
 
   it("會在命中的牌組上附加 gameplan 主軸評估", () => {
-    const deckA = findBenchmarkDeck("稲荷崎-稲荷崎_堆墓改角名");
+    const deckA = findBenchmarkDeck("稲荷崎-稲荷崎_三彈改");
     const deckB = findBenchmarkDeck("音駒-音駒-二口干擾");
     let state = createGame(benchmarkDb, { seed: 1919, decks: [deckA.ids, deckB.ids] });
     state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });

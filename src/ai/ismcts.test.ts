@@ -9,7 +9,7 @@ import { createIsmctsReport, rootDecisionPressureScore, ucbScore } from "./ismct
 
 function setupServeDecision(): { state: GameState; decks: readonly [readonly string[], readonly string[]] } {
   const deckA = findBenchmarkDeck("烏野-預組");
-  const deckB = findBenchmarkDeck("音駒-預組");
+  const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
   let state = createGame(benchmarkDb, { seed: 710, decks: [deckA.ids, deckB.ids] });
   state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
   state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });

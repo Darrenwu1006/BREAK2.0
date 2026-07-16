@@ -23,9 +23,9 @@ const PLAYER_ZONES: readonly PlayerZone[] = [
 ];
 
 const FUZZ_PAIRS = [
-  ["烏野-預組", "音駒-預組", 801],
-  ["梟谷-高爆發軸", "白鳥沢-最強白鳥沢", 802],
-  ["伊達工業-攔網軸改", "青葉城西-二彈改", 803],
+  ["烏野-預組", "音駒-音駒-三彈官方", 801],
+  ["梟谷-第三彈官方", "白鳥沢-最強白鳥沢", 802],
+  ["伊達工業-攔網軸改_韋宏", "青葉城西-第三彈測試", 803],
 ] as const;
 
 function collectFuzzStates(maxSteps = 80): GameState[] {

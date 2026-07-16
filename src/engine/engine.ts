@@ -7,6 +7,9 @@
 import type { Card } from "../data/types";
 import type { CourtArea } from "./dsl";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "./types";
+import { validateGameDeck } from "./deck-validation";
+export { validateGameDeck } from "./deck-validation";
+export type { GameDeckValidationIssue } from "./deck-validation";
 import { nextRandom, shuffle } from "./rng";
 import {
   applyEffectDecision,
@@ -87,10 +90,10 @@ export interface CreateGameOptions {
 export function createGame(db: CardDb, opts: CreateGameOptions): GameState {
   for (const [i, deck] of opts.decks.entries()) {
     if (!opts.skipDeckValidation) {
-      if (deck.length !== 40) throw new Error(`玩家${i} 牌組須正好 40 張（目前 ${deck.length}）`); // †4-1-2
-      const events = deck.filter((id) => db.get(id)?.type === "EVENT").length;
-      if (events > 8) throw new Error(`玩家${i} 事件卡超過 8 張（${events}）`);
+      const issue = validateGameDeck(db, deck)[0];
+      if (issue) throw new Error(`玩家${i} ${issue.message}`); // †4-1-2、事件上限
     }
+    // skipDeckValidation 只跳過構築規則；未知 id 仍不可建立實體卡。
     for (const id of deck) if (!db.has(id)) throw new Error(`未知卡片 ${id}`);
   }
 

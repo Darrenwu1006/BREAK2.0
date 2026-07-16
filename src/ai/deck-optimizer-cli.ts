@@ -23,7 +23,7 @@ import {
 import { isHeuristicV2ProfileId } from "./heuristic";
 
 const DEFAULTS = {
-  deck: "青葉城西-二彈改",
+  deck: "青葉城西-第三彈測試",
   policy: "heuristic-v2" as BenchmarkPolicyId,
   opponentPolicy: "heuristic-v2" as BenchmarkPolicyId,
   preset: "direction" as AnalyzerPreset,

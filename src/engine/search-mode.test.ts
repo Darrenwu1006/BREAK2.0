@@ -12,9 +12,9 @@ function stripLog(state: GameState): Omit<GameState, "log"> {
 describe("Phase J J1 search exec mode", () => {
   it("matches live state transitions except for log across deterministic games", () => {
     const pairs = [
-      ["烏野-預組", "音駒-預組", 710],
-      ["梟谷-高爆發軸", "白鳥沢-最強白鳥沢", 720],
-      ["伊達工業-攔網軸改", "青葉城西-二彈改", 730],
+      ["烏野-預組", "音駒-音駒-三彈官方", 710],
+      ["梟谷-第三彈官方", "白鳥沢-最強白鳥沢", 720],
+      ["伊達工業-攔網軸改_韋宏", "青葉城西-第三彈測試", 730],
     ] as const;
 
     for (const [deckAName, deckBName, seed] of pairs) {

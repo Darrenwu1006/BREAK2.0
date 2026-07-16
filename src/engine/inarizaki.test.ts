@@ -251,10 +251,10 @@ describe("稲荷崎：どん ぴしゃり連鎖（P02-087→016/020）", () => {
 });
 
 describe("完成定義：稲荷崎牌組技能全生效的完整對局", () => {
-  it("稲荷崎六名軸 vs 稲荷崎預組：啟發式 AI 對打完整場", async () => {
+  it("稲荷崎三彈六名 vs 三彈官方：啟發式 AI 對打完整場", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
-    const deckA = (await import("../../data/decks/稲荷崎-六名軸.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
-    const deckB = (await import("../../data/decks/稲荷崎-預組.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckA = (await import("../../data/decks/稲荷崎-稲荷崎_三彈六名.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckB = (await import("../../data/decks/稲荷崎-稲荷崎_三彈官方.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
     for (const seed of [3, 13]) {
       let s = createGame(db, { seed, decks: [deckA, deckB] as [string[], string[]] });
       for (let i = 0; i < 5000 && s.phase !== "gameOver"; i++) s = applyDecision(db, s, heuristicAiDecision(db, s));

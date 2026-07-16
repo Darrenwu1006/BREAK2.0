@@ -20,21 +20,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const DECK_DIR = join(ROOT, "data", "decks");
 
 const AXIS_OVERRIDES: Record<string, DeckAxis[]> = {
-  "青葉城西-二彈改": ["serve", "hybrid"],
-  "青葉城西-快攻軸": ["burst", "hybrid"],
-  "伊達工業-攔網軸": ["block", "defense"],
-  "伊達工業-攔網軸改": ["block", "defense"],
-  "梟谷-爆發軸二": ["burst"],
-  "梟谷-高爆發軸": ["burst"],
-  "混合學校-垃圾場": ["hybrid", "defense"],
-  "稲荷崎-六名軸": ["hybrid", "burst"],
-  "稲荷崎-預組": ["hybrid"],
-  "稻荷崎-0612測試": ["hybrid", "burst"],
-  "烏野-日影攻擊軸": ["burst"],
-  "烏野-山月攔網軸": ["block"],
+  "青葉城西-第三彈測試": ["serve", "hybrid"],
+  "青葉城西-第三彈測試_調整C萬用體": ["serve", "hybrid"],
+  "伊達工業-攔網軸改_韋宏": ["block", "defense"],
+  "梟谷-第三彈官方": ["burst"],
+  "稲荷崎-稲荷崎_三彈六名": ["hybrid", "burst"],
+  "稻荷崎-三彈發球測試": ["serve", "burst"],
   "烏野-預組": ["hybrid"],
-  "音駒-預組": ["defense"],
-  "白鳥沢-白板軸": ["serve", "burst"],
+  "音駒-音駒-三彈官方": ["defense"],
+  "白鳥沢-最強白鳥沢": ["serve", "burst"],
 };
 
 function expandDeck(deck: Deck, axes: DeckAxis[]): BenchmarkDeck {

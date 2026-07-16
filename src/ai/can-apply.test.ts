@@ -6,10 +6,10 @@ import { canApplyDecision, enumerateCandidates } from "./coach";
 import { heuristicAiDecision } from "./heuristic";
 
 const PAIRS = [
-  ["烏野-預組", "音駒-預組", 901],
-  ["梟谷-高爆發軸", "白鳥沢-最強白鳥沢", 902],
-  ["伊達工業-攔網軸改", "青葉城西-二彈改", 903],
-  ["稲荷崎-六名軸", "梟谷-高爆發軸", 904],
+  ["烏野-預組", "音駒-音駒-三彈官方", 901],
+  ["梟谷-第三彈官方", "白鳥沢-最強白鳥沢", 902],
+  ["伊達工業-攔網軸改_韋宏", "青葉城西-第三彈測試", 903],
+  ["稲荷崎-稲荷崎_三彈六名", "梟谷-第三彈官方", 904],
 ] as const;
 
 function collectStates(maxSteps = 110): GameState[] {

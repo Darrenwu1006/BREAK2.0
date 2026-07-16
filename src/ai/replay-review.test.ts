@@ -84,7 +84,7 @@ describe("replay review", () => {
       startedAt: "2026-06-19T00:00:00.000Z",
       seed: 123,
       decks: [
-        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "稲荷崎-稲荷崎_三彈改", cardIds },
         { label: "音駒-音駒-二口干擾", cardIds: [] },
       ],
       initialState: before,
@@ -145,7 +145,7 @@ describe("replay review", () => {
       startedAt: "2026-06-20T00:00:00.000Z",
       seed: 7,
       decks: [
-        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "稲荷崎-稲荷崎_三彈改", cardIds },
         { label: "音駒-音駒-二口干擾", cardIds: [] },
       ],
       initialState: base,
@@ -196,7 +196,7 @@ describe("replay review", () => {
       startedAt: "2026-06-20T00:00:00.000Z",
       seed: 1,
       decks: [
-        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "稲荷崎-稲荷崎_三彈改", cardIds },
         { label: "音駒-音駒-二口干擾", cardIds: [] },
       ],
       initialState: before,
@@ -302,7 +302,7 @@ describe("replay review", () => {
       startedAt: "2026-06-20T00:00:00.000Z",
       seed: 1,
       decks: [
-        { label: "稲荷崎-稲荷崎_堆墓改角名", cardIds },
+        { label: "稲荷崎-稲荷崎_三彈改", cardIds },
         { label: "音駒-音駒-二口干擾", cardIds: [] },
       ],
       initialState: before,

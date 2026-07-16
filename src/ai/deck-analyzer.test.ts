@@ -7,7 +7,7 @@ describe("M8 deck analyzer", () => {
     const report = runDeckAnalyzer({
       db: benchmarkDb,
       deck: findBenchmarkDeck("烏野-預組"),
-      opponents: [findBenchmarkDeck("音駒-預組")],
+      opponents: [findBenchmarkDeck("音駒-音駒-三彈官方")],
       policy: "heuristic-v2",
       opponentPolicy: "random",
       gamesPerSeat: 1,
@@ -45,7 +45,7 @@ describe("M8 deck analyzer", () => {
     const report = runDeckAnalyzer({
       db: benchmarkDb,
       deck: findBenchmarkDeck("烏野-預組"),
-      opponents: [findBenchmarkDeck("音駒-預組")],
+      opponents: [findBenchmarkDeck("音駒-音駒-三彈官方")],
       policy: "heuristic-v2",
       opponentPolicy: "heuristic-v2",
       gamesPerSeat: 1,
@@ -63,7 +63,7 @@ describe("M8 deck analyzer", () => {
     const config = {
       db: benchmarkDb,
       deck: findBenchmarkDeck("烏野-預組"),
-      opponents: [findBenchmarkDeck("音駒-預組"), findBenchmarkDeck("青葉城西-快攻軸")],
+      opponents: [findBenchmarkDeck("音駒-音駒-三彈官方"), findBenchmarkDeck("青葉城西-第三彈測試")],
       policy: "heuristic-v2" as const,
       opponentPolicy: "heuristic-v2" as const,
       gamesPerSeat: 1,
@@ -82,8 +82,8 @@ describe("M8 deck analyzer", () => {
   it("支援同對手池的 A/B deck version 比較", () => {
     const report = runDeckAnalyzerComparison({
       db: benchmarkDb,
-      baseDeck: findBenchmarkDeck("伊達工業-攔網軸"),
-      candidateDeck: findBenchmarkDeck("伊達工業-攔網軸改"),
+      baseDeck: findBenchmarkDeck("青葉城西-第三彈測試"),
+      candidateDeck: findBenchmarkDeck("青葉城西-第三彈測試_調整C萬用體"),
       opponents: [findBenchmarkDeck("烏野-預組")],
       policy: "heuristic-v2",
       opponentPolicy: "heuristic-v2",
@@ -93,10 +93,10 @@ describe("M8 deck analyzer", () => {
     }, "2026-06-18T00:00:00.000Z");
 
     expect(report.schemaVersion).toBe(DECK_ANALYZER_SCHEMA_VERSION);
-    expect(report.base.config.deck).toBe("伊達工業-攔網軸");
-    expect(report.candidate.config.deck).toBe("伊達工業-攔網軸改");
-    expect(report.comparison.baseDeck).toBe("伊達工業-攔網軸");
-    expect(report.comparison.candidateDeck).toBe("伊達工業-攔網軸改");
+    expect(report.base.config.deck).toBe("青葉城西-第三彈測試");
+    expect(report.candidate.config.deck).toBe("青葉城西-第三彈測試_調整C萬用體");
+    expect(report.comparison.baseDeck).toBe("青葉城西-第三彈測試");
+    expect(report.comparison.candidateDeck).toBe("青葉城西-第三彈測試_調整C萬用體");
     expect(["candidate-better", "base-better", "too-close"]).toContain(report.comparison.verdict);
     expect(report.comparison.matchupDeltas).toHaveLength(1);
   });

@@ -82,10 +82,10 @@ export interface LadderReport {
 
 export const LADDER_MIRROR_DECKS = [
   "烏野-預組",
-  "音駒-預組",
-  "梟谷-高爆發軸",
+  "音駒-音駒-三彈官方",
+  "梟谷-第三彈官方",
   "白鳥沢-最強白鳥沢",
-  "青葉城西-二彈改",
+  "青葉城西-第三彈測試",
 ] as const;
 
 export const LADDER_POLICY_IDS = [

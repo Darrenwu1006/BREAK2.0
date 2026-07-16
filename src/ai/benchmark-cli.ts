@@ -10,7 +10,7 @@ import type { ValueModel } from "./rollout-value";
 
 const DEFAULTS = {
   deckA: "烏野-預組",
-  deckB: "音駒-預組",
+  deckB: "音駒-音駒-三彈官方",
   policyA: "heuristic-v2" as BenchmarkPolicyId,
   policyB: "random" as BenchmarkPolicyId,
   seedStart: 100,

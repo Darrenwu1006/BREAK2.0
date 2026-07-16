@@ -41,7 +41,7 @@ function entry(index: number, decision: Decision, log: LogEntry[], patch: Partia
 function session(entries: ReplayEntry[]): ReplaySession {
   return {
     startedAt: "2026-06-21T00:00:00.000Z", seed: 42,
-    decks: [{ label: "青葉城西-二彈改", cardIds: [] }, { label: "音駒-二口干擾", cardIds: [] }],
+    decks: [{ label: "青葉城西-第三彈測試", cardIds: [] }, { label: "音駒-音駒-二口干擾", cardIds: [] }],
     initialState: state(), entries,
   };
 }

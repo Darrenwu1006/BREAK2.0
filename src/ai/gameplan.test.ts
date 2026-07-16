@@ -63,7 +63,7 @@ function state(cardIds: string[], players: [Partial<PlayerState>, Partial<Player
 }
 
 function profile(id: "inarizaki" | "aoba") {
-  const label = id === "inarizaki" ? "稲荷崎-稲荷崎_堆墓改角名" : "青葉城西-青葉城西_二彈改";
+  const label = id === "inarizaki" ? "稲荷崎-稲荷崎_三彈改" : "青葉城西-第三彈測試";
   const resolved = resolveGameplanProfile(label, []);
   expect(resolved).not.toBeNull();
   return resolved!;

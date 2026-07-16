@@ -24,12 +24,8 @@
    "printing": "SP"
   },
   {
-   "id": "HV-P03-005",
-   "count": 0
-  },
-  {
    "id": "HV-P01-041",
-   "count": 2
+   "count": 1
   },
   {
    "id": "HV-P02-058",
@@ -53,12 +49,8 @@
    "count": 3
   },
   {
-   "id": "HV-P01-088",
-   "count": 2
-  },
-  {
    "id": "HV-P01-039",
-   "count": 5
+   "count": 6
   },
   {
    "id": "HV-P03-006",
@@ -74,10 +66,15 @@
   },
   {
    "id": "HV-P03-090",
-   "count": 1
+   "count": 1,
+   "printing": "SP"
   },
   {
    "id": "HV-P02-057",
+   "count": 2
+  },
+  {
+   "id": "HV-P01-088",
    "count": 2
   }
  ]

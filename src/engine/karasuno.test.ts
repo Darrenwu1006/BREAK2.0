@@ -465,10 +465,10 @@ describe("烏野：事件卡", () => {
 });
 
 describe("完成定義：烏野牌組技能全生效的完整對局", () => {
-  it("烏野日影攻擊軸 vs 烏野山月攔網軸：啟發式 AI 對打完整場（效果決策全程合法）", async () => {
+  it("烏野預組 mirror：啟發式 AI 對打完整場（效果決策全程合法）", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
-    const deckA = (await import("../../data/decks/烏野-日影攻擊軸.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
-    const deckB = (await import("../../data/decks/烏野-山月攔網軸.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckA = (await import("../../data/decks/烏野-預組.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckB = [...deckA];
     for (const seed of [11, 22, 33]) {
       let s = (await import("./engine")).createGame(db, { seed, decks: [deckA, deckB] as [string[], string[]] });
       let effectDecisions = 0;

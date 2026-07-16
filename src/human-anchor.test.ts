@@ -14,7 +14,7 @@ describe("human-anchor L0 schema", () => {
       date: "2026-07-05T21:40:00+08:00",
       aiEngine: "strong",
       playerDeck: "青葉城西-第三彈測試",
-      aiDeck: "白鳥澤-三彈",
+      aiDeck: "白鳥沢-三彈優化",
       winner: 1,
       setScore: [1, 3],
       serious: true,

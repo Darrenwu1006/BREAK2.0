@@ -179,10 +179,10 @@ describe("梟谷：事件卡", () => {
 });
 
 describe("完成定義：梟谷牌組技能全生效的完整對局", () => {
-  it("梟谷高爆發軸 vs 梟谷爆發軸二：啟發式 AI 對打完整場", async () => {
+  it("梟谷第三彈官方 mirror：啟發式 AI 對打完整場", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
-    const deckA = (await import("../../data/decks/梟谷-高爆發軸.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
-    const deckB = (await import("../../data/decks/梟谷-爆發軸二.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckA = (await import("../../data/decks/梟谷-第三彈官方.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckB = [...deckA];
     for (const seed of [9, 27]) {
       let s = createGame(db, { seed, decks: [deckA, deckB] as [string[], string[]] });
       for (let i = 0; i < 5000 && s.phase !== "gameOver"; i++) s = applyDecision(db, s, heuristicAiDecision(db, s));

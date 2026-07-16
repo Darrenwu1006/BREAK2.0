@@ -18,7 +18,7 @@ function hasForbiddenPrivateKey(value: unknown): boolean {
 
 function baseState(): GameState {
   const deckA = findBenchmarkDeck("烏野-預組");
-  const deckB = findBenchmarkDeck("音駒-預組");
+  const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
   let state = createGame(benchmarkDb, { seed: 310, decks: [deckA.ids, deckB.ids] });
   state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
   state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
@@ -28,7 +28,7 @@ function baseState(): GameState {
 
 function setupServeDecision(): { state: GameState; decks: readonly [readonly string[], readonly string[]] } {
   const deckA = findBenchmarkDeck("烏野-預組");
-  const deckB = findBenchmarkDeck("音駒-預組");
+  const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
   const state = baseState();
   expect(state.pendingDecision).toMatchObject({ player: 0, type: "deploy-serve" });
   return { state, decks: [deckA.ids, deckB.ids] };

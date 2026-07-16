@@ -222,10 +222,10 @@ describe("音駒：事件卡", () => {
   });
 });
 
-describe("完成定義：音駒預組技能全生效的完整對局", () => {
-  it("音駒預組 vs 烏野預組：啟發式 AI 對打完整場", async () => {
+describe("完成定義：音駒牌組技能全生效的完整對局", () => {
+  it("音駒三彈官方 vs 烏野預組：啟發式 AI 對打完整場", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
-    const deckA = (await import("../../data/decks/音駒-預組.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckA = (await import("../../data/decks/音駒-音駒-三彈官方.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
     const deckB = (await import("../../data/decks/烏野-預組.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
     for (const seed of [7, 21]) {
       let s = createGame(db, { seed, decks: [deckA, deckB] as [string[], string[]] });

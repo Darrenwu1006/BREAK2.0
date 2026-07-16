@@ -236,10 +236,10 @@ describe("青葉城西：事件卡", () => {
 });
 
 describe("完成定義：青葉城西牌組技能全生效的完整對局", () => {
-  it("青葉城西二彈改 vs 青葉城西快攻軸：啟發式 AI 對打完整場", async () => {
+  it("青葉城西第三彈測試 vs 調整C萬用體：啟發式 AI 對打完整場", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
-    const deckA = (await import("../../data/decks/青葉城西-二彈改.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
-    const deckB = (await import("../../data/decks/青葉城西-快攻軸.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckA = (await import("../../data/decks/青葉城西-第三彈測試.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
+    const deckB = (await import("../../data/decks/青葉城西-第三彈測試_調整C萬用體.json")).default.cards.flatMap((c: { id: string; count: number }) => Array(c.count).fill(c.id));
     for (const seed of [5, 17]) {
       let s = createGame(db, { seed, decks: [deckA, deckB] as [string[], string[]] });
       for (let i = 0; i < 5000 && s.phase !== "gameOver"; i++) s = applyDecision(db, s, heuristicAiDecision(db, s));

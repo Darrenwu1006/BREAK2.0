@@ -39,7 +39,7 @@ function proposalWith(candidateDeckCards: DeckOptimizerCardCount[], changes = bu
     schemaVersion: DECK_OPTIMIZER_PROPOSAL_SCHEMA_VERSION,
     generatedAt: "2026-06-18T00:00:00.000Z",
     optimizerVersion: DECK_OPTIMIZER_VERSION,
-    sourceDeck: "稻荷崎-0612測試",
+    sourceDeck: "稲荷崎-稲荷崎_20260418_優勝",
     sourceDeckCards,
     candidateDeckCards,
     changes,
@@ -47,7 +47,7 @@ function proposalWith(candidateDeckCards: DeckOptimizerCardCount[], changes = bu
     bannedCards: ["HV-D01-001"],
     objectiveProfile: "preserve-current",
     evaluationConfig: {
-      opponents: ["音駒-預組"],
+      opponents: ["音駒-音駒-三彈官方"],
       policy: "heuristic-v2",
       opponentPolicy: "heuristic-v2",
       preset: "direction",
@@ -95,7 +95,7 @@ function metrics(overrides: Partial<AnalyzerMetrics> = {}): AnalyzerMetrics {
   };
 }
 
-const sourceDeck = findBenchmarkDeck("稻荷崎-0612測試");
+const sourceDeck = findBenchmarkDeck("稲荷崎-稲荷崎_20260418_優勝");
 const sourceDeckCards = deckOptimizerCardsFromIds(sourceDeck.ids);
 
 describe("M8 deck optimizer C1-1 validator", () => {
@@ -185,7 +185,7 @@ describe("M8 deck optimizer C1-2 proposal scaffold", () => {
       },
       objectiveProfile: "preserve-current",
       evaluationConfig: {
-        opponents: ["音駒-預組"],
+        opponents: ["音駒-音駒-三彈官方"],
         policy: "heuristic-v2",
         opponentPolicy: "heuristic-v2",
         preset: "direction",
@@ -210,7 +210,7 @@ describe("M8 deck optimizer C1-2 proposal scaffold", () => {
       sourceDeck,
       constraints: { bannedCards: ["HV-P02-017"] },
       evaluationConfig: {
-        opponents: ["音駒-預組"],
+        opponents: ["音駒-音駒-三彈官方"],
         policy: "heuristic-v2",
         opponentPolicy: "heuristic-v2",
         preset: "direction",
@@ -220,7 +220,7 @@ describe("M8 deck optimizer C1-2 proposal scaffold", () => {
 });
 
 describe("M8 deck optimizer C1-3a card pool", () => {
-  const aobaDeck = findBenchmarkDeck("青葉城西-二彈改");
+  const aobaDeck = findBenchmarkDeck("青葉城西-第三彈測試");
 
   it("由牌組卡片推得所屬學校", () => {
     expect(deckSchools(benchmarkDb, aobaDeck.ids)).toContain("青葉城西");
@@ -277,16 +277,16 @@ describe("M8 deck optimizer C1-3a card pool", () => {
 });
 
 describe("M8 deck optimizer C1-3a auto-lock", () => {
-  const aobaDeck = findBenchmarkDeck("青葉城西-二彈改");
+  const aobaDeck = findBenchmarkDeck("青葉城西-第三彈測試");
 
   it("把張數 >= 4 的核心卡鎖定在 ceil(count/2)，低張數卡不鎖", () => {
     const locks = new Map(autoLockCoreCards(benchmarkDb, aobaDeck.ids).map((entry) => [entry.id, entry.minCount]));
 
-    expect(locks.get("HV-P01-033")).toBe(5); // 9 張 → 5
+    expect(locks.get("HV-P01-033")).toBe(3); // 5 張 → 3
     expect(locks.get("HV-P01-035")).toBe(3); // 6 張 → 3
     expect(locks.get("HV-P01-039")).toBe(3); // 6 張 → 3
-    expect(locks.get("HV-P01-041")).toBe(2); // 4 張 → 2
-    expect(locks.get("HV-P01-087")).toBe(3); // 5 張事件 → 3
+    expect(locks.get("HV-P01-041")).toBeUndefined(); // 2 張，不自動鎖
+    expect(locks.get("HV-P01-087")).toBe(2); // 4 張事件 → 2
     expect(locks.has("HV-P01-042")).toBe(false); // 2 張，不鎖
   });
 
@@ -307,7 +307,7 @@ describe("M8 deck optimizer C1-3a auto-lock", () => {
 });
 
 describe("M8 deck optimizer C1-3b candidate generator", () => {
-  const aobaDeck = findBenchmarkDeck("青葉城西-二彈改");
+  const aobaDeck = findBenchmarkDeck("青葉城西-第三彈測試");
 
   it("在候選卡池與核心鎖定下產生小幅 candidate deck", () => {
     const lockedCards = autoLockCoreCards(benchmarkDb, aobaDeck.ids);
@@ -319,7 +319,7 @@ describe("M8 deck optimizer C1-3b candidate generator", () => {
       objectiveProfile: "preserve-current",
       maxReplacements: 2,
       evaluationConfig: {
-        opponents: ["音駒-預組"],
+        opponents: ["音駒-音駒-三彈官方"],
         policy: "heuristic-v2",
         opponentPolicy: "heuristic-v2",
         preset: "smoke",
@@ -345,7 +345,7 @@ describe("M8 deck optimizer C1-3b candidate generator", () => {
       objectiveProfile: "preserve-current",
       maxReplacements: 1,
       evaluationConfig: {
-        opponents: ["音駒-預組"],
+        opponents: ["音駒-音駒-三彈官方"],
         policy: "heuristic-v2",
         opponentPolicy: "heuristic-v2",
         preset: "smoke",

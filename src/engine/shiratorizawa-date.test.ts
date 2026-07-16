@@ -209,13 +209,13 @@ describe("白鳥沢", () => {
   });
 });
 
-describe("完成定義：白鳥沢／伊達工業／混合 完整對局", () => {
-  it("白鳥沢白板軸 vs 伊達攔網軸；伊達攔網軸改 vs 混合垃圾場", async () => {
+describe("完成定義：白鳥沢／伊達工業完整對局", () => {
+  it("白鳥沢三彈優化 vs 伊達攔網軸改；伊達 vs 青葉城西", async () => {
     const { heuristicAiDecision } = await import("../ai/heuristic");
     const load = async (name: string) => ((await import(`../../data/decks/${name}.json`)) as { default: { cards: { id: string; count: number }[] } }).default.cards.flatMap((c) => Array(c.count).fill(c.id) as string[]);
     const pairs: [string, string][] = [
-      ["白鳥沢-白板軸", "伊達工業-攔網軸"],
-      ["伊達工業-攔網軸改", "混合學校-垃圾場"],
+      ["白鳥沢-三彈優化", "伊達工業-攔網軸改_韋宏"],
+      ["伊達工業-攔網軸改_韋宏", "青葉城西-第三彈測試_調整C萬用體"],
     ];
     for (const [a, b] of pairs) {
       const deckA = await load(a);

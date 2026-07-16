@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { createGame, applyDecision, canChooseBlock, deployableUids } from "./engine";
+import { createGame, applyDecision, canChooseBlock, deployableUids, validateGameDeck } from "./engine";
 import { randomAiDecision } from "../ai/random";
 import type { CardDb, Decision, GameState, PlayerId } from "./types";
 import type { Card } from "../data/types";
 import cardsJson from "../../data/cards.json";
 import deckKarasuno from "../../data/decks/烏野-預組.json";
-import deckNekoma from "../../data/decks/音駒-預組.json";
+import deckNekoma from "../../data/decks/音駒-音駒-三彈官方.json";
 
 // ---------- 合成香草卡 ----------
 
@@ -32,6 +32,24 @@ const WEAK = mkChar("T-WEAK", "ルーキー", { s: 1, b: 1, r: 1, t: 1, a: 1 });
 
 const testDb: CardDb = new Map([ACE, LIB, WALL, SETTER, WEAK].map((c) => [c.id, c]));
 const uniformDeck = (id: string) => Array(40).fill(id) as string[];
+
+describe("對局牌組 preflight", () => {
+  it("在 renderer 建局前回報非 40 張牌組", () => {
+    expect(validateGameDeck(testDb, uniformDeck(ACE.id).slice(0, 39))).toContainEqual({
+      code: "size",
+      message: "牌組須正好 40 張（目前 39 張）",
+    });
+  });
+
+  it("回報未知卡片，讓入口能顯示警告而不是白畫面", () => {
+    const deck = uniformDeck(ACE.id);
+    deck[0] = "UNKNOWN";
+    expect(validateGameDeck(testDb, deck)).toContainEqual({
+      code: "unknown-card",
+      message: "含未知卡片：UNKNOWN",
+    });
+  });
+});
 
 /** 推進輔助：依 pendingDecision 餵入決策 */
 function feed(db: CardDb, s: GameState, d: Decision): GameState {
