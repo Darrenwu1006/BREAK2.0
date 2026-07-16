@@ -1,0 +1,21 @@
+{
+ "name": "青葉城西-及川岩泉控制",
+ "school": "青葉城西",
+ "source": "decks/青葉城西/及川岩泉控制.csv",
+ "cards": [
+  { "id": "HV-P01-034", "count": 1 },
+  { "id": "HV-P03-058", "count": 3 },
+  { "id": "HV-P03-059", "count": 4 },
+  { "id": "HV-P01-036", "count": 4 },
+  { "id": "HV-P03-006", "count": 3 },
+  { "id": "HV-P01-037", "count": 4 },
+  { "id": "HV-P01-038", "count": 4 },
+  { "id": "HV-P02-058", "count": 2 },
+  { "id": "HV-P03-008", "count": 2 },
+  { "id": "HV-P01-039", "count": 2 },
+  { "id": "HV-P01-042", "count": 3 },
+  { "id": "HV-P01-086", "count": 3 },
+  { "id": "HV-P01-087", "count": 2 },
+  { "id": "HV-P01-088", "count": 3 }
+ ]
+}
