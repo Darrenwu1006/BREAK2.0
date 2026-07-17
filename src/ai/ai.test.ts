@@ -1,9 +1,11 @@
 // AI 對戰測試：啟發式 AI 應穩定贏過隨機 AI（雙方輪流先後手、固定種子可重現）
 import { describe, it, expect } from "vitest";
 import { createGame, applyDecision } from "../engine/engine";
-import type { CardDb, GameState, PlayerId } from "../engine/types";
+import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import type { Card } from "../data/types";
-import { heuristicAiDecision, heuristicProfileForDeckAxes } from "./heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckAxes, isImmediateOneTouchBlocker } from "./heuristic";
+import { enumerateCandidates, type CoachActionEstimate } from "./coach";
+import { __ismctsTest } from "./ismcts";
 import { randomAiDecision } from "./random";
 import cardsJson from "../../data/cards.json";
 
@@ -220,6 +222,78 @@ describe("M5 Heuristic v2 決策品質", () => {
     if (d.type !== "deploy-block") throw new Error(`expected deploy-block, got ${d.type}`);
     expect(d.uids).not.toBeNull();
     if (d.uids) expect(d.center).toBe(yamaguchi);
+  });
+
+  it("One Touch 路線只登場來源卡於中央，不為湊 DP 多消耗一張手牌", () => {
+    const s = bareState(["HV-P02-049", "HV-P03-072", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
+    const tendo = uidOf(s, 0, "HV-P02-049");
+    s.turnPlayer = 0;
+    s.phase = "block";
+    s.op = { owner: 1, value: 7, source: "attack" };
+    s.pendingDecision = { player: 0, type: "deploy-block" };
+
+    const decision = heuristicAiDecision(db, s);
+    expect(decision).toEqual({ type: "deploy-block", uids: [tendo], center: tendo, nameChoices: {} });
+
+    let resolved = applyDecision(db, s, decision);
+    expect(resolved.pendingDecision?.type).toBe("effect-confirm");
+    resolved = applyDecision(db, resolved, heuristicAiDecision(db, resolved));
+    expect(resolved.phase).toBe("draw");
+    expect(resolved.players[0].hand).toHaveLength(6);
+    expect(resolved.players[0].blockCenter).toContain(tendo);
+    expect(resolved.players[0].drop).not.toContain(tendo);
+  });
+
+  it("One Touch 單張中央會優先進入搜尋候選，近似勝率時壓過雙張消耗", () => {
+    const s = bareState(["HV-P02-049", "HV-P03-072", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
+    const tendo = uidOf(s, 0, "HV-P02-049");
+    const semi = uidOf(s, 0, "HV-P03-072");
+    s.turnPlayer = 0;
+    s.phase = "block";
+    s.op = { owner: 1, value: 7, source: "attack" };
+    s.pendingDecision = { player: 0, type: "deploy-block" };
+    const lean: Decision = { type: "deploy-block", uids: [tendo], center: tendo, nameChoices: {} };
+    const wasteful: Decision = { type: "deploy-block", uids: [tendo, semi], center: semi, nameChoices: {} };
+
+    expect(enumerateCandidates(db, s, 3, wasteful)[0]).toEqual(lean);
+
+    const estimate = (decision: Decision, winRate: number, sampleCount: number): CoachActionEstimate => ({
+      decision,
+      label: "test",
+      winRate,
+      confidence: 0.6,
+      sampleCount,
+      wins: Math.round(winRate * sampleCount),
+      errors: 0,
+      maxSteps: 0,
+      principalLine: [],
+      explanation: "test",
+    });
+    const selected = __ismctsTest.chooseRootTieBreakBest(
+      db,
+      s,
+      [estimate(wasteful, 0.6, 100), estimate(lean, 0.58, 80)],
+      0,
+      0.04,
+      false,
+    );
+    expect(selected?.decision).toEqual(lean);
+  });
+
+  it("One Touch 被禁止或 OP 條件未成立時，不套用單張節約路線", () => {
+    const s = bareState(["HV-P02-049", "HV-P03-072", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
+    const tendo = uidOf(s, 0, "HV-P02-049");
+    s.turnPlayer = 0;
+    s.phase = "block";
+    s.op = { owner: 1, value: 7, source: "attack" };
+    s.pendingDecision = { player: 0, type: "deploy-block" };
+    s.restrictions.push({ player: 0, banOneTouch: true, setNo: s.setNo, activeTurn: s.turnNo, desc: "test" });
+
+    expect(isImmediateOneTouchBlocker(db, s, 0, tendo)).toBe(false);
+
+    s.restrictions = [];
+    s.op = { owner: 1, value: 3, source: "attack" };
+    expect(isImmediateOneTouchBlocker(db, s, 0, tendo)).toBe(false);
   });
 
   it("攔網軸 profile 會在接球可行時仍優先考慮可過判定的攔網", () => {

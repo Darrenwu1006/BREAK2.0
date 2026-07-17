@@ -1,6 +1,6 @@
 import { applyDecision, deployableUids, effParam, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { heuristicAiDecision } from "./heuristic";
+import { heuristicAiDecision, isImmediateOneTouchBlocker } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import {
   decisionLabel,
@@ -336,6 +336,28 @@ function chooseRootTieBreakBest(
     (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
   );
   if (close.length <= 1) return null;
+  const isOneTouchDeployment = (item: CoachActionEstimate): boolean =>
+    item.decision.type === "deploy-block" &&
+    item.decision.uids !== null &&
+    item.decision.uids.some((uid) => isImmediateOneTouchBlocker(db, state, perspective, uid));
+  // [Codex 2026-07-17] 若 robust best 是 One Touch 路線，近似勝率候選先比手牌成本。
+  // 多張方案仍可保留，但必須超出 root delta（live 預設 4%）才能壓過單張方案。
+  if (isOneTouchDeployment(robustBest)) {
+    const oneTouchClose = close.filter(isOneTouchDeployment);
+    if (oneTouchClose.length > 1) {
+      return oneTouchClose
+        .slice()
+        .sort((a, b) => {
+          const aDecision = a.decision as Extract<Decision, { type: "deploy-block" }>;
+          const bDecision = b.decision as Extract<Decision, { type: "deploy-block" }>;
+          const countDelta = (aDecision.uids?.length ?? Infinity) - (bDecision.uids?.length ?? Infinity);
+          if (countDelta !== 0) return countDelta;
+          const aCenterIsSource = aDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, aDecision.center) ? 1 : 0;
+          const bCenterIsSource = bDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, bDecision.center) ? 1 : 0;
+          return bCenterIsSource - aCenterIsSource || b.sampleCount - a.sampleCount || b.winRate - a.winRate;
+        })[0]!;
+    }
+  }
   // [Claude 2026-07-02] Phase H H5 v2：贏面已近乎確定（robust best winRate 達門檻）時，「近似平手」的
   // deploy-attack 候選集裡改偏「用最少攻擊點數就夠贏」，把多餘資源留給未來——但**只對 deploy-attack
   // 生效**，且只比「這手實際花的攻擊點數」這一個乾淨維度，不碰 rootDecisionPressureScore。
@@ -671,6 +693,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
 export const __ismctsTest = {
   newNode,
   iterate,
+  chooseRootTieBreakBest,
   shouldStopForRootConvergence,
   confidenceFromRate,
 };

@@ -2,7 +2,7 @@ import { applyDecision, autoPickCards, blockDeployMax, canChooseBlock, canDeploy
 import { cloneStateForSearch } from "../engine/search-clone";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import type { CourtArea } from "../engine/dsl";
-import { heuristicAiDecision } from "./heuristic";
+import { heuristicAiDecision, isImmediateOneTouchBlocker } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
 import { evaluateStateValue, explainValue, type ValueExplanation } from "./rollout-value";
@@ -478,10 +478,16 @@ export function enumerateCandidates(db: CardDb, state: GameState, limit: number,
       for (let index = 0; index < state.players[p].setArea.length; index++) decisions.push({ type: "pick-set-card", index });
       break;
     case "deploy-block": {
-      const opts = deployableUids(db, state, p, "block")
+      const allOpts = deployableUids(db, state, p, "block")
         .slice()
-        .sort((a, b) => cardParam(db, state, b, "block") - cardParam(db, state, a, "block"))
-        .slice(0, 7);
+        .sort((a, b) => cardParam(db, state, b, "block") - cardParam(db, state, a, "block"));
+      const opts = allOpts.slice(0, 7);
+      // [Codex 2026-07-17] One Touch 會直接跳過攔網判定；先放入「來源單張中央」，
+      // 避免 candidateLimit 只留下任意的雙張組合，導致側邊角色白白進棄牌區。
+      const leanOneTouch = allOpts
+        .filter((uid) => isImmediateOneTouchBlocker(db, state, p, uid))
+        .map((uid): Decision => ({ type: "deploy-block", uids: [uid], center: uid, nameChoices: blockNameChoices(db, state, p, [uid]) ?? {} }));
+      decisions.unshift(...leanOneTouch);
       decisions.push({ type: "deploy-block", uids: null });
       const maxN = Math.min(3, blockDeployMax(state, p));
       for (let size = 1; size <= maxN; size++) {

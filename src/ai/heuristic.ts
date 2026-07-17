@@ -8,6 +8,7 @@ import type { Card } from "../data/types";
 import type { Action, CharaFilter, Condition, Cost, CourtArea, EffectDef, ParamName, SkillDef } from "../engine/dsl";
 import type { Awaiting, CardDb, Decision, GameState, PendingItem, PlayerId } from "../engine/types";
 import { autoPickCards, blockDeployMax, canChooseBlock, charasOf, deployableUids, effParam, freeOptions, topChara } from "../engine/engine";
+import { isSkillInvalid } from "../engine/conditions";
 import { pickDeployName } from "./util";
 
 type Area = CourtArea;
@@ -284,6 +285,40 @@ function skillOf(card: Card, index: number): SkillDef | null {
   return effectOf(card)?.skills[index] ?? null;
 }
 
+function directlyGrantsOneTouch(db: CardDb, state: GameState, p: PlayerId, action: Action): boolean {
+  if (action.op === "keyword") return action.name === "ワンタッチ";
+  if (action.op !== "gate" || (action.costs?.length ?? 0) > 0 || conditionWeight(db, state, p, action.cond) !== 1) return false;
+  return action.then.some((child) => child.op === "keyword" && child.name === "ワンタッチ");
+}
+
+/**
+ * 當前登場後可無條件立即解決 One Touch 的攔網手。
+ *
+ * 刻意排除鷲尾 P01-051 這類「棄牌組頂後再判定所屬」的機率路線：
+ * 快速 AI 不能把不確定觸發當成必定跳過攔網判定。
+ */
+export function isImmediateOneTouchBlocker(db: CardDb, state: GameState, p: PlayerId, uid: number): boolean {
+  if (isSkillInvalid(db, state, p, uid)) return false;
+  if (
+    state.restrictions.some(
+      (restriction) =>
+        restriction.player === p &&
+        restriction.banOneTouch &&
+        restriction.setNo === state.setNo &&
+        restriction.activeTurn === state.turnNo,
+    )
+  ) return false;
+  const effect = effectOf(cardOf(db, state, uid));
+  return !!effect?.skills.some(
+    (skill) =>
+      skill.kind === "passive" &&
+      skill.trigger.on === "deploy" &&
+      (!skill.areaIcons || skill.areaIcons.includes("block")) &&
+      "actions" in skill &&
+      skill.actions.some((action) => directlyGrantsOneTouch(db, state, p, action)),
+  );
+}
+
 function paramOf(db: CardDb, state: GameState, uid: number, area: Area): number {
   return cardOf(db, state, uid).params?.[area] ?? 0;
 }
@@ -451,7 +486,24 @@ function blockPlanCost(db: CardDb, state: GameState, p: PlayerId, uids: number[]
 function bestBlockPlan(db: CardDb, state: GameState, p: PlayerId, minDp: number, weights: HeuristicV2Weights): BlockPlan | null {
   const maxN = Math.min(3, blockDeployMax(state, p));
   if (maxN <= 0) return null;
-  const pool = deployableUids(db, state, p, "block")
+  const deployable = deployableUids(db, state, p, "block");
+  const oneTouch = deployable
+    .filter((uid) => isImmediateOneTouchBlocker(db, state, p, uid))
+    .sort((a, b) => futureCardValue(db, state, p, b, weights) - futureCardValue(db, state, p, a, weights))[0];
+  if (oneTouch !== undefined) {
+    const name = nameForBlock(db, state, p, oneTouch, new Set());
+    if (name) {
+      const nameChoices = name !== cardOf(db, state, oneTouch).nameJa ? { [oneTouch]: name } : {};
+      return {
+        uids: [oneTouch],
+        center: oneTouch,
+        nameChoices,
+        dp: paramOf(db, state, oneTouch, "block"),
+        cost: blockPlanCost(db, state, p, [oneTouch], oneTouch, minDp, weights),
+      };
+    }
+  }
+  const pool = deployable
     .slice()
     .sort((a, b) => paramOf(db, state, b, "block") - paramOf(db, state, a, "block"))
     .slice(0, 8);
