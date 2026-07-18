@@ -17,6 +17,7 @@ import type { DeckMeta } from "../shared/deckMeta";
 import { pendingReplaySetFeedback, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
 import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
+import { CardInfoPanel } from "./game/CardInfoPanel";
 import { DecisionRail } from "./game/DecisionRail";
 import { LabCardCounter, LabCoachPanel, LabSettingsPanel, type LabCoachState, type RailTool } from "./game/RailTools";
 import {
@@ -24,8 +25,8 @@ import {
   EffectConfirmModal,
   EffectOptionModal,
   ResolvePendingModal,
-  ServeRightsModal,
   SetFeedbackModal,
+  ServeRightsModal,
   SettlementModal,
 } from "./game/overlays";
 import { usePlayback } from "./game/usePlayback";
@@ -37,7 +38,7 @@ import { ZONE_LABEL } from "./presentation/textRenderer";
 import type { TimelineEntry } from "./presentation/timeline";
 import { replaceBannerDismissTimer } from "./presentation/bannerHold";
 import { BoardScene } from "./scene/BoardScene";
-import { CameraRig, LAB_CAMERA_BASE } from "./scene/CameraRig";
+import { CameraRig, CameraViewportOffset, LAB_CAMERA_BASE } from "./scene/CameraRig";
 import { zoneAnchor } from "./scene/layout";
 import { applyBlockPreview, applyMovedPileTargets, applyReadingFrame, computePlacements, locateReadingCard, mergePlacements, readingCardsForZone, type InspectZone, type ReadingCardRef } from "./scene/placements";
 import { canUseInPlaceEffectSelection } from "../shared/selection";
@@ -133,22 +134,23 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const [speed, setSpeedState] = useState(2); // [使用者 2026-07-12] 預設 2x（1x 太慢）
   const [confirmExit, setConfirmExit] = useState(false);
   const [orbit, setOrbit] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+  // [使用者 2026-07-18] #4：預設減少鏡頭動態（banner 滑入滑出照常，見 CSS reducedMotion 區塊）。
+  const [reducedMotion, setReducedMotion] = useState(true);
   /** 觀戰模式：我方決策全部自動委託 heuristic（LP6 全流程驗證兼觀戰用） */
   const [autoPlay, setAutoPlay] = useState(false);
   const [opponentEngine, setOpponentEngine] = useState<"strong" | "heuristic">(() => {
     try { return localStorage.getItem("breaktcg-opponent-engine") === "heuristic" ? "heuristic" : "strong"; }
     catch { return "strong"; }
   });
-  const [railTool, setRailTool] = useState<RailTool>("detail");
+  const [railTool, setRailTool] = useState<RailTool>("log");
   const [coach, setCoach] = useState<LabCoachState>({ status: "idle" });
   const [inspectTarget, setInspectTarget] = useState<InspectTarget | null>(null);
   /** 多選（mulligan 換牌／攔網登場）＋攔網中央指定＋攔網選名佇列 */
   const [boardSel, setBoardSel] = useState<number[]>([]);
   const [blockCenter, setBlockCenter] = useState<number | null>(null);
   const [blockNames, setBlockNames] = useState<{ queue: { uid: number; names: string[] }[]; chosen: Record<number, string> } | null>(null);
-  const [feedbackRevision, setFeedbackRevision] = useState(0);
   const replaySaved = useRef(false);
+  const [feedbackRevision, setFeedbackRevision] = useState(0);
   // 預設節奏 2x（初次掛載套用到 timeline）
   useEffect(() => { setSpeed(2); }, [setSpeed]);
   const [aiThinking, setAiThinking] = useState<{ budgetMs: number; startedAt: number } | null>(null);
@@ -435,7 +437,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       if (event.key === "Escape") {
         event.preventDefault();
         if (railTool === "coach" || railTool === "counter") {
-          setRailTool("detail");
+          setRailTool("log");
           return;
         }
         setInspectTarget(null);
@@ -552,7 +554,6 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   }, [setPaused]);
 
   const inspectPile = useCallback((player: 0 | 1, zone: "drop" | "eventArea"): void => {
-    setRailTool("detail");
     setInspectTarget({ player, zone });
     setPaused(true);
   }, [setPaused]);
@@ -593,8 +594,13 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   }, [autoPlay, controller, pendingSetFeedback]);
 
   // 對手設定：強敵走 SO-ISMCTS worker；快速走 heuristic。兩者共用相同決策入口。
+  // [使用者 2026-07-18] #1：閱讀 Guts／牌堆（inspectTarget）不得中斷對手運算——
+  // 條件收斂成單一布林：inspect 開閉在「不該重啟」的情況下不改變它，worker 得以續跑；
+  // 演出暫停中（閱讀時）也允許先算（結果套用後演出照常凍結，關閉閱讀才補播）。
+  const opponentShouldThink = !fatalError && !pendingSetFeedback && controller.awaitingOpponent && (!view.playing || inspectTarget !== null);
+  const rawPendingDecision = engine.pendingDecision;
   useEffect(() => {
-    if (fatalError || view.playing || inspectTarget || pendingSetFeedback || !controller.awaitingOpponent) {
+    if (!opponentShouldThink) {
       setAiThinking(null);
       return;
     }
@@ -657,7 +663,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     return () => {
       worker.terminate();
     };
-  }, [controller, db, expanded, fatalError, inspectTarget, markPlaying, view.playing, pd, opponentEngine, pendingSetFeedback]);
+  }, [controller, db, expanded, markPlaying, opponentShouldThink, rawPendingDecision, opponentEngine]);
 
   // Coach 僅在 drawer 開啟時啟動，並以當前 replay/pending/rng 快取。
   useEffect(() => {
@@ -837,7 +843,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   };
   const applyCoach = (decision: Decision): void => {
     if (!decide(decision)) return;
-    setRailTool("detail");
+    setRailTool("log");
     setActionNotice("已採用 Coach 建議・Cmd+Z 撤回");
   };
   const recordSetFeedback = (choice: ReplaySetFeedbackChoice, note?: string): void => {
@@ -853,7 +859,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     setActionNotice(choice === "skipped" ? `已略過 Set ${pendingSetFeedback.setNo} 回饋` : `已保存 Set ${pendingSetFeedback.setNo} 的當下想法`);
   };
   const hasDecisionOverlay = !!myPd && ["serve-rights", "effect-confirm", "effect-option", "resolve-pending", "deploy-block"].includes(myPd.type);
-  const showIntegratedDecision = !!myPd && !hasDecisionOverlay && !gameOver && !inspectTarget;
+  const showIntegratedDecision = !!myPd && !hasDecisionOverlay && !gameOver && !inspectTarget && !deployType;
 
   // [Codex 2026-07-11] CP6 前置：ui-lab 沿用正式 ReplaySession，完整場結束只存一次。
   useEffect(() => {
@@ -924,6 +930,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
             />
           </Suspense>
           <PlaybackTicker tick={tick} />
+          <CameraViewportOffset railRatio={0.2} />
           <CameraRig pushed={pushed && !reducedMotion} enabled={!orbit && !reducedMotion} />
           {orbit && <OrbitControls target={[0, 0, 0.6]} enablePan={false} minPolarAngle={0.15} maxPolarAngle={1.35} minDistance={6} maxDistance={20} />}
         </Canvas>
@@ -963,9 +970,6 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
                 </div>
               ) : (
                 <div className={styles.decisionActions}>
-                  {deployType && (
-                    <button className={styles.btnDanger} onClick={() => decide({ type: deployType, uid: null } as Decision)}>不登場</button>
-                  )}
                   {myPd.type === "defense-choice" && (
                     <>
                       <button className={styles.btn} disabled={!canChooseBlock(engine)} onClick={() => decide({ type: "defense-choice", choice: "block" })}>攔網</button>
@@ -976,11 +980,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
                     <button className={styles.btn} onClick={() => decide({ type: "mulligan", returnUids: boardSel })}>{boardSel.length ? `換 ${boardSel.length} 張` : "不換牌"}</button>
                   )}
                   {myPd.type === "free" && (
-                    <>
-                      <button className={styles.btn} onClick={() => decide({ type: "free", action: "pass" })}>結束步驟{freeActionCount ? `（放棄 ${freeActionCount} 個行動）` : ""}</button>
-                      <span className={styles.dangerDivider} aria-hidden="true" />
-                      <button className={styles.btnDanger} onClick={() => confirmLost ? decide({ type: "free", action: "lost" }) : setConfirmLost(true)}>{confirmLost ? "再次確認 Lost" : "宣告 Lost"}</button>
-                    </>
+                    <button className={styles.btn} onClick={() => decide({ type: "free", action: "pass" })}>結束步驟{freeActionCount ? `（放棄 ${freeActionCount} 個行動）` : ""}</button>
                   )}
                 </div>
               )}
@@ -1008,13 +1008,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
 
       <DecisionRail
         view={railView}
-        card={inspectedCard}
-        cardImage={hoveredCardImg}
         presentationLines={view.subtitles}
         log={engine.log}
         tool={railTool}
         onToolChange={setRailTool}
-        onDrawerClose={() => setRailTool("detail")}
+        onDrawerClose={() => setRailTool("log")}
         settingsContent={<LabSettingsPanel speed={speed} reducedMotion={reducedMotion} autoPlay={autoPlay} opponentEngine={opponentEngine} onSpeed={changeSpeed} onReducedMotion={setReducedMotion} onAutoPlay={setAutoPlay} onOpponentEngine={changeOpponentEngine} onExit={() => setConfirmExit(true)} />}
         drawerContent={railTool === "coach" ? <LabCoachPanel state={engine} coach={coach} onApply={applyCoach} /> : railTool === "counter" ? <LabCardCounter db={db} state={engine} /> : null}
         onLogHover={onLogHover}
@@ -1022,9 +1020,23 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
 
       {/* [使用者 2026-07-11] 所有常用決策回到左側 80% 舞台中央；rail 只負責資訊。 */}
       <div className={styles.stageInteractionLayer}>
-        <div className={styles.stageToolbar}>
-          <button className={styles.btnGhost} disabled={!controller.canUndo} onClick={undoDecision}>Undo {controller.undoDepth ? `(${controller.undoDepth})` : ""}</button>
-          {import.meta.env.DEV && <button className={styles.btnGhost} onClick={() => setOrbit((o) => !o)}>{orbit ? "鎖定鏡頭" : "開發視角"}</button>}
+        {/* [使用者 2026-07-18] 輪二：卡片資訊面板與右上工具列（不登場鈕）同欄對齊，直接出現不做動畫。 */}
+        {inspectedCard && (
+          <div className={styles.cardInfoFloating}>
+            <CardInfoPanel card={inspectedCard} cardImage={hoveredCardImg} />
+          </div>
+        )}
+        <div className={styles.stageUtilityStack}>
+          <div className={styles.stageToolbar}>
+            <button className={styles.btnGhost} disabled={!controller.canUndo} onClick={undoDecision}>Undo {controller.undoDepth ? `(${controller.undoDepth})` : ""}</button>
+            {import.meta.env.DEV && <button className={styles.btnGhost} onClick={() => setOrbit((o) => !o)}>{orbit ? "鎖定鏡頭" : "開發視角"}</button>}
+          </div>
+          {(deployType || myPd?.type === "free") && (
+            <div className={styles.dangerDock} aria-label="Lost 與不登場">
+              {deployType && <button className={styles.btnDanger} onClick={() => decide({ type: deployType, uid: null } as Decision)}>不登場（Lost）</button>}
+              {myPd?.type === "free" && <button className={styles.btnDanger} onClick={() => confirmLost ? decide({ type: "free", action: "lost" }) : setConfirmLost(true)}>{confirmLost ? "再次確認 Lost" : "宣告 Lost"}</button>}
+            </div>
+          )}
         </div>
 
         {shellNotice && !fatalError && (

@@ -36,23 +36,27 @@
   overflow: hidden;
 }
 
-.reducedMotion .banner,
-.reducedMotion .bannerHeavy,
+/* [使用者 2026-07-18] #4：減少鏡頭動態只管鏡頭與面板轉場；
+   banner 的左進右出屬演出語彙，reducedMotion 下照常播放（不列入下方清單）。 */
 .reducedMotion .judgeHold,
 .reducedMotion .judgeBreak,
 .reducedMotion .railDrawer,
+.reducedMotion .statusSlot,
+.reducedMotion .rallyTrack button,
+.reducedMotion .railTabs button,
 .reducedMotion :global(.ui-lab-effective-value.is-modified) {
   animation: none !important;
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .banner, .bannerHeavy, .judgeHold, .judgeBreak, .railDrawer, :global(.ui-lab-effective-value.is-modified) { animation: none !important; }
-  .railFooter { transition: none; }
+  .judgeHold, .judgeBreak, .railDrawer, :global(.ui-lab-effective-value.is-modified) { animation: none !important; }
+  .statusSlot, .rallyTrack button, .railTabs button { transition: none !important; }
 }
 
 .stage {
   position: absolute;
-  inset: 0 var(--rail-width) 0 0;
+  inset: 0;
   min-width: 0;
 }
 
@@ -68,6 +72,7 @@
   z-index: 12;
   box-sizing: border-box;
   width: min(420px, calc(80vw - 360px));
+  height: auto;
   min-height: 48px;
   padding: 10px 13px;
   border: 2px solid var(--line-strong);
@@ -76,6 +81,9 @@
   box-shadow: var(--shadow-hard);
   color: var(--ink);
   font-family: "Noto Sans TC", system-ui, sans-serif;
+  interpolate-size: allow-keywords;
+  transform-origin: top left;
+  transition: width 280ms cubic-bezier(.2, .8, .2, 1), height 240ms cubic-bezier(.2, .8, .2, 1), min-height 240ms ease, padding 180ms ease;
   animation: statusSlotIn 180ms ease-out both;
 }
 .statusSlotInteractive { width: min(940px, calc(80vw - 230px)); }
@@ -261,13 +269,15 @@
 
 .decisionRail {
   position: absolute;
-  inset: 0 0 0 auto;
-  width: var(--rail-width);
+  inset: 10px 10px 10px auto;
+  width: calc(var(--rail-width) - 10px);
   display: grid;
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
-  border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, #ffffff, #f1f3f5);
-  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: var(--shadow-hard);
   color: var(--ink);
   font-family: "Noto Sans TC", system-ui, sans-serif;
   z-index: 8;
@@ -281,8 +291,8 @@
   border-bottom: 1px solid var(--line);
   background: var(--paper-card);
 }
-.railTabs button { min-width: 0; padding: 6px 2px; border: 1px solid var(--line); background: transparent; color: var(--ink-3); font-size: 11px; font-weight: 700; cursor: pointer; }
-.railTabs button:hover { border-color: var(--line-strong); color: var(--ink); }
+.railTabs button { min-width: 0; padding: 6px 2px; border: 1px solid var(--line); background: transparent; box-shadow: none; color: var(--ink-3); font-size: 11px; font-weight: 700; cursor: pointer; transition: transform 140ms ease, border-color 140ms ease, color 140ms ease, background 140ms ease; }
+.railTabs button:hover { border-color: var(--line-strong); color: var(--ink); transform: translateY(-1px); }
 .railTabs .railTabActive { border-color: var(--line-strong); background: var(--ink); color: var(--on-ink); }
 
 .railHeader {
@@ -292,6 +302,7 @@
   gap: 10px;
   padding: 14px 15px 11px;
   border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
 }
 
 .railHeader > div:first-child { min-width: 0; }
@@ -305,6 +316,7 @@
   gap: 8px;
   padding: 10px 12px 46px;
   border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
 }
 
 .playerSummary {
@@ -345,17 +357,19 @@
   margin: 0;
   padding: 11px 14px 9px;
   border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
   list-style: none;
 }
 .rallyTrack li { position: relative; flex: 1; min-width: 0; text-align: center; }
-.rallyTrack button { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.rallyTrack button { width: 100%; padding: 0; border: 0; background: transparent; box-shadow: none; color: inherit; cursor: pointer; transition: transform 150ms ease, color 150ms ease; }
 .rallyTrack button:disabled { cursor: default; }
+.rallyTrack button:not(:disabled):hover { transform: translateY(-2px); }
 .rallyTrack li:not(:last-child)::after { content: ""; position: absolute; top: 4px; left: calc(50% + 5px); width: calc(100% - 10px); height: 1px; background: var(--line); }
 .rallyTrack li span { position: relative; z-index: 1; display: block; width: 9px; height: 9px; margin: 0 auto 4px; border: 1px solid var(--line-2); border-radius: 50%; background: var(--fill-subtle-2); }
 .rallyTrack small { display: block; overflow: hidden; color: var(--ink-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .rally_done span { border-color: #6389a8 !important; background: #6389a8 !important; }
 .rally_done small { color: var(--ink-3); }
-.rally_current span { border-color: #e68942 !important; background: #e68942 !important; box-shadow: 0 0 10px rgba(230, 137, 66, 0.7); }
+.rally_current span { border-color: #e68942 !important; background: #e68942 !important; }
 .rally_current small { color: #b26a1f; font-weight: 800; }
 .rallyFocused small { color: #c8890c !important; }
 .rallyFocused span { outline: 2px solid rgba(255, 212, 94, .32); outline-offset: 2px; }
@@ -371,19 +385,21 @@
   height: 100%;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 13px 14px 137px;
+  padding: 13px 14px;
+  background: var(--paper-card);
 }
 .railDrawer {
   position: absolute;
-  top: 0;
+  top: 10px;
   right: var(--rail-width);
-  bottom: 0;
+  bottom: 10px;
   z-index: 10;
   width: var(--drawer-width);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   border-left: 2px solid var(--line-strong);
   border-right: 1px solid var(--line);
+  border-radius: 12px 0 0 12px;
   background: var(--paper-card);
   box-shadow: -10px 0 0 rgba(20, 24, 28, .12);
   color: var(--ink);
@@ -396,6 +412,34 @@
 .railDrawer > header span { color: var(--ink-3); font: 10px/1.2 "IBM Plex Mono", monospace; letter-spacing: .12em; }
 .railDrawer > header strong { font-size: 18px; }
 .railDrawerBody { min-height: 0; overflow-y: auto; }
+/* [使用者 2026-07-18] #2：場邊浮動卡片資訊面板——與 statusSlot／rail 同一套元件語言
+   （白卡底＋粗墨框＋硬邊位移陰影）。
+   [使用者 2026-07-18] 輪二：定位改與右上工具列／不登場鈕同欄（stageInteractionLayer 內，
+   right 對齊 stageUtilityStack）；hover 面板不做進場動畫、不做捲軸——內容全攤開、字級縮小。 */
+.cardInfoFloating {
+  position: absolute;
+  top: 88px;
+  right: 14px;
+  box-sizing: border-box;
+  width: 252px;
+  padding: 10px 12px 12px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-hard);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  pointer-events: auto;
+}
+.cardInfoFloating .cardTitleBox strong { font-size: 14px; }
+.cardInfoFloating .railParams strong { font-size: 14px; }
+.cardInfoFloating .railSkill { font-size: 12px; line-height: 1.55; padding: 7px 8px; }
+.cardInfoFloating .railSkillTiming b { font-size: 10px; }
+/* 注釋（效果說明）直接攤開，不做 details 折疊 */
+.cardInfoNotes { margin-top: 7px; border-top: 1px dashed var(--line-2); padding-top: 6px; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
+.cardInfoNotes > span { color: var(--ink-2); font-weight: 700; }
+.cardInfoNotes ul { display: grid; gap: 4px; margin: 4px 0 0; padding-left: 16px; }
+
 .railIdleInfo { display: grid; min-height: 100%; place-content: center; padding: 24px; text-align: center; }
 .railIdleInfo span { color: var(--ink-3); font-size: 12px; font-weight: 800; letter-spacing: .14em; }
 .railIdleInfo p { margin: 8px 0 0; color: var(--ink-3); font-size: 14px; line-height: 1.55; }
@@ -469,8 +513,21 @@
 .railParams span, .railParams small { display: block; color: var(--ink-3); font-size: 11px; }
 .railParams strong { display: block; margin: 1px 0; font-family: "IBM Plex Mono", monospace; font-size: 16px; }
 
-.railSkill { margin: 10px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--fill-subtle); font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
-.railAnnotation { margin: 6px 0 0; padding: 6px 8px; border-left: 2px solid var(--line-2); background: var(--fill-subtle); color: var(--ink-3); font-size: 12px; line-height: 1.45; font-style: italic; }
+.railSkillTiming { display: grid; gap: 5px; margin-top: 10px; }
+.railSkillTiming > span { color: var(--ink-3); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.railSkillTiming > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.railSkillTiming b { padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1.45; }
+.railTimingBadge { border: 1px solid #547a9b; background: #547a9b; color: #fff; }
+.railAreaBadge { border: 1px solid #71808c; background: transparent; color: var(--ink-2); }
+.railRestrictionBadge { border: 1px solid #b87820; background: rgba(184, 120, 32, .08); color: #8a5a1f; }
+.railSkill { margin-top: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--fill-subtle); font-size: 14px; line-height: 1.62; white-space: pre-wrap; }
+.railSkill p { margin: 0; }
+.railKeyword { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 4px; background: #26343f; color: #fff; font-size: 12px; font-weight: 700; line-height: 1.55; white-space: nowrap; }
+.railMachineBadge { display: inline-block; margin-top: 7px; padding: 1px 6px; border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink-3); font-size: 10px; line-height: 1.5; }
+.railExplanation, .railOriginal { margin-top: 7px; border-top: 1px dashed var(--line-2); color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+.railExplanation summary, .railOriginal summary { padding: 7px 0 2px; color: var(--ink-2); font-weight: 700; cursor: pointer; }
+.railExplanation ul { display: grid; gap: 5px; margin: 5px 0 0; padding-left: 18px; }
+.railOriginal p { margin: 5px 0 0; padding: 7px; border-left: 2px solid var(--line-2); background: var(--fill-subtle); white-space: pre-wrap; }
 .unavailableReason { margin: 7px 0 0; color: #8a5a1f; font-size: 12px; line-height: 1.45; }
 .unavailableMore { margin-top: 5px; color: var(--ink-3); font-size: 11px; }
 
@@ -521,42 +578,16 @@
 .unavailableMore summary { color: #8a5a1f; cursor: pointer; }
 .unavailableMore ul { margin: 5px 0 0; padding-left: 18px; }
 
-.railFooter {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 124px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--line);
+.railLogPanel {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  transition: height 280ms cubic-bezier(0.25, 1, 0.5, 1);
-  background: var(--paper-card);
-  z-index: 10;
-}
-
-.railFooterExpanded {
-  height: 100% !important;
-  border-top: 1px solid var(--line-2);
-  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.5);
-  background: var(--paper-card);
 }
 
 .footerHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .footerTitleGroup { display: flex; align-items: center; gap: 8px; }
 .footerTitleGroup strong { font-size: 12px; letter-spacing: .1em; }
 
-.logExpandBtn {
-  padding: 2px 6px;
-  border: 1px solid var(--line-2);
-  border-radius: 4px;
-  background: var(--fill-subtle);
-  color: #0052a4;
-  font-size: 10px;
-  cursor: pointer;
-  transition: background 150ms;
-}
 .logFocusChip {
   padding: 2px 6px;
   border: 1px solid rgba(255, 212, 94, .35);
@@ -566,10 +597,6 @@
   font-size: 10px;
   cursor: pointer;
 }
-.logExpandBtn:hover {
-  background: var(--line);
-}
-
 .logWrap {
   flex: 1;
   min-height: 0;
@@ -659,23 +686,30 @@
   z-index: 9;
 }
 
-.stageToolbar {
+.stageUtilityStack {
   position: absolute;
   top: 14px;
   right: 14px;
-  display: flex;
-  gap: 6px;
+  display: grid;
+  justify-items: end;
+  gap: 7px;
   pointer-events: auto;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+.stageToolbar {
+  display: flex;
+  gap: 6px;
+}
+
 .stageToolbar button { padding: 5px 9px; font-size: 10px; }
+.dangerDock { display: flex; justify-content: flex-end; }
+.dangerDock button { padding: 5px 9px; font-size: 10px; }
 .gameMenu { position: relative; font-size: 10px; }
 .gameMenu summary { cursor: pointer; list-style: none; padding: 5px 9px; border: 1px solid var(--line-2); background: var(--paper-card); }
 .gameMenu[open] button { position: absolute; right: 0; top: calc(100% + 5px); width: 120px; }
 
 .numericContext { margin-bottom: 7px; color: var(--ink); font: 700 12px/1.35 "IBM Plex Mono", monospace; }
-.dangerDivider { width: 1px; min-height: 28px; margin: 0 4px; background: var(--line-2); }
 .actionChip { width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 8px; border: 1px solid var(--line-strong); background: var(--paper-card); color: var(--ink); cursor: pointer; }
 .actionChip:hover { background: var(--accent-orange); color: #fff; }
 
@@ -1004,6 +1038,26 @@
 .gutsBadgeHtml span { color: #8a5a1f; font-size: 8px; font-weight: 800; letter-spacing: .08em; }
 .gutsBadgeHtml strong { font-size: 13px; }
 .gutsBadgeHtml:hover { border-color: #c8890c; transform: translateY(-1px); }
+
+/* [使用者 2026-07-18] #3：event／棄牌區張數小徽章（中性墨色版 guts 徽章；點擊＝展開閱讀） */
+.pileCountBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .32);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: "IBM Plex Mono", monospace;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.pileCountBadge span { color: var(--ink-3); font-size: 8px; font-weight: 800; letter-spacing: .08em; }
+.pileCountBadge strong { font-size: 12px; }
+.pileCountBadge:hover { border-color: var(--line-strong); transform: translateY(-1px); }
 
 .readingGroupLabel {
   padding: 4px 8px;
@@ -1559,6 +1613,7 @@
 }
 
 .settlement {
+  width: min(680px, calc(100% - 32px));
   min-width: 340px;
   text-align: center;
 }

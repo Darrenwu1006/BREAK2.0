@@ -11,6 +11,7 @@ import type { ZoneId } from "../presentation/events";
 import { ZONE_LABEL } from "../presentation/textRenderer";
 import styles from "../UiLabApp.module.css";
 import { AnimatedCard } from "./AnimatedCard";
+import { BORDER_COLOR, CORNER_R, cardBodyGeometry, cardFaceGeometry, faceGeometry, roundedShape } from "./CardMesh";
 import { GlowFrame } from "./GlowFrame";
 import { blockSideAnchor, CARD_T, CARD_W, CARD_H, MAT_D, MAT_W, SLOT_H, SLOT_W, zoneAnchor } from "./layout";
 import type { BoardPlacements } from "./placements";
@@ -31,28 +32,22 @@ const BOARD_LABEL_EN: Partial<Record<ZoneId, string>> = {
   drop: "DISCARD",
 };
 
-/** 桌墊卡槽外框（官方對戰桌墊風）＋空槽時的文字指示。
- *  [使用者 2026-07-12] 匡線太淡＝加粗＋墨色，雙方場地都要明顯（呼應按鈕黑框元件風）。 */
-function SlotFrame(props: { x: number; z: number; label?: string; showLabel?: boolean }): React.JSX.Element {
-  const t = 0.036;
-  const line = <meshBasicMaterial color="#1b2128" transparent opacity={0.82} depthWrite={false} />;
+/** 桌墊卡槽（[使用者 2026-07-18] #5：匡線取消，改圓角灰色色塊）。
+ *  圓角 radius＝卡片同款 CORNER_R；陰影＝同幾何的深色偏移層（+x/+z），
+ *  呼應 DOM 元件 --shadow-hard 的硬邊位移「貼紙浮起」語言——平面幾何即可，毋須 shader。 */
+const SLOT_PLATE_GEO = faceGeometry(SLOT_W, SLOT_H, CORNER_R);
+/** [使用者 2026-07-18] 輪二：兩層更貼近，只留一點點位移。 */
+const PLATE_SHADOW_OFFSET: [number, number, number] = [0.03, -0.0015, 0.03];
+const PLATE_COLOR = "#d3d7db";
+const PLATE_SHADOW_COLOR = "#1b2128";
+function SlotPlate(props: { x: number; z: number; label?: string; showLabel?: boolean }): React.JSX.Element {
   return (
     <group position={[props.x, 0.006, props.z]}>
-      <mesh position={[0, 0, -SLOT_H / 2]}>
-        <boxGeometry args={[SLOT_W, 0.003, t]} />
-        {line}
+      <mesh geometry={SLOT_PLATE_GEO} position={PLATE_SHADOW_OFFSET} renderOrder={1}>
+        <meshBasicMaterial color={PLATE_SHADOW_COLOR} transparent opacity={0.3} depthWrite={false} />
       </mesh>
-      <mesh position={[0, 0, SLOT_H / 2]}>
-        <boxGeometry args={[SLOT_W, 0.003, t]} />
-        {line}
-      </mesh>
-      <mesh position={[-SLOT_W / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
-      </mesh>
-      <mesh position={[SLOT_W / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
+      <mesh geometry={SLOT_PLATE_GEO} renderOrder={2}>
+        <meshStandardMaterial color={PLATE_COLOR} roughness={0.95} transparent opacity={0.96} depthWrite={false} />
       </mesh>
       {props.label && props.showLabel && (
         <Html position={[0, 0.02, 0]} center style={{ pointerEvents: "none" }} zIndexRange={[1, 0]}>
@@ -64,62 +59,35 @@ function SlotFrame(props: { x: number; z: number; label?: string; showLabel?: bo
 }
 
 /**
- * 攔網橫條：左右 blockSide ＋ 中央 blockCenter 合為一整條橫式「隊型框」。
- * - 外框：一條統一細線矩形，橫跨三格寬
- * - 中央格：黑底填色（無邊框線），視覺上代表主攔網手位置
- * - 左右格：透明底，代表側翼
+ * 攔網橫條：左右 blockSide ＋ 中央 blockCenter 合為一整條橫式「隊型色塊」。
+ * [使用者 2026-07-18] #5：線框改整條圓角灰色色塊（radius 同卡片）＋硬邊位移陰影；
+ * 中央格以較深灰的圓角色塊疊在上面，仍代表主攔網手位置。
  */
 function BlockRow(props: { player: 0 | 1; hasCards: boolean }): React.JSX.Element {
   const p = props.player;
   const cen = zoneAnchor(p, "blockCenter");
   const side0 = blockSideAnchor(p, 0); // P0 右側；P1 左側
   const side1 = blockSideAnchor(p, 1); // P0 左側；P1 右側
-  const t = 0.036;
-  const lineColor = "#1b2128";
-  const lineOp = 0.82;
   // 橫條總寬 = 三格中心距 + 一格寬；P0 blockSide x 在 ±1.9，blockCenter x 在 0
   const leftX = Math.min(side0.x, side1.x, cen.x) - SLOT_W / 2;
   const rightX = Math.max(side0.x, side1.x, cen.x) + SLOT_W / 2;
   const barW = rightX - leftX;
   const barCX = (leftX + rightX) / 2;
   const barZ = cen.z;
-  const line = <meshBasicMaterial color={lineColor} transparent opacity={lineOp} depthWrite={false} />;
+  const barGeo = useMemo(() => faceGeometry(barW, SLOT_H, CORNER_R), [barW]);
   return (
     <group position={[0, 0.006, barZ]}>
-      {/* 中央攔網手格：黑底填色，微微高起，不帶外框線 */}
-      <mesh position={[cen.x, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[SLOT_W, SLOT_H]} />
-        <meshStandardMaterial color="#aab0b6" roughness={0.9} transparent opacity={0.5} depthWrite={false} />
+      {/* 整條色塊的硬邊位移陰影 */}
+      <mesh geometry={barGeo} position={[barCX + PLATE_SHADOW_OFFSET[0], PLATE_SHADOW_OFFSET[1], PLATE_SHADOW_OFFSET[2]]} renderOrder={1}>
+        <meshBasicMaterial color={PLATE_SHADOW_COLOR} transparent opacity={0.3} depthWrite={false} />
       </mesh>
-      {/* 整條外框（統一矩形）：上邊 */}
-      <mesh position={[barCX, 0, -SLOT_H / 2]}>
-        <boxGeometry args={[barW, 0.003, t]} />
-        {line}
+      {/* 整條圓角灰色色塊 */}
+      <mesh geometry={barGeo} position={[barCX, 0, 0]} renderOrder={2}>
+        <meshStandardMaterial color={PLATE_COLOR} roughness={0.95} transparent opacity={0.96} depthWrite={false} />
       </mesh>
-      {/* 下邊 */}
-      <mesh position={[barCX, 0, SLOT_H / 2]}>
-        <boxGeometry args={[barW, 0.003, t]} />
-        {line}
-      </mesh>
-      {/* 最左邊 */}
-      <mesh position={[leftX + t / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
-      </mesh>
-      {/* 最右邊 */}
-      <mesh position={[rightX - t / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
-      </mesh>
-      {/* 中央格左分隔線 */}
-      <mesh position={[cen.x - SLOT_W / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
-      </mesh>
-      {/* 中央格右分隔線 */}
-      <mesh position={[cen.x + SLOT_W / 2, 0, 0]}>
-        <boxGeometry args={[t, 0.003, SLOT_H]} />
-        {line}
+      {/* 中央攔網手格：較深灰圓角色塊，代表主攔網手位置 */}
+      <mesh geometry={SLOT_PLATE_GEO} position={[cen.x, 0.001, 0]} renderOrder={3}>
+        <meshStandardMaterial color="#aab0b6" roughness={0.9} transparent opacity={0.75} depthWrite={false} />
       </mesh>
       {/* 空槽標籤（整條） */}
       {!props.hasCards && (
@@ -142,12 +110,12 @@ function PlayerSlots(props: { player: 0 | 1; occupied: ReadonlySet<string> }): R
     <group>
       {zones.map((z) => {
         const a = zoneAnchor(p, z);
-        return <SlotFrame key={z} x={a.x} z={a.z} label={BOARD_LABEL_EN[z]} showLabel={show(z)} />;
+        return <SlotPlate key={z} x={a.x} z={a.z} label={BOARD_LABEL_EN[z]} showLabel={show(z)} />;
       })}
-      {/* 攔網橫條（含中央格黑底＋左右側翼）*/}
+      {/* 攔網橫條（含中央格深灰塊＋左右側翼）*/}
       <BlockRow player={p} hasCards={blockHasCards} />
-      {/* Set 卡選擇時卡片可展開，但桌墊底框始終只有一格。 */}
-      <SlotFrame {...zoneAnchor(p, "setArea")} label={BOARD_LABEL_EN.setArea} showLabel={show("setArea")} />
+      {/* Set 卡選擇時卡片可展開，但桌墊底塊始終只有一格。 */}
+      <SlotPlate {...zoneAnchor(p, "setArea")} label={BOARD_LABEL_EN.setArea} showLabel={show("setArea")} />
     </group>
   );
 }
@@ -223,20 +191,46 @@ function GridFloor(): React.JSX.Element {
  *  四周地面（含格線）壓低，桌墊即成「抬起的島」。頂面 y 與原桌墊一致，不動卡片座標。 */
 const MAT_TOP_Y = 0.004;
 const FLOOR_Y = -0.46; // 壓更低＝側面更高＝厚度更明顯
+/** [使用者 2026-07-18] 輪三：舞台板本體改圓角（extrude 圓角輪廓），外緣由灰匡線包覆。 */
+const SLAB_W = MAT_W + 2.4;
+const SLAB_D = MAT_D + 1.6;
+const SLAB_R = 0.6;
 function MatSlab(): React.JSX.Element {
-  const W = MAT_W + 2.4;
-  const D = MAT_D + 1.6;
   const h = MAT_TOP_Y - FLOOR_Y;
   const cy = (MAT_TOP_Y + FLOOR_Y) / 2;
+  // 圓角 extrude：材質群組 0＝頂/底 cap、1＝側牆（同 cardBodyGeometry 的視覺契約）
+  const geometry = useMemo(() => {
+    const geo = new THREE.ExtrudeGeometry(roundedShape(SLAB_W, SLAB_D, SLAB_R), {
+      depth: h,
+      bevelEnabled: false,
+      curveSegments: 24,
+    });
+    geo.translate(0, 0, -h / 2);
+    geo.rotateX(-Math.PI / 2);
+    return geo;
+  }, [h]);
   const mats = useMemo(() => {
     const top = new THREE.MeshStandardMaterial({ color: "#e9ebed", roughness: 0.92 });
     const side = new THREE.MeshStandardMaterial({ color: "#15181d", roughness: 0.6 }); // 近黑側面＝立體厚度
-    // BoxGeometry 面序：[+x, -x, +y(頂), -y(底), +z, -z]
-    return [side, side, top, side, side, side];
+    return [top, side];
+  }, []);
+  return <mesh geometry={geometry} material={mats} position={[0, cy, 0]} />;
+}
+
+/** 舞台外匡線（[使用者 2026-07-18] 輪二→輪三）：貼著舞台板圓角外緣的一圈灰線，
+ *  樣式同中線（#3f4954、50% 透明）——圓角矩形環（外形＝板緣、內洞＝板緣內縮線寬）。 */
+function MatOutline(): React.JSX.Element {
+  const geometry = useMemo(() => {
+    const t = 0.06; // 線寬（略粗於中線，包覆感）
+    const outer = roundedShape(SLAB_W, SLAB_D, SLAB_R);
+    outer.holes.push(roundedShape(SLAB_W - 2 * t, SLAB_D - 2 * t, Math.max(SLAB_R - t, 0.02)));
+    const geo = new THREE.ShapeGeometry(outer, 24);
+    geo.rotateX(-Math.PI / 2);
+    return geo;
   }, []);
   return (
-    <mesh position={[0, cy, 0]} material={mats}>
-      <boxGeometry args={[W, h, D]} />
+    <mesh geometry={geometry} position={[0, MAT_TOP_Y + 0.0018, 0]}>
+      <meshBasicMaterial color="#3f4954" transparent opacity={0.5} depthWrite={false} />
     </mesh>
   );
 }
@@ -260,6 +254,8 @@ function Table(props: { occupied: ReadonlySet<string> }): React.JSX.Element {
       <GridFloor />
       {/* 桌墊立體板（頂面淺色＋深色側面＝厚度立體感） */}
       <MatSlab />
+      {/* 舞台圓角灰匡線（中線同款樣式） */}
+      <MatOutline />
       {/* 中線（雙方分界） */}
       <mesh position={[0, MAT_TOP_Y + 0.003, 0]}>
         <boxGeometry args={[MAT_W + 2.1, 0.002, 0.05]} />
@@ -293,6 +289,8 @@ function useStripedEdge(count: number): THREE.CanvasTexture {
   }, [count]);
 }
 
+const PILE_FACE_GEO = cardFaceGeometry();
+
 /** 牌組/棄牌的「厚度」底座：n 張卡的實體疊 */
 function Pile(props: {
   count: number;
@@ -309,25 +307,30 @@ function Pile(props: {
     texture.anisotropy = 8;
   });
   const stripes = useStripedEdge(Math.max(props.count, 1));
-  const materials = useMemo(() => {
+  const h = Math.max(props.count, 1) * CARD_T;
+  const bodyGeometry = useMemo(() => cardBodyGeometry(h), [h]);
+  const { bodyMaterials, topMaterial } = useMemo(() => {
     const edge = new THREE.MeshStandardMaterial({ map: stripes, roughness: 0.95 });
-    const plain = new THREE.MeshStandardMaterial({ color: "#141210", roughness: 0.95 });
-    const top = props.topUrl ? new THREE.MeshStandardMaterial({ map: tex, roughness: 0.62 }) : plain;
-    return [edge, edge, top, plain, edge, edge];
-  }, [tex, stripes, props.topUrl]);
+    const cap = new THREE.MeshStandardMaterial({ color: BORDER_COLOR, roughness: 0.95 });
+    const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.62 });
+    return { bodyMaterials: [cap, edge], topMaterial: top };
+  }, [tex, stripes]);
   if (props.count <= 0) return null;
-  const h = props.count * CARD_T;
+  const handlers = {
+    onPointerDown: props.onInspect ? (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); props.onInspect?.(); } : undefined,
+    onPointerOver: props.onInspect ? (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = "pointer"; } : undefined,
+    onPointerOut: props.onInspect ? () => { document.body.style.cursor = ""; } : undefined,
+  };
   return (
-    <mesh
+    <group
       position={[props.position[0], h / 2, props.position[2]]}
       rotation={[0, props.rotY, 0]}
-      material={materials}
-      onPointerDown={props.onInspect ? (e) => { e.stopPropagation(); props.onInspect?.(); } : undefined}
-      onPointerOver={props.onInspect ? (e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; } : undefined}
-      onPointerOut={props.onInspect ? () => { document.body.style.cursor = ""; } : undefined}
     >
-      <boxGeometry args={[CARD_W, h, CARD_H]} />
-    </mesh>
+      <mesh geometry={bodyGeometry} material={bodyMaterials} {...handlers} />
+      {props.topUrl && (
+        <mesh geometry={PILE_FACE_GEO} material={topMaterial} position={[0, h / 2 + 0.0015, 0]} {...handlers} />
+      )}
+    </group>
   );
 }
 
@@ -375,19 +378,30 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
   const readingGroups = useMemo(() => cards.filter((card) => card.readingGroup), [cards]);
   const readingPanels = placements.readingPanels ?? [];
 
-  /** 佔用區（槽位標籤隱藏）＋ガッツ徽章資料 */
-  const { occupied, badges, stackKeys } = useMemo(() => {
+  /** 佔用區（槽位標籤隱藏）＋ガッツ徽章＋event/棄牌張數徽章資料 */
+  const { occupied, badges, stackKeys, pileBadges } = useMemo(() => {
     const occupied = new Set<string>();
     const stackCount = new Map<string, number>();
+    // [使用者 2026-07-18] #3：event／棄牌總張數＝場上頂卡（cards）＋底疊（piles）合計
+    const pileTotals = new Map<string, number>();
     for (const p of placements.cards.values()) {
       occupied.add(`${p.player}:${p.zone}`);
       if (STACK_ZONES.has(p.zone)) {
         const k = `${p.player}:${p.zone}`;
         stackCount.set(k, (stackCount.get(k) ?? 0) + 1);
       }
+      if (p.zone === "drop" || p.zone === "eventArea") {
+        const k = `${p.player}:${p.zone}`;
+        pileTotals.set(k, (pileTotals.get(k) ?? 0) + 1);
+      }
     }
     for (const pile of placements.piles) {
       if (pile.count > 0) occupied.add(pile.key.startsWith("deck") ? `${pile.key.slice(4)}:deck` : "");
+      const m = pile.key.match(/^(drop|ev)([01])$/);
+      if (m && pile.count > 0) {
+        const k = `${m[2]}:${m[1] === "drop" ? "drop" : "eventArea"}`;
+        pileTotals.set(k, (pileTotals.get(k) ?? 0) + pile.count);
+      }
     }
     const stackKeys = new Set([...stackCount.entries()].filter(([, n]) => n > 1).map(([key]) => key));
     const badges = [...stackCount.entries()]
@@ -398,7 +412,15 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
         const a = zoneAnchor(player, zone);
         return { key: k, player, zone, x: a.x, z: a.z, guts: n - 1 };
       });
-    return { occupied, badges, stackKeys };
+    const pileBadges = [...pileTotals.entries()]
+      .filter(([, n]) => n > 0)
+      .map(([k, n]) => {
+        const [playerS, zone] = k.split(":") as [string, "drop" | "eventArea"];
+        const player = Number(playerS) as 0 | 1;
+        const a = zoneAnchor(player, zone);
+        return { key: `pile-${k}`, player, zone, x: a.x, z: a.z, count: n };
+      });
+    return { occupied, badges, stackKeys, pileBadges };
   }, [placements]);
 
   const setCursor = (c: string) => {
@@ -485,6 +507,25 @@ export function BoardScene(props: BoardSceneProps): React.JSX.Element {
             ? () => props.onPileInspect(Number(eventMatch[1]) as 0 | 1, "eventArea")
             : undefined;
         return <Pile key={key} {...p} shuffling={key === `deck${props.shufflingPlayer}`} onInspect={inspect} />;
+      })}
+      {/* [使用者 2026-07-18] #3：event／棄牌張數小徽章（點擊＝展開該牌堆閱讀） */}
+      {!props.readingFrameActive && pileBadges.map((b) => {
+        const bx = b.x + SLOT_W / 2 - 0.12;
+        const bz = b.z + (b.player === 0 ? -1 : 1) * (SLOT_H / 2 - 0.12);
+        const zoneLabel = b.zone === "drop" ? "棄牌" : "事件";
+        return (
+          <Html key={b.key} position={[bx, 0.12, bz]} center zIndexRange={[4, 0]}>
+            <button
+              type="button"
+              className={styles.pileCountBadge}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => props.onPileInspect(b.player, b.zone)}
+              aria-label={`${b.player === 0 ? "我方" : "對手"}${zoneLabel}區 ${b.count} 張，點擊查看`}
+            >
+              <span>{b.zone === "drop" ? "DROP" : "EV"}</span><strong>{b.count}</strong>
+            </button>
+          </Html>
+        );
       })}
       {/* ガッツ張數徽章回 DOM overlay：不再被卡面遮住；z-index 保持低於決策／提示層。 */}
       {!props.readingFrameActive && badges.map((b) => {

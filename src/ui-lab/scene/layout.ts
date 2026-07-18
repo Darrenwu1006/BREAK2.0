@@ -37,7 +37,8 @@ const P0_ANCHORS: Record<ZoneId, ZoneAnchor> = {
   attack: { x: 1.9, z: 3.0 },
   serve: { x: 3.6, z: 3.55 },
   eventArea: { x: -3.6, z: 3.55 },
-  setArea: { x: -4.75, z: 1.4 }, // 平時緊密疊放；pick-set-card 才展開（見 setAreaAnchor）
+  // [使用者 2026-07-18] #2：Set 區對齊 event 欄（同 x），讓出外側整條給浮動卡片資訊面板；敵我鏡像同步。
+  setArea: { x: -3.6, z: 1.4 }, // 平時緊密疊放；pick-set-card 才展開（見 setAreaAnchor）
   deck: { x: 5.15, z: 2.95 },
   drop: { x: 5.15, z: 1.05 },
   hand: { x: 0, z: 5.35 },

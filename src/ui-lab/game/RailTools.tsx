@@ -4,7 +4,14 @@ import type { CardDb, Decision, GameState } from "../../engine/types";
 import styles from "../UiLabApp.module.css";
 import { buildRemainingCardRows } from "./railCounter";
 
-export type RailTool = "detail" | "coach" | "counter" | "settings";
+// [使用者 2026-07-18] #2：卡片詳情移到場邊獨立面板（CardInfoPanel），rail 預設顯示紀錄。
+export type RailTool = "log" | "coach" | "counter" | "settings";
+export const RAIL_TOOL_TABS: readonly { tool: RailTool; label: string }[] = [
+  { tool: "log", label: "紀錄" },
+  { tool: "coach", label: "教練" },
+  { tool: "counter", label: "算牌" },
+  { tool: "settings", label: "設定" },
+];
 export type LabCoachState =
   | { status: "idle" }
   | { status: "loading"; fallback: Decision }
