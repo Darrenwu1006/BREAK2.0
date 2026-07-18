@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import type { Card } from "../../data/types";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import { effParam } from "../../engine/engine";
+import type { ReplaySetFeedbackTag, ReplaySetResult } from "../../shared/replayHistory";
 import { cardFrontUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
 import { ZONE_LABEL } from "../presentation/textRenderer";
@@ -259,6 +260,78 @@ export function BlockPickPanel(props: {
 }
 
 // ---- 結算 ----
+
+export const SET_FEEDBACK_OPTIONS: readonly { tag: ReplaySetFeedbackTag; label: string }[] = [
+  { tag: "push-for-set", label: "全力搶下這個 Set" },
+  { tag: "save-for-next-set", label: "為下一個 Set 保留資源" },
+  { tag: "build-resources", label: "按牌組計畫累積資源" },
+  { tag: "test-line", label: "測試特定打法" },
+  { tag: "gamble-key-piece", label: "在賭關鍵拼圖" },
+  { tag: "suspected-mistake", label: "我覺得自己打錯了" },
+  { tag: "forced-line", label: "手牌／局面讓我沒得選" },
+  { tag: "review-request", label: "我不確定，請幫我回看" },
+];
+
+export function SetFeedbackModal(props: {
+  result: ReplaySetResult;
+  onSubmit: (tag: ReplaySetFeedbackTag, note?: string) => void;
+  onSkip: () => void;
+}): React.JSX.Element {
+  const [selected, setSelected] = useState<ReplaySetFeedbackTag | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const playerWon = props.result.winner === HUMAN;
+  return (
+    <div className={`${styles.modalMask} ${styles.setFeedbackMask}`} role="dialog" aria-modal="true" aria-label={`Set ${props.result.setNo} 回饋`}>
+      <div className={`${styles.modal} ${styles.setFeedbackModal}`}>
+        <div className={styles.setFeedbackEyebrow}>
+          Set {props.result.setNo}・{playerWon ? "你拿下了" : "你失去了"}{props.result.kind === "match" ? "・比賽結束" : ""}
+        </div>
+        <div className={styles.setFeedbackTitle}>這個 Set，你原本在執行什麼計畫？</div>
+        <p className={styles.setFeedbackIntro}>選一個最主要的原因。這是你的當下假說，Replay 會保留牌面供賽後驗證。</p>
+        <div className={styles.setFeedbackGrid} aria-label="Set 主要意圖">
+          {SET_FEEDBACK_OPTIONS.map((option) => (
+            <button
+              key={option.tag}
+              type="button"
+              className={`${styles.setFeedbackChoice} ${selected === option.tag ? styles.setFeedbackChoiceSelected : ""}`}
+              aria-pressed={selected === option.tag}
+              onClick={() => setSelected(option.tag)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {noteOpen ? (
+          <label className={styles.setFeedbackNote}>
+            <span>補充文字（選填）</span>
+            <textarea
+              autoFocus
+              maxLength={160}
+              value={note}
+              placeholder="例如：沒賭到"
+              onChange={(event) => setNote(event.target.value)}
+            />
+            <small>{note.length}/160</small>
+          </label>
+        ) : (
+          <button type="button" className={styles.setFeedbackNoteToggle} onClick={() => setNoteOpen(true)}>＋ 補充文字</button>
+        )}
+        <div className={styles.setFeedbackActions}>
+          <button type="button" className={styles.btnGhost} onClick={props.onSkip}>略過</button>
+          <button
+            type="button"
+            className={styles.btn}
+            disabled={selected === null}
+            onClick={() => selected && props.onSubmit(selected, note)}
+          >
+            保存並繼續
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SettlementModal(props: {
   winner: PlayerId | null;

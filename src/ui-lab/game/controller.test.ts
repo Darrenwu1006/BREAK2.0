@@ -7,6 +7,7 @@ import nekomaDeck from "../../../data/decks/音駒-音駒-三彈官方.json";
 import { heuristicAiDecision } from "../../ai/heuristic";
 import type { Card } from "../../data/types";
 import type { CardDb, Decision } from "../../engine/types";
+import { pendingReplaySetFeedback } from "../../shared/replayHistory";
 import { HUMAN, LAB_UNDO_LIMIT, LabGameController } from "./controller";
 
 interface DeckJson {
@@ -155,5 +156,39 @@ describe("LabGameController", () => {
     c.decideOpponent(heuristicAiDecision(db, c.engine));
     expect(c.replay.entries.length).toBe(replayLength + 1);
     expect(c.replay.entries.at(-1)?.source).toBe("ai");
+  });
+
+  it("Set 結束可寫入一次原始回饋，Undo 跨回結果前會同步移除", () => {
+    const c = new LabGameController(db, decks, 20260718);
+    c.timeline.skip();
+    let target = pendingReplaySetFeedback(c.replay);
+    for (let step = 0; step < 600 && !target; step++) {
+      expect(c.awaitingHuman).toBe(true);
+      c.decide(heuristicAiDecision(db, c.engine));
+      c.timeline.skip();
+      target = pendingReplaySetFeedback(c.replay);
+    }
+    expect(target).not.toBeNull();
+    expect(c.recordSetFeedback({
+      setNo: target!.setNo,
+      anchorEntryIndex: target!.anchorEntryIndex,
+      choice: "build-resources",
+      note: "Set 1 先累積事件區",
+    })).toBe(true);
+    expect(c.recordSetFeedback({
+      setNo: target!.setNo,
+      anchorEntryIndex: target!.anchorEntryIndex,
+      choice: "suspected-mistake",
+    })).toBe(false);
+    expect(c.replay.setFeedback).toEqual([{
+      setNo: target!.setNo,
+      anchorEntryIndex: target!.anchorEntryIndex,
+      choice: "build-resources",
+      note: "Set 1 先累積事件區",
+    }]);
+
+    expect(c.undo()).toBe(true);
+    expect(c.replay.entries.length).toBeLessThanOrEqual(target!.anchorEntryIndex);
+    expect(c.replay.setFeedback).toEqual([]);
   });
 });

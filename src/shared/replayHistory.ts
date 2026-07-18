@@ -23,12 +23,46 @@ export interface ReplayEntry {
   logEnd: number;
 }
 
+/**
+ * Set 結束時由玩家記下的「當下意圖」。這些值是待賽後驗證的主觀假說，
+ * 不等同於系統對決策正確性的判定。
+ */
+export type ReplaySetFeedbackTag =
+  | "push-for-set"
+  | "save-for-next-set"
+  | "build-resources"
+  | "test-line"
+  | "gamble-key-piece"
+  | "suspected-mistake"
+  | "forced-line"
+  | "review-request";
+
+export type ReplaySetFeedbackChoice = ReplaySetFeedbackTag | "skipped";
+
+export interface ReplaySetFeedback {
+  setNo: number;
+  /** 產生 set-won／match-won 的 replay entry；Undo 截斷 future 時據此同步移除。 */
+  anchorEntryIndex: number;
+  choice: ReplaySetFeedbackChoice;
+  note?: string;
+}
+
+export interface ReplaySetResult {
+  setNo: number;
+  anchorEntryIndex: number;
+  winner: PlayerId;
+  loser: PlayerId;
+  kind: "set" | "match";
+}
+
 export interface ReplaySession {
   startedAt: string;
   seed: number;
   decks: [ReplayDeckSnapshot, ReplayDeckSnapshot];
   initialState: GameState;
   entries: ReplayEntry[];
+  /** 可選欄位以維持舊 Replay 向後相容；新對局固定初始化為空陣列。 */
+  setFeedback?: ReplaySetFeedback[];
   /** 單人練習曾回退並另走新分支；戰報可據此辨識非原始線性對局。 */
   rewound?: boolean;
   rewindCount?: number;
@@ -73,6 +107,7 @@ export function createReplaySession(
     ],
     initialState: structuredClone(initialState) as GameState,
     entries: [],
+    setFeedback: [],
   };
 }
 
@@ -109,7 +144,14 @@ export function appendReplayEntry(
 
 export function truncateReplaySession(session: ReplaySession, entryCount: number): ReplaySession {
   if (entryCount >= session.entries.length) return session;
-  return { ...session, entries: session.entries.slice(0, Math.max(0, entryCount)) };
+  const safeCount = Math.max(0, entryCount);
+  return {
+    ...session,
+    entries: session.entries.slice(0, safeCount),
+    ...(session.setFeedback
+      ? { setFeedback: session.setFeedback.filter((feedback) => feedback.anchorEntryIndex < safeCount) }
+      : {}),
+  };
 }
 
 export function stateAtReplayStep(session: ReplaySession, stepIndex: number): GameState {
@@ -127,6 +169,56 @@ function eventFromEntry(entry: ReplayEntry, predicate: (event: GameEvent) => boo
     if (log.event && predicate(log.event)) return log.event;
   }
   return null;
+}
+
+export function replaySetResults(session: ReplaySession): ReplaySetResult[] {
+  const results: ReplaySetResult[] = [];
+  for (const entry of session.entries) {
+    const event = eventFromEntry(entry, (candidate) => candidate.kind === "set-won" || candidate.kind === "match-won");
+    if (!event || (event.kind !== "set-won" && event.kind !== "match-won")) continue;
+    results.push({
+      setNo: event.setNo,
+      anchorEntryIndex: entry.index,
+      winner: event.winner,
+      loser: event.loser,
+      kind: event.kind === "match-won" ? "match" : "set",
+    });
+  }
+  return results;
+}
+
+/** 回傳最早一個尚未回答／略過的 Set，確保不會跨過漏填的 Set。 */
+export function pendingReplaySetFeedback(session: ReplaySession): ReplaySetResult | null {
+  const answered = new Set((session.setFeedback ?? []).map((feedback) => feedback.anchorEntryIndex));
+  return replaySetResults(session).find((result) => !answered.has(result.anchorEntryIndex)) ?? null;
+}
+
+/**
+ * 原始 Set 回饋一旦寫入便不覆寫；賽後補充會使用未來的獨立欄位，
+ * 避免把當下意圖與事後理解混在一起。
+ */
+export function appendReplaySetFeedback(
+  session: ReplaySession,
+  input: ReplaySetFeedback,
+): ReplaySession {
+  const targetExists = replaySetResults(session).some(
+    (result) => result.setNo === input.setNo && result.anchorEntryIndex === input.anchorEntryIndex,
+  );
+  if (!targetExists) return session;
+  if ((session.setFeedback ?? []).some((feedback) => feedback.anchorEntryIndex === input.anchorEntryIndex)) return session;
+  const note = input.note?.trim();
+  return {
+    ...session,
+    setFeedback: [
+      ...(session.setFeedback ?? []),
+      {
+        setNo: input.setNo,
+        anchorEntryIndex: input.anchorEntryIndex,
+        choice: input.choice,
+        ...(input.choice !== "skipped" && note ? { note } : {}),
+      },
+    ],
+  };
 }
 
 export function isKeyReplayEntry(entry: ReplayEntry): boolean {

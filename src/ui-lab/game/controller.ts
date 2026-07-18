@@ -11,7 +11,14 @@ import { heuristicAiDecision } from "../../ai/heuristic";
 import { applyDecision, createGame } from "../../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../../engine/types";
 import type { DeckMeta } from "../../shared/deckMeta";
-import { appendReplayEntry, createReplaySession, truncateReplaySession, type ReplaySession } from "../../shared/replayHistory";
+import {
+  appendReplayEntry,
+  appendReplaySetFeedback,
+  createReplaySession,
+  truncateReplaySession,
+  type ReplaySession,
+  type ReplaySetFeedback,
+} from "../../shared/replayHistory";
 import { derivePresentationEvents } from "../presentation/derive";
 import { PresentationTimeline, type PresentationBatch } from "../presentation/timeline";
 
@@ -88,6 +95,14 @@ export class LabGameController {
 
   metaOf(batch: PresentationBatch): BatchMeta | undefined {
     return this.meta.get(batch);
+  }
+
+  /** Set 結束軟暫停寫入玩家當下意圖；同一結果只接受第一次回饋。 */
+  recordSetFeedback(feedback: ReplaySetFeedback): boolean {
+    const next = appendReplaySetFeedback(this.replay, feedback);
+    if (next === this.replay) return false;
+    this.replay = next;
+    return true;
   }
 
   /** 人類決策入口：套用後自動推進到下一個人類互動點 */

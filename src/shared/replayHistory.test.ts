@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, GameState, PlayerId, PlayerState } from "../engine/types";
-import { appendReplayEntry, createReplaySession, keyReplayEntries, stateAtReplayStep, summarizeReplaySession, truncateReplaySession } from "./replayHistory";
+import {
+  appendReplayEntry,
+  appendReplaySetFeedback,
+  createReplaySession,
+  keyReplayEntries,
+  pendingReplaySetFeedback,
+  replaySetResults,
+  stateAtReplayStep,
+  summarizeReplaySession,
+  truncateReplaySession,
+} from "./replayHistory";
 import type { DeckMeta } from "./deckMeta";
 
 function player(hand: number[] = []): PlayerState {
@@ -60,6 +70,7 @@ describe("replay history helpers", () => {
     expect(session.startedAt).toBe("2026-06-19T00:00:00.000Z");
     expect(session.decks[0].label).toBe("烏野-測試");
     expect(session.initialState.log[0]?.text).toBe("initial");
+    expect(session.setFeedback).toEqual([]);
   });
 
   it("appends cloned before and after states for a decision", () => {
@@ -187,5 +198,77 @@ describe("replay history helpers", () => {
 
     expect(summary.matchWinner).toBe(1);
     expect(summary.setWins).toEqual([2, 3]);
+  });
+
+  it("records one immutable player intention per Set and keeps old Replay compatible", () => {
+    const initial = state("initial");
+    const setAfter = withLog(state("after-set"), "宣告 Lost", {
+      player: 0,
+      setNo: 1,
+      turnNo: 2,
+      text: "宣告 Lost",
+      event: { kind: "set-won", winner: 1, loser: 0, setNo: 1, loserSetRemaining: 1 },
+    });
+    const pass: Decision = { type: "free", action: "pass" };
+    const resultSession = appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, setAfter, "player");
+
+    expect(replaySetResults(resultSession)).toEqual([{
+      setNo: 1,
+      anchorEntryIndex: 0,
+      winner: 1,
+      loser: 0,
+      kind: "set",
+    }]);
+    expect(pendingReplaySetFeedback(resultSession)).toMatchObject({ setNo: 1, anchorEntryIndex: 0 });
+
+    const answered = appendReplaySetFeedback(resultSession, {
+      setNo: 1,
+      anchorEntryIndex: 0,
+      choice: "gamble-key-piece",
+      note: "  沒賭到  ",
+    });
+    expect(answered.setFeedback).toEqual([{
+      setNo: 1,
+      anchorEntryIndex: 0,
+      choice: "gamble-key-piece",
+      note: "沒賭到",
+    }]);
+    expect(pendingReplaySetFeedback(answered)).toBeNull();
+
+    const overwritten = appendReplaySetFeedback(answered, {
+      setNo: 1,
+      anchorEntryIndex: 0,
+      choice: "suspected-mistake",
+    });
+    expect(overwritten).toBe(answered);
+
+    const legacy = { ...resultSession };
+    delete legacy.setFeedback;
+    expect(pendingReplaySetFeedback(legacy)).toMatchObject({ setNo: 1 });
+  });
+
+  it("records an explicit skip and drops stale Set feedback when Undo truncates its anchor", () => {
+    const initial = state("initial");
+    const pass: Decision = { type: "free", action: "pass" };
+    const beforeSet = appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, state("middle"), "player");
+    const setAfter = withLog(state("after-set"), "宣告 Lost", {
+      player: 0,
+      setNo: 1,
+      turnNo: 2,
+      text: "宣告 Lost",
+      event: { kind: "set-won", winner: 1, loser: 0, setNo: 1, loserSetRemaining: 1 },
+    });
+    const resultSession = appendReplayEntry(beforeSet, state("set-before"), pass, setAfter, "ai");
+    const skipped = appendReplaySetFeedback(resultSession, {
+      setNo: 1,
+      anchorEntryIndex: 1,
+      choice: "skipped",
+      note: "不應保存",
+    });
+
+    expect(skipped.setFeedback).toEqual([{ setNo: 1, anchorEntryIndex: 1, choice: "skipped" }]);
+    const truncated = truncateReplaySession(skipped, 1);
+    expect(truncated.entries).toHaveLength(1);
+    expect(truncated.setFeedback).toEqual([]);
   });
 });

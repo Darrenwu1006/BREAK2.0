@@ -1131,6 +1131,101 @@
   margin-bottom: 4px;
 }
 
+/* Set 結束原始回饋：沿用正式 shell 的白卡、粗墨框與硬陰影，不改牌桌視覺語言。 */
+.setFeedbackMask { z-index: 15; }
+
+.setFeedbackModal {
+  box-sizing: border-box;
+  width: min(700px, calc(100% - 32px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  gap: 11px;
+}
+
+.setFeedbackEyebrow {
+  color: var(--accent-orange);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.setFeedbackTitle {
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.setFeedbackIntro {
+  margin: -3px 0 2px;
+  color: var(--ink-3);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.setFeedbackGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.setFeedbackChoice {
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.setFeedbackChoice:hover { transform: translateY(-1px); background: var(--fill-subtle); }
+.setFeedbackChoiceSelected,
+.setFeedbackChoiceSelected:hover { background: var(--ink); color: var(--on-ink); }
+
+.setFeedbackNoteToggle {
+  justify-self: start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: 700 11px/1.4 "Noto Sans TC", system-ui, sans-serif;
+  cursor: pointer;
+}
+.setFeedbackNoteToggle:hover { color: var(--accent-orange); }
+
+.setFeedbackNote { position: relative; display: grid; gap: 5px; }
+.setFeedbackNote > span { color: var(--ink-2); font: 700 11px/1.4 "Noto Sans TC", system-ui, sans-serif; }
+.setFeedbackNote textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  padding: 9px 10px 20px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  color: var(--ink);
+  font: 13px/1.5 "Noto Sans TC", system-ui, sans-serif;
+}
+.setFeedbackNote small { position: absolute; right: 8px; bottom: 6px; color: var(--ink-3); font-size: 9px; }
+
+.setFeedbackActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
 /* OP/DP 彈出（RevealLayer，drei Html） */
 .chip {
   padding: 5px 13px;

@@ -14,6 +14,7 @@ import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { blockDeployMax, canChooseBlock, deployLegality, deployNames, deployableUids, freeCardReasons, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry } from "../engine/types";
 import type { DeckMeta } from "../shared/deckMeta";
+import { pendingReplaySetFeedback, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
 import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { DecisionRail } from "./game/DecisionRail";
@@ -24,6 +25,7 @@ import {
   EffectOptionModal,
   ResolvePendingModal,
   ServeRightsModal,
+  SetFeedbackModal,
   SettlementModal,
 } from "./game/overlays";
 import { usePlayback } from "./game/usePlayback";
@@ -145,6 +147,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const [boardSel, setBoardSel] = useState<number[]>([]);
   const [blockCenter, setBlockCenter] = useState<number | null>(null);
   const [blockNames, setBlockNames] = useState<{ queue: { uid: number; names: string[] }[]; chosen: Record<number, string> } | null>(null);
+  const [feedbackRevision, setFeedbackRevision] = useState(0);
   const replaySaved = useRef(false);
   // 預設節奏 2x（初次掛載套用到 timeline）
   useEffect(() => { setSpeed(2); }, [setSpeed]);
@@ -192,7 +195,13 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
 
   // ---- 互動閘：佇列清空前不開放（spec §1.1） ----
   const engine: GameState = controller.engine;
-  const pd = view.playing || inspectTarget ? null : engine.pendingDecision;
+  const replayEntryCount = controller.replay.entries.length;
+  const replayFeedbackCount = controller.replay.setFeedback?.length ?? 0;
+  const pendingSetFeedback = useMemo(
+    () => pendingReplaySetFeedback(controller.replay),
+    [controller, replayEntryCount, replayFeedbackCount, feedbackRevision],
+  );
+  const pd = view.playing || inspectTarget || pendingSetFeedback ? null : engine.pendingDecision;
   const myPd = pd && pd.player === HUMAN ? pd : null;
   const effectCandidates = myPd?.type === "effect-cards" ? (myPd.candidates ?? []) : [];
   const effectCardsInPlace = myPd?.type === "effect-cards" && canUseInPlaceEffectSelection(engine, HUMAN, effectCandidates);
@@ -567,14 +576,25 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
 
   // 觀戰模式：演出空檔自動代打我方決策
   useEffect(() => {
-    if (!autoPlay || view.playing || !controller.awaitingHuman) return;
+    if (!autoPlay || view.playing || pendingSetFeedback || !controller.awaitingHuman) return;
     const t = window.setTimeout(() => decide(heuristicAiDecision(db, controller.engine), true), 80);
     return () => window.clearTimeout(t);
-  }, [autoPlay, view.playing, controller, db, decide, pd]);
+  }, [autoPlay, view.playing, controller, db, decide, pd, pendingSetFeedback]);
+
+  // 觀戰／全自動模式沒有玩家的主觀意圖，明確記為略過，維持自動跑完全場的用途。
+  useEffect(() => {
+    if (!autoPlay || !pendingSetFeedback) return;
+    const recorded = controller.recordSetFeedback({
+      setNo: pendingSetFeedback.setNo,
+      anchorEntryIndex: pendingSetFeedback.anchorEntryIndex,
+      choice: "skipped",
+    });
+    if (recorded) setFeedbackRevision((revision) => revision + 1);
+  }, [autoPlay, controller, pendingSetFeedback]);
 
   // 對手設定：強敵走 SO-ISMCTS worker；快速走 heuristic。兩者共用相同決策入口。
   useEffect(() => {
-    if (fatalError || view.playing || inspectTarget || !controller.awaitingOpponent) {
+    if (fatalError || view.playing || inspectTarget || pendingSetFeedback || !controller.awaitingOpponent) {
       setAiThinking(null);
       return;
     }
@@ -637,7 +657,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     return () => {
       worker.terminate();
     };
-  }, [controller, db, expanded, fatalError, inspectTarget, markPlaying, view.playing, pd, opponentEngine]);
+  }, [controller, db, expanded, fatalError, inspectTarget, markPlaying, view.playing, pd, opponentEngine, pendingSetFeedback]);
 
   // Coach 僅在 drawer 開啟時啟動，並以當前 replay/pending/rng 快取。
   useEffect(() => {
@@ -735,6 +755,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   }, []);
   const pushed = !!view.current && ["judge-revealed", "set-won", "match-won"].includes(view.current.event.kind);
   const gameOver = !view.playing && !engine.pendingDecision;
+  const showSetFeedback = !!pendingSetFeedback && !view.playing && !heldBanner && !inspectTarget && !fatalError && !autoPlay;
   const shown = view.displayed;
   /** rail 卡片詳情：合法性只使用 engine helper 已產生的集合，不在 UI 重寫規則。 */
   const legalCardUids = useMemo(() => new Set([...draggableUids, ...selectableUids]), [draggableUids, selectableUids]);
@@ -819,12 +840,24 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
     setRailTool("detail");
     setActionNotice("已採用 Coach 建議・Cmd+Z 撤回");
   };
+  const recordSetFeedback = (choice: ReplaySetFeedbackChoice, note?: string): void => {
+    if (!pendingSetFeedback) return;
+    const recorded = controller.recordSetFeedback({
+      setNo: pendingSetFeedback.setNo,
+      anchorEntryIndex: pendingSetFeedback.anchorEntryIndex,
+      choice,
+      ...(choice !== "skipped" && note?.trim() ? { note: note.trim() } : {}),
+    });
+    if (!recorded) return;
+    setFeedbackRevision((revision) => revision + 1);
+    setActionNotice(choice === "skipped" ? `已略過 Set ${pendingSetFeedback.setNo} 回饋` : `已保存 Set ${pendingSetFeedback.setNo} 的當下想法`);
+  };
   const hasDecisionOverlay = !!myPd && ["serve-rights", "effect-confirm", "effect-option", "resolve-pending", "deploy-block"].includes(myPd.type);
   const showIntegratedDecision = !!myPd && !hasDecisionOverlay && !gameOver && !inspectTarget;
 
   // [Codex 2026-07-11] CP6 前置：ui-lab 沿用正式 ReplaySession，完整場結束只存一次。
   useEffect(() => {
-    if (!gameOver || replaySaved.current) return;
+    if (!gameOver || pendingSetFeedback || replaySaved.current) return;
     replaySaved.current = true;
     void fetch("/api/replays", {
       method: "POST",
@@ -840,7 +873,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       console.error("[ui-lab] 自動儲存對戰紀錄錯誤:", err);
       setShellNotice(`本場已結束，但對戰紀錄尚未儲存：${err instanceof Error ? err.message : String(err)}`);
     });
-  }, [controller, gameOver]);
+  }, [controller, gameOver, pendingSetFeedback]);
 
   return (
     // 尺寸關鍵容器用 inline style：R3F 以 ResizeObserver 量測容器，冷載入時 CSS module
@@ -1086,7 +1119,15 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         )}
 
         {/* 結算（LP1） */}
-        {gameOver && (
+        {showSetFeedback && pendingSetFeedback && (
+        <SetFeedbackModal
+          result={pendingSetFeedback}
+          onSubmit={(tag, note) => recordSetFeedback(tag, note)}
+          onSkip={() => recordSetFeedback("skipped")}
+        />
+        )}
+
+        {gameOver && !pendingSetFeedback && (
         <SettlementModal
           winner={engine.winner}
           schools={schools}
