@@ -6,10 +6,11 @@ function deck(school: string): ApiDeck {
 }
 
 describe("buildCardBackChoices", () => {
-  it("提供所有專屬學校卡背與通用卡背", () => {
+  it("提供所有專屬卡背與通用卡背", () => {
     const choices = buildCardBackChoices([]);
 
     expect(choices.custom.map((choice) => choice.value)).toEqual([
+      "ユース",
       "伊達工業",
       "梟谷",
       "烏野",
@@ -26,8 +27,8 @@ describe("buildCardBackChoices", () => {
   it("保留既有牌組的其他分類，且不重複專屬卡背", () => {
     const choices = buildCardBackChoices([deck("ユース"), deck("烏野"), deck("ユース")]);
 
-    expect(choices.fallback).toContainEqual({ value: "ユース", label: "ユース（通用卡背）" });
-    expect(choices.fallback.filter((choice) => choice.value === "ユース")).toHaveLength(1);
+    expect(choices.custom).toContainEqual({ value: "ユース", label: "ユース" });
+    expect(choices.fallback.some((choice) => choice.value === "ユース")).toBe(false);
     expect(choices.fallback.some((choice) => choice.value === "烏野")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "../data/types";
-import { cardFrontUrl } from "./assets";
+import { cardBackUrl, cardFrontUrl } from "./assets";
 
 const card = {
   id: "CARD-A",
@@ -19,5 +19,11 @@ describe("cardFrontUrl", () => {
 
   it("無效選擇安全退回預設卡面", () => {
     expect(cardFrontUrl(card, "missing")).toContain("cards/default.webp");
+  });
+});
+
+describe("cardBackUrl", () => {
+  it("ユース使用專屬完整卡背", () => {
+    expect(decodeURIComponent(cardBackUrl("ユース"))).toContain("backs/ユース.png");
   });
 });

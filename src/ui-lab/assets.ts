@@ -14,6 +14,7 @@ export function cardFrontUrl(card: Card, printing?: string): string | null {
 }
 
 const BACK_EXTENSIONS: Record<string, "png" | "jpg"> = {
+  ユース: "png",
   伊達工業: "png",
   梟谷: "png",
   烏野: "png",

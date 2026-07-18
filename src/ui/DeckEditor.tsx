@@ -268,7 +268,7 @@ export function DeckEditor(props: { db: CardDb; decks: ApiDeck[]; onExit: () => 
             style={{ width: 150 }}
           >
             <option value="" disabled>選擇卡背…</option>
-            <optgroup label="學校卡背">
+            <optgroup label="專屬卡背">
               {cardBackChoices.custom.map((choice) => (
                 <option key={choice.value} value={choice.value}>{choice.label}</option>
               ))}
