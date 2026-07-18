@@ -6,7 +6,10 @@ import type { CoachReport } from "../ai/coach";
 import type { ValueExplanation } from "../ai/rollout-value";
 import { CardView, displayName, cardRarity } from "./CardView";
 import type { DeckMeta } from "../shared/deckMeta";
+import { buildCardSkillPresentation, getGlossaryItems } from "../shared/cardSkillPresentation";
 import type { InspectedCard } from "./gameTypes";
+
+export { extractLeadingSkillMarkers, getGlossaryItems } from "../shared/cardSkillPresentation";
 
 export const PHASE_NAME: Record<Phase, string> = {
   setup: "準備",
@@ -114,149 +117,6 @@ function ParamsTable(props: { card: Card; state: GameState; db: CardDb; uid?: nu
   );
 }
 
-const KEYWORD_TRANSLATIONS: Record<string, string> = {
-  "登場": "登場",
-  "アタックエリア": "攻擊區",
-  "トスエリア": "托球區",
-  "レシーブエリア": "接球區",
-  "ブロックエリア": "攔網區",
-  "サーブエリア": "發球區",
-  "コート": "球場",
-  "手札": "手牌",
-  "サーブ": "發球",
-  "レシーブ": "接球",
-  "トス": "托球",
-  "アタック": "攻擊",
-  "阻擊": "攔網",
-  "阻擊フェイズ": "攔網階段",
-  "ブロック": "攔網",
-  "抽牌": "抽牌",
-  "一回合一次": "一回合一次",
-  "一回限り": "僅限一次",
-  "ターン1": "一回合一次",
-  "ブロックフェイズ": "攔網階段",
-  "レシーブフェイズ": "接球階段",
-  "ドロー": "抽牌",
-};
-
-function translateKeyword(kw: string): string {
-  if (KEYWORD_TRANSLATIONS[kw]) return KEYWORD_TRANSLATIONS[kw]!;
-  return kw
-    .replace(/ドシャット/g, "攔死")
-    .replace(/ワンタッチ/g, "一次觸球")
-    .replace(/One Touch/g, "一次觸球")
-    .replace(/ツーアタック/g, "二次進攻")
-    .replace(/Aパス/g, "A Pass")
-    .replace(/銅牆鐵壁/g, "銅牆鐵壁")
-    .replace(/虛攻/g, "虛攻")
-    .replace(/ブロックアウト/g, "打手出界")
-    .replace(/バックアタック/g, "後排攻擊");
-}
-
-export function extractLeadingSkillMarkers(text: string): { markers: string[]; body: string } {
-  const markers: string[] = [];
-  let body = text.trimStart();
-  while (true) {
-    const match = body.match(/^\[=([^\]]+)\]\s*/);
-    if (!match) break;
-    markers.push(match[1]!);
-    body = body.slice(match[0].length).trimStart();
-  }
-  return { markers, body };
-}
-
-/** 把技能文裡的 [=關鍵字] 標記轉成可讀的小 chip，而不是裸露的 [=ターン1]。 */
-function renderSkillText(text: string) {
-  return text.split(/(\[=[^\]]+\])/g).map((part, index) => {
-    const marker = part.match(/^\[=([^\]]+)\]$/);
-    if (marker) {
-      const translated = translateKeyword(marker[1]!);
-      return <span key={index} className="skill-kw">{translated}</span>;
-    }
-    return <span key={index}>{part}</span>;
-  });
-}
-
-interface GlossaryItem {
-  key: string;
-  name: string;
-  definition: string;
-}
-
-const GLOSSARY_LIST: GlossaryItem[] = [
-  {
-    key: "ドシャット",
-    name: "攔死",
-    definition: "攔網成功時的遲發效果。該回合結束時，我方的進攻點數（OP）直接設為該數值。"
-  },
-  {
-    key: "ワンタッチ",
-    name: "一次觸球",
-    definition: "使對手的進攻點數（OP）減少該數值，並立即跳過進行中的攔網階段，進入我方的抽牌階段。"
-  },
-  {
-    key: "フェイント",
-    name: "虛攻",
-    definition: "攻擊回合結束時觸發。我方該回合的進攻點數（OP）設為該數值，且下一個對手回合中，對手不能登場攔網角色。"
-  },
-  {
-    key: "ブロックアウト",
-    name: "打手出界",
-    definition: "攻擊後的遲發效果。在下一個對手回合中，若對手登場「原始攔網點數（元々のブロックポイント）」小於或等於該數值的第一名攔網角色時，對手直接宣告 Lost。"
-  },
-  {
-    key: "Aパス",
-    name: "A Pass",
-    definition: "當我方的托球角色登場時，其托球點數增加該數值。"
-  },
-  {
-    key: "ツーアタック",
-    name: "二次進攻",
-    definition: "將我方的進攻點數（OP）設為該數值，並立即跳過托球階段，直接進入我方的結束階段，且下一個對手回合中，對手不能登場攔網角色。"
-  },
-  {
-    key: "バックアタック",
-    name: "後排攻擊",
-    definition: "可將此卡登場至我方的攻擊區，並將該角色的攻擊點數設為該數值。"
-  },
-  {
-    key: "ターン1",
-    name: "一回合一次",
-    definition: "當此技能的任何一部分被解決（生效）後，本回合中，與該卡同名的我方所有卡片技能全部無效化。"
-  }
-];
-
-export function getGlossaryItems(card: Card): GlossaryItem[] {
-  const skillText = (card.skillZh || "") + " " + (card.skillJa || "");
-  const matched: GlossaryItem[] = [];
-
-  for (const item of GLOSSARY_LIST) {
-    let hasMatch = false;
-    if (item.key === "ドシャット") {
-      hasMatch = /ドシャット|攔死/.test(skillText);
-    } else if (item.key === "ワンタッチ") {
-      hasMatch = /ワンタッチ|一次觸球|One Touch/.test(skillText);
-    } else if (item.key === "フェイント") {
-      hasMatch = /フェイント|虛攻/.test(skillText);
-    } else if (item.key === "ブロックアウト") {
-      hasMatch = /ブロックアウト|打手出界/.test(skillText);
-    } else if (item.key === "Aパス") {
-      hasMatch = /Aパス|A\s*Pass/i.test(skillText);
-    } else if (item.key === "ツーアタック") {
-      hasMatch = /ツーアタック|二次進攻|二次攻擊/.test(skillText);
-    } else if (item.key === "バックアタック") {
-      hasMatch = /バックアタック|後排攻擊|後衛攻擊/.test(skillText);
-    } else if (item.key === "ターン1") {
-      hasMatch = /ターン1|一回合一次/.test(skillText) || card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
-    }
-
-    if (hasMatch) {
-      matched.push(item);
-    }
-  }
-  return matched;
-}
-
 export function CardSkillGlossary({ card }: { card: Card }) {
   const items = getGlossaryItems(card);
   if (items.length === 0) return null;
@@ -277,33 +137,22 @@ export function CardSkillGlossary({ card }: { card: Card }) {
 
 /** 共用：技能發動時機/限制 badge ＋技能文（含關鍵字 chip）。對戰詳情與牌組編輯器共用。 */
 export function CardSkillInfo({ card }: { card: Card }) {
-  const timingList = card.timing.filter((t) => t !== "回合1");
-  const oncePerTurn = card.timing.includes("回合1") || !!card.skillJa?.includes("ターン1");
-  const timingLabel = card.type === "EVENT" ? "可使用時機" : "發動時機";
-  const skillText = card.skillZh ?? card.skillJa;
-  const normalizedSkill = skillText ? extractLeadingSkillMarkers(skillText) : { markers: [], body: "" };
-  const timingBadges = [...timingList];
-  for (const marker of normalizedSkill.markers) {
-    const translated = translateKeyword(marker);
-    if (marker === "ターン1" || translated === "一回合一次") continue;
-    if (!timingBadges.includes(translated)) timingBadges.push(translated);
-  }
-  const hasOncePerTurn = oncePerTurn || normalizedSkill.markers.some((marker) => marker === "ターン1");
-  const displaySkillText = normalizedSkill.body || skillText;
-  if (timingBadges.length === 0 && !hasOncePerTurn && !displaySkillText) return null;
+  const presentation = buildCardSkillPresentation(card);
+  const displaySkillText = presentation.body.map((segment) => segment.text).join("");
+  if (presentation.timingBadges.length === 0 && !presentation.oncePerTurn && !displaySkillText) return null;
   return (
     <>
-      {(timingBadges.length > 0 || hasOncePerTurn) && (
+      {(presentation.timingBadges.length > 0 || presentation.oncePerTurn) && (
         <div className="timing-row">
-          <span className="timing-label">{timingLabel}</span>
-          {timingBadges.map((t) => <span key={t} className="timing-badge">{t}</span>)}
-          {hasOncePerTurn && <span className="restrict-badge">一回合一次</span>}
+          <span className="timing-label">{presentation.timingLabel}</span>
+          {presentation.timingBadges.map((badge) => <span key={badge.label} className="timing-badge">{badge.label}</span>)}
+          {presentation.oncePerTurn && <span className="restrict-badge">一回合一次</span>}
         </div>
       )}
       {displaySkillText && (
         <div className="skill-text">
           <div className="skill-body-text">
-            {renderSkillText(displaySkillText)}
+            {presentation.body.map((segment, index) => <span key={index} className={segment.kind === "keyword" ? "skill-kw" : undefined}>{segment.text}</span>)}
             {card.skillZhStatus === "machine" && <span className="badge-machine">翻譯待確認</span>}
           </div>
           <CardSkillGlossary card={card} />

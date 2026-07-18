@@ -29,6 +29,8 @@ describe("CP6 rail view-model", () => {
     const blocked = buildCardInspectView(db, controller.engine, uid, new Set(), true);
     expect(selected?.selectable).toBe(true);
     expect(selected?.params).toHaveLength(5);
+    expect(selected?.title).toBe(selected?.card.nameJa);
+    expect(selected?.subtitle).toBe(selected?.card.nameZh ?? selected?.card.affiliations.join("・"));
     expect(blocked?.selectable).toBe(false);
     expect(blocked?.unavailableReason).toContain("目前決策不可選");
   });

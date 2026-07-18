@@ -169,8 +169,8 @@ export function buildCardInspectView(
   return {
     uid,
     card,
-    title: card.nameZh ?? card.nameJa,
-    subtitle: card.nameZh ? card.nameJa : card.affiliations.join("・"),
+    title: card.nameJa,
+    subtitle: card.nameZh ?? card.affiliations.join("・"),
     params: paramKeys.map((key, index) => ({
       label: labels[index]!,
       base: card.params?.[key] ?? null,

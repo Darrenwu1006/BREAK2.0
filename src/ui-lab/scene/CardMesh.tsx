@@ -50,18 +50,24 @@ export function faceGeometry(w: number, h: number, r: number): THREE.BufferGeome
 }
 
 /** 卡身：圓角 extrude，厚度沿 Y 置中；材質群組 0＝頂/底 cap、1＝側牆 */
-const BODY_GEO = (() => {
+export function cardBodyGeometry(depth: number): THREE.ExtrudeGeometry {
   const geo = new THREE.ExtrudeGeometry(roundedShape(CARD_W, CARD_H, CORNER_R), {
-    depth: CARD_T,
+    depth,
     bevelEnabled: false,
     curveSegments: 16,
   });
-  geo.translate(0, 0, -CARD_T / 2);
+  geo.translate(0, 0, -depth / 2);
   geo.rotateX(-Math.PI / 2); // extrude 沿 +Z → 厚度沿 +Y
   return geo;
-})();
+}
 
-const FACE_GEO = faceGeometry(CARD_W - 2 * BORDER_W, CARD_H - 2 * BORDER_W, Math.max(CORNER_R - BORDER_W, 0.02));
+/** 與單張卡完全同尺寸的內縮貼圖面；牌堆頂卡共用這個視覺契約。 */
+export function cardFaceGeometry(): THREE.BufferGeometry {
+  return faceGeometry(CARD_W - 2 * BORDER_W, CARD_H - 2 * BORDER_W, Math.max(CORNER_R - BORDER_W, 0.02));
+}
+
+const BODY_GEO = cardBodyGeometry(CARD_T);
+const FACE_GEO = cardFaceGeometry();
 
 export interface CardMeshProps {
   /** 正面貼圖；null＝素面（無卡圖資料） */
