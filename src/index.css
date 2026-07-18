@@ -1757,6 +1757,98 @@ textarea { color: var(--cream); }
 }
 
 /* Post-match Modal Overlay */
+.set-feedback-overlay {
+  position: fixed;
+  z-index: 210;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: var(--overlay);
+  backdrop-filter: blur(5px);
+}
+
+.set-feedback-dialog {
+  display: grid;
+  gap: var(--sp-3);
+  width: min(700px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: var(--sp-5);
+  border: 2px solid var(--cream);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  box-shadow: 8px 8px 0 var(--cream);
+  color: var(--text);
+}
+
+.set-feedback-eyebrow {
+  color: var(--accent);
+  font: 700 11px/1.3 var(--font-num);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.set-feedback-dialog h2 { margin: 0; font-size: 22px; line-height: 1.35; }
+.set-feedback-dialog > p { margin: -4px 0 0; color: var(--text-dim); font-size: 13px; line-height: 1.55; }
+
+.set-feedback-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.set-feedback-grid button {
+  min-height: 44px;
+  text-align: left;
+}
+.set-feedback-grid button.is-selected {
+  border-color: var(--cream);
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.set-feedback-note-toggle {
+  justify-self: start;
+  min-height: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.set-feedback-note-toggle:hover:not(:disabled) { background: transparent; color: var(--accent); transform: none; }
+
+.set-feedback-note { position: relative; display: grid; gap: 5px; }
+.set-feedback-note > span { color: var(--text-dim); font-size: 12px; font-weight: 700; }
+.set-feedback-note textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 10px 11px 22px;
+  border: 2px solid var(--cream);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  color: var(--text);
+  line-height: 1.5;
+}
+.set-feedback-note small { position: absolute; right: 9px; bottom: 6px; color: var(--text-faint); font: 10px/1 var(--font-num); }
+
+.set-feedback-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-top: var(--sp-1);
+}
+.set-feedback-actions button { min-width: 132px; }
+
+@media (max-width: 720px) {
+  .set-feedback-grid { grid-template-columns: 1fr; }
+  .set-feedback-dialog { padding: var(--sp-4); }
+  .set-feedback-actions button { min-width: 0; flex: 1; }
+}
+
 .postmatch-modal-overlay {
   position: fixed;
   z-index: 200;

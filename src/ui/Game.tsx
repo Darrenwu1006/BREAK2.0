@@ -20,8 +20,9 @@ import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "../shared/selection";
 import { ZONE_LABEL, groupCandidatesByZone } from "./zoneLocate";
 import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory, UNDO_HISTORY_LIMIT } from "./undoHistory";
-import { appendReplayEntry, createReplaySession, keyReplayEntries, stateAtReplayStep, summarizeReplaySession, truncateReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
+import { appendReplayEntry, appendReplaySetFeedback, createReplaySession, keyReplayEntries, pendingReplaySetFeedback, stateAtReplayStep, summarizeReplaySession, truncateReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
 import type { CardPointerDragInfo } from "./CardView";
+import { SetFeedbackDialog } from "./SetFeedbackDialog";
 
 const HUMAN: PlayerId = 0;
 const AI: PlayerId = 1;
@@ -900,6 +901,7 @@ export function Game(props: {
   const [undoReplayLengths, setUndoReplayLengths] = useState<number[]>([]);
   const [replayMode, setReplayMode] = useState(!!props.loadedReplay);
   const [replayStep, setReplayStep] = useState(props.loadedReplay ? props.loadedReplay.entries.length : 0);
+  const [feedbackReadyAnchor, setFeedbackReadyAnchor] = useState<number | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
   const coachRequestRef = useRef(0);
@@ -929,7 +931,11 @@ export function Game(props: {
   const humanAnchorRecordEnabledRef = useRef(true);
   const humanAnchorTimerRef = useRef<number | null>(null);
 
-  const pd = state.pendingDecision;
+  const pendingSetFeedback = useMemo(
+    () => replayMode ? null : pendingReplaySetFeedback(replay),
+    [replay, replayMode],
+  );
+  const pd = pendingSetFeedback ? null : state.pendingDecision;
   const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
   const replayEntry = replayStep > 0 ? replay.entries[replayStep - 1] ?? null : null;
   const replayAnalytics = useMemo(() => summarizeReplaySession(replay), [replay]);
@@ -948,7 +954,7 @@ export function Game(props: {
   const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: replayMode });
 
   const visibleInspection = hovered ?? inspected;
-  const canUndo = !replayMode && undoHistory.length > 0;
+  const canUndo = !replayMode && !pendingSetFeedback && undoHistory.length > 0;
 
   function cardOf(uid: number): Card {
     return db.get(viewState.cards[uid]!)!;
@@ -974,6 +980,7 @@ export function Game(props: {
   }
 
   function decide(decision: Decision) {
+    if (pendingSetFeedback) return;
     clearTransientUi();
     setUndoHistory((history) => pushPlayerUndoSnapshot(history, state, HUMAN));
     setUndoReplayLengths((lengths) => {
@@ -990,6 +997,7 @@ export function Game(props: {
   }
 
   function undoLastDecision() {
+    if (pendingSetFeedback) return;
     const popped = popUndoSnapshot(undoHistory);
     if (!popped.snapshot) return;
     const replayLength = undoReplayLengths[undoReplayLengths.length - 1] ?? replay.entries.length;
@@ -1001,6 +1009,21 @@ export function Game(props: {
       state: popped.snapshot!,
       replay: truncateReplaySession(current.replay, replayLength),
     }));
+  }
+
+  function recordSetFeedback(choice: ReplaySetFeedbackChoice, note?: string) {
+    if (!pendingSetFeedback) return;
+    const target = pendingSetFeedback;
+    setGame((current) => {
+      const nextReplay = appendReplaySetFeedback(current.replay, {
+        setNo: target.setNo,
+        anchorEntryIndex: target.anchorEntryIndex,
+        choice,
+        ...(choice !== "skipped" && note?.trim() ? { note: note.trim() } : {}),
+      });
+      return nextReplay === current.replay ? current : { ...current, replay: nextReplay };
+    });
+    setFeedbackReadyAnchor(null);
   }
 
   function enterReplayMode() {
@@ -1167,7 +1190,7 @@ export function Game(props: {
     aiWorkerRef.current?.terminate();
     aiWorkerRef.current = null;
     if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
-    if (replayMode || pd?.player !== AI || state.phase === "gameOver") {
+    if (replayMode || pendingSetFeedback || pd?.player !== AI || state.phase === "gameOver") {
       setAiThinking(null);
       return;
     }
@@ -1175,7 +1198,7 @@ export function Game(props: {
     function applyAiDecision(decision: Decision) {
       setAiThinking(null);
       setGame((current) => {
-        if (current.state.pendingDecision?.player !== AI || current.state.phase === "gameOver") return current;
+        if (pendingReplaySetFeedback(current.replay) || current.state.pendingDecision?.player !== AI || current.state.phase === "gameOver") return current;
         const nextState = applyDecision(db, current.state, decision);
         return {
           state: nextState,
@@ -1259,7 +1282,7 @@ export function Game(props: {
       aiWorkerRef.current?.terminate();
       aiWorkerRef.current = null;
     };
-  }, [aiProfile, db, pd, props.decks, props.deckMeta, replayMode, engine, state]);
+  }, [aiProfile, db, pd, pendingSetFeedback, props.decks, props.deckMeta, replayMode, engine, state]);
 
   useEffect(() => {
     coachWorkerRef.current?.terminate();
@@ -1421,7 +1444,7 @@ export function Game(props: {
 
   // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
   useEffect(() => {
-    if (state.phase !== "gameOver") return;
+    if (state.phase !== "gameOver" || pendingSetFeedback) return;
     setToolMode({ type: "detail" });
     setShowPostMatchModal(true);
 
@@ -1444,7 +1467,7 @@ export function Game(props: {
           console.error("自動儲存對戰紀錄錯誤:", err);
         });
     }
-  }, [state.phase, replay, props.loadedReplay]);
+  }, [state.phase, replay, props.loadedReplay, pendingSetFeedback]);
 
   useEffect(() => {
     const newEntries = state.log.slice(seenLogCount.current);
@@ -1478,6 +1501,18 @@ export function Game(props: {
     }, 900);
     return () => window.clearTimeout(timer);
   }, [state.log, sfxEnabled]);
+
+  // 先完整播放 2D 的 Set 得分演出，再開放原始意圖回饋；等待期間 AI 與玩家操作皆已鎖住。
+  useEffect(() => {
+    if (!pendingSetFeedback || replayMode) {
+      setFeedbackReadyAnchor(null);
+      return;
+    }
+    setFeedbackReadyAnchor(null);
+    const anchor = pendingSetFeedback.anchorEntryIndex;
+    const timer = window.setTimeout(() => setFeedbackReadyAnchor(anchor), 950);
+    return () => window.clearTimeout(timer);
+  }, [pendingSetFeedback, replayMode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1774,6 +1809,9 @@ export function Game(props: {
     }
   }
   const handStyle = { "--hand-step": `${handStep}px` } as CSSProperties;
+  const showSetFeedback = !!pendingSetFeedback
+    && feedbackReadyAnchor === pendingSetFeedback.anchorEntryIndex
+    && scoreBanner === null;
 
   return (
     <div className="fit-shell">
@@ -1967,6 +2005,13 @@ export function Game(props: {
     {scoreBanner && <div className="focus-lines" aria-hidden="true" />}
     {sfx && <div key={sfx.key} className="sfx-burst" aria-hidden="true">{sfx.text}</div>}
     {scoreBanner && <div className={`score-banner score-banner-${scoreBanner.kind}`} role="status">{scoreBanner.text}</div>}
+    {showSetFeedback && pendingSetFeedback && (
+      <SetFeedbackDialog
+        result={pendingSetFeedback}
+        onSubmit={(tag, note) => recordSetFeedback(tag, note)}
+        onSkip={() => recordSetFeedback("skipped")}
+      />
+    )}
     {showPostMatchModal && (
       <PostMatchModal
         analytics={replayAnalytics}
