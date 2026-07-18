@@ -1091,6 +1091,9 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
           winner={engine.winner}
           schools={schools}
           setCards={[engine.players[0].setArea.length, engine.players[1].setArea.length]}
+          db={db}
+          state={engine}
+          printingByUid={printingByUid}
           onRematch={props.onRematch}
           onExit={props.onExit}
         />

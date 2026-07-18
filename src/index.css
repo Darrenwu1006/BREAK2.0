@@ -902,6 +902,28 @@ textarea { color: var(--cream); }
 .opponent-hand-cards .card { box-shadow: 0 1px 0 var(--shadow); }
 .opponent-hand-cards .card,
 .opponent-hand-cards .card-back { width: 24px !important; height: auto !important; }
+.opponent-hand.is-revealed {
+  align-items: flex-start;
+  border-color: var(--cream);
+  background: var(--bg-panel-raised);
+  color: var(--cream);
+}
+.opponent-hand.is-revealed .opponent-hand-cards { padding-left: 4px; }
+.opponent-hand.is-revealed .opponent-hand-cards .card { width: 46px !important; }
+.opponent-hand.is-revealed .opponent-hand-cards .card + .card { margin-left: -30px; }
+
+.postmatch-opponent-hand {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5) 0;
+}
+.postmatch-opponent-hand-cards {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  padding: 2px 2px var(--sp-2);
+}
+.postmatch-opponent-hand-cards .card { flex: 0 0 auto; }
 
 /* SERVE/EVENT 外帶（貼球場上/下緣；對手左上、我方右下） */
 .side-band { display: flex; align-items: flex-end; gap: var(--sp-3); min-width: 0; }

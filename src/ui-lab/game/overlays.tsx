@@ -264,6 +264,9 @@ export function SettlementModal(props: {
   winner: PlayerId | null;
   schools: [string, string];
   setCards: [number, number];
+  db: CardDb;
+  state: GameState;
+  printingByUid?: ReadonlyMap<number, string>;
   onRematch: () => void;
   onExit: () => void;
 }): React.JSX.Element {
@@ -277,6 +280,20 @@ export function SettlementModal(props: {
           <br />
           剩餘 Set 卡：{props.schools[0]} {props.setCards[0]}－{props.setCards[1]} {props.schools[1]}
         </div>
+        {props.state.players[1].hand.length > 0 && (
+          <section className={styles.settlementHand} aria-label={`電腦剩餘手牌 ${props.state.players[1].hand.length} 張`}>
+            <div className={styles.settlementHandCards}>
+              {props.state.players[1].hand.map((uid) => (
+                <CardThumb
+                  key={uid}
+                  uid={uid}
+                  card={props.db.get(props.state.cards[uid] ?? "")}
+                  printing={props.printingByUid?.get(uid)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
         <button className={styles.btn} onClick={props.onRematch}>
           再來一場（同牌組）
         </button>

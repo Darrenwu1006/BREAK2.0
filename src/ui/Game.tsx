@@ -554,6 +554,7 @@ function PostMatchModal(props: {
   scan: ReplayScanState;
   winner: PlayerId | null;
   replayMode: boolean;
+  opponentHand: { uid: number; card: Card }[];
   onHumanAnchorExperimentalChange: (experimental: boolean) => void;
   onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
   onHumanAnchorRecordNow: () => void;
@@ -579,6 +580,15 @@ function PostMatchModal(props: {
           </div>
         </div>
         <div className="postmatch-modal-body">
+          {props.opponentHand.length > 0 && (
+            <section className="postmatch-opponent-hand" aria-label={`電腦剩餘手牌 ${props.opponentHand.length} 張`}>
+              <div className="postmatch-opponent-hand-cards">
+                {props.opponentHand.map(({ uid, card }) => (
+                  <CardView key={uid} card={card} uid={uid} width={72} />
+                ))}
+              </div>
+            </section>
+          )}
           <PostMatchReportBody
             analytics={props.analytics}
             lostSets={props.lostSets}
@@ -1781,6 +1791,7 @@ export function Game(props: {
           db={db}
           state={viewState}
           deckMeta={props.deckMeta}
+          revealOpponentHand={replayMode}
           canPickSet={!replayMode && isMyDecision && pd?.type === "pick-set-card"}
           deployArea={replayMode ? null : deployArea}
           activeGutsKey={activeGutsKey}
@@ -1976,6 +1987,7 @@ export function Game(props: {
         onHumanAnchorCancel={cancelHumanAnchorRecord}
         winner={state.winner ?? null}
         replayMode={replayMode}
+        opponentHand={state.players[AI].hand.map((uid) => ({ uid, card: db.get(state.cards[uid]!)! }))}
         onScan={scanReplayDecisions}
         onStopScan={stopReplayScan}
         onReplay={enterReplayMode}

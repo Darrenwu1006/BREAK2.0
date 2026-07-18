@@ -84,6 +84,24 @@ describe("computePlacements", () => {
     }
   });
 
+  it("整場結束後才公開 P1 剩餘手牌，Set 仍維持蓋牌", () => {
+    const ended = structuredClone(midGame());
+    ended.phase = "gameOver";
+    ended.pendingDecision = null;
+    ended.winner = 1;
+
+    const { cards } = computePlacements(db, ended, schools);
+    expect(ended.players[1].hand.length).toBeGreaterThan(0);
+    for (const uid of ended.players[1].hand) {
+      expect(cards.get(uid)!.faceUp).toBe(true);
+      expect(cards.get(uid)!.frontUrl).not.toBeNull();
+    }
+    for (const uid of ended.players[1].setArea) {
+      expect(cards.get(uid)!.faceUp).toBe(false);
+      expect(cards.get(uid)!.frontUrl).toBeNull();
+    }
+  });
+
   /** [使用者 2026-07-12] 手牌＝左右並排、rotY/rotZ=0、同傾角；由左到右＝由下到上：
    *  y 與 z 沿 index 嚴格遞增（平行層距，右壓左），保證不共面 z-fighting、相鄰不重疊。 */
   function assertHandNoClip(s: GameState): void {

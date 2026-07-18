@@ -37,6 +37,8 @@ interface GameBoardProps extends InspectHandlers {
   db: CardDb;
   state: GameState;
   deckMeta: [DeckMeta, DeckMeta];
+  /** 賽後覆盤屬全觀資訊，每一步都公開該時點的對手手牌。 */
+  revealOpponentHand?: boolean;
   canPickSet: boolean;
   deployArea: CourtArea | null;
   activeGutsKey: string | null;
@@ -316,6 +318,7 @@ export function GameBoard(props: GameBoardProps) {
 
   const p0 = state.players[0];
   const p1 = state.players[1];
+  const revealOpponentHand = props.revealOpponentHand === true || state.phase === "gameOver";
 
   // [Claude 2026-07-03] net info 歸屬：有 DP → 防守方側（判定在防守方結算）；否則 OP 持有方（攻擊方）側。
   // 兩個錨點同一時間只 render 一側（wireframe 需求：我方/對方 net info 不同時出現）。
@@ -364,10 +367,21 @@ export function GameBoard(props: GameBoardProps) {
       </div>
 
       <div className="bf-cell bf-right-top">
-        <div className="opponent-hand" data-zone-anchor="p1-hand" aria-label={`對方手牌 ${p1.hand.length} 張`}>
-          <span>對方手牌</span>
+        <div className={`opponent-hand${revealOpponentHand ? " is-revealed" : ""}`} data-zone-anchor="p1-hand" aria-label={`對方${revealOpponentHand ? "公開" : ""}手牌 ${p1.hand.length} 張`}>
+          <span>{revealOpponentHand ? "電腦公開手牌" : "對方手牌"}</span>
           <div className="opponent-hand-cards">
-            {p1.hand.map((uid) => <CardBack key={uid} width={24} school={props.deckMeta[1].school} />)}
+            {p1.hand.map((uid) => revealOpponentHand ? (
+              <CardView
+                key={uid}
+                card={cardOf(props.db, state, uid)}
+                uid={uid}
+                width={46}
+                onHover={(card) => props.onHover(card ? uid : null)}
+                onClick={() => inspect(uid)}
+              />
+            ) : (
+              <CardBack key={uid} width={24} school={props.deckMeta[1].school} />
+            ))}
           </div>
           <strong>{p1.hand.length}</strong>
         </div>

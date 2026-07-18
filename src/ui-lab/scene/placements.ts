@@ -242,11 +242,14 @@ export function computePlacements(
           } : {}),
         });
       } else {
+        // [使用者 2026-07-18] 只在整場比賽結束後公開對手剩餘手牌；
+        // 對局進行中繼續不建立正面貼圖，避免 hidden-information side channel。
+        const revealAtMatchEnd = state.phase === "gameOver";
         cards.set(uid, {
           uid,
-          frontUrl: null,
+          frontUrl: revealAtMatchEnd ? front(uid) : null,
           backUrl: back,
-          faceUp: false,
+          faceUp: revealAtMatchEnd,
           position: [handA.x - t * 0.48, CARD_T / 2 + i * CARD_T * 1.2, handA.z],
           rotation: [0, rotY + t * 0.04, 0],
           zone: "hand",
