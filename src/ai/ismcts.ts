@@ -320,6 +320,26 @@ export function rootDecisionPressureScore(
   return score;
 }
 
+/**
+ * [Claude 2026-07-19] 終局判定：這一手套用後是否「立即」輸掉 Set（宣告 Lost／不登場／注定失敗的
+ * 防守判定）或整場比賽。applyDecision 失敗視同終局（與 rootDecisionPressureScore 的 -Infinity 同語意）。
+ */
+function decisionImmediatelyLosesSetOrMatch(
+  db: CardDb,
+  state: GameState,
+  decision: Decision,
+  perspective: PlayerId,
+): boolean {
+  try {
+    const next = applyDecision(db, state, decisionWithDefaultNameChoice(db, state, decision));
+    if (next.winner !== null) return next.winner !== perspective;
+    if (next.lostBy === perspective && state.lostBy !== perspective) return true;
+    return next.players[perspective].setArea.length < state.players[perspective].setArea.length;
+  } catch {
+    return true;
+  }
+}
+
 function chooseRootTieBreakBest(
   db: CardDb,
   state: GameState,
@@ -332,10 +352,20 @@ function chooseRootTieBreakBest(
   if (winRateDelta <= 0 || recommendations.length <= 1) return null;
   const robustBest = recommendations[0]!;
   const minVisits = Math.max(1, Math.floor(robustBest.sampleCount * ROOT_TIE_BREAK_MIN_VISIT_RATIO));
-  const close = recommendations.filter(
+  let close = recommendations.filter(
     (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
   );
   if (close.length <= 1) return null;
+  // [Claude 2026-07-19] AI 提前 Lost 窄修（診斷見 reports/26 與 WORKLOG 2026-07-19）：資源壓力分數會因
+  // Lost／不登場保留手牌而偏高，曾把勝率落後的終局候選反轉成首選（Match 10 比賽點 Lost 0% 壓過福永
+  // 3.99%）。邊界依報告定案：robust best 為非終局時，「立即輸掉 Set 或比賽」的候選不參與 tie-break；
+  // robust best 本身就是終局（所有非終局候選等價失敗，或 MCTS 主動放 Set）時，完整保留原資源保全行為。
+  if (!decisionImmediatelyLosesSetOrMatch(db, state, robustBest.decision, perspective)) {
+    close = close.filter(
+      (item) => item === robustBest || !decisionImmediatelyLosesSetOrMatch(db, state, item.decision, perspective),
+    );
+    if (close.length <= 1) return null;
+  }
   const isOneTouchDeployment = (item: CoachActionEstimate): boolean =>
     item.decision.type === "deploy-block" &&
     item.decision.uids !== null &&
@@ -694,6 +724,7 @@ export const __ismctsTest = {
   newNode,
   iterate,
   chooseRootTieBreakBest,
+  decisionImmediatelyLosesSetOrMatch,
   shouldStopForRootConvergence,
   confidenceFromRate,
 };

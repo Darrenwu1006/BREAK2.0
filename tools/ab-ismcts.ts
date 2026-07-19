@@ -54,20 +54,22 @@ const outPath = argValue("out", "");
 const mirror = process.argv.includes("--mirror");
 
 // cross-matchup：4 對戰，軸線多樣（hybrid/defense/serve/block/burst 都涵蓋）。
+// [Claude 2026-07-19] 牌組池汰換後舊名（音駒-預組／青葉城西-二彈改／稲荷崎_堆墓改角名／
+// 梟谷-高爆發軸／烏野-山月攔網軸／白鳥沢-白板軸）已不在 data/decks，換成現役同原型牌組。
 const MATCHUPS: [string, string][] = [
-  ["烏野-預組", "音駒-預組"],
-  ["白鳥沢-最強白鳥沢", "青葉城西-二彈改"],
-  ["稲荷崎-稲荷崎_堆墓改角名", "梟谷-高爆發軸"],
-  ["烏野-山月攔網軸", "白鳥沢-白板軸"],
+  ["烏野-預組", "音駒-音駒-三彈官方"],
+  ["白鳥沢-最強白鳥沢", "青葉城西-第三彈測試"],
+  ["稲荷崎-稲荷崎_三彈官方", "梟谷-第三彈官方"],
+  ["伊達工業-攔網軸改_韋宏", "白鳥沢-三彈優化"],
 ];
 
 // mirror：5 套不同原型的牌組，各自對自己互打（消牌組強度＋克制，純測 policy）。
 const MIRROR_DECKS = [
   "烏野-預組", // hybrid
-  "音駒-預組", // defense
-  "梟谷-高爆發軸", // burst
-  "白鳥沢-最強白鳥沢", // defense/hybrid
-  "青葉城西-二彈改", // serve/hybrid
+  "音駒-音駒-三彈官方", // defense
+  "梟谷-第三彈官方", // burst
+  "白鳥沢-最強白鳥沢", // serve/burst
+  "青葉城西-第三彈測試", // serve/hybrid
 ];
 
 // units＝要跑的對戰單位（[deckP0source, deckP1source]）。mirror 模式下兩邊同牌組。

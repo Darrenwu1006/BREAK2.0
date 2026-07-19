@@ -280,6 +280,57 @@ describe("M5 Heuristic v2 決策品質", () => {
     expect(selected?.decision).toEqual(lean);
   });
 
+  it("終局候選（不登場／Lost）不參與 root pressure tie-break；robust best 為終局時保留資源保全", () => {
+    // [Claude 2026-07-19] AI 提前 Lost 窄修的回歸測試（診斷見 reports/26：Match 10 比賽點
+    // Lost 0% 被壓力 tie-break 反轉壓過福永 3.99%）。
+    const s = bareState(["HV-P02-045", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
+    const receiver = uidOf(s, 0, "HV-P02-045"); // 接球 5，能過 OP2 判定
+    s.turnPlayer = 0;
+    s.phase = "receive";
+    s.sub = 0;
+    s.op = { owner: 1, value: 2, source: "serve" };
+    s.pendingDecision = { player: 0, type: "deploy-receive" };
+    const deploy: Decision = { type: "deploy-receive", uid: receiver };
+    const giveUp: Decision = { type: "deploy-receive", uid: null }; // 不登場＝立即宣告 Lost
+
+    expect(__ismctsTest.decisionImmediatelyLosesSetOrMatch(db, s, giveUp, 0)).toBe(true);
+    expect(__ismctsTest.decisionImmediatelyLosesSetOrMatch(db, s, deploy, 0)).toBe(false);
+
+    const estimate = (decision: Decision, winRate: number, sampleCount: number): CoachActionEstimate => ({
+      decision,
+      label: "test",
+      winRate,
+      confidence: 0.6,
+      sampleCount,
+      wins: Math.round(winRate * sampleCount),
+      errors: 0,
+      maxSteps: 0,
+      principalLine: [],
+      explanation: "test",
+    });
+    // robust best＝合法接球、不登場在 4pp 內：終局候選被剔除後只剩單一候選 → tie-break 必須
+    // 棄權（回傳 null＝維持 robust best），不得讓 Lost 因保留手牌的壓力分數被反轉成首選。
+    const whenLegalIsBest = __ismctsTest.chooseRootTieBreakBest(
+      db,
+      s,
+      [estimate(deploy, 0.05, 100), estimate(giveUp, 0.04, 90)],
+      0,
+      0.04,
+      false,
+    );
+    expect(whenLegalIsBest).toBeNull();
+    // robust best 本身就是終局（MCTS 判定所有路線等價失敗）：保留原壓力 tie-break（資源保全）。
+    const whenGiveUpIsBest = __ismctsTest.chooseRootTieBreakBest(
+      db,
+      s,
+      [estimate(giveUp, 0.03, 100), estimate(deploy, 0.05, 90)],
+      0,
+      0.04,
+      false,
+    );
+    expect(whenGiveUpIsBest).not.toBeNull();
+  });
+
   it("One Touch 被禁止或 OP 條件未成立時，不套用單張節約路線", () => {
     const s = bareState(["HV-P02-049", "HV-P03-072", "HV-D01-006", "HV-D01-006", "HV-D01-006", "HV-D01-006"]);
     const tendo = uidOf(s, 0, "HV-P02-049");
