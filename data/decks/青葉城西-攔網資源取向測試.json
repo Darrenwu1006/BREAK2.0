@@ -1,0 +1,77 @@
+{
+ "name": "青葉城西-攔網資源取向測試",
+ "school": "青葉城西",
+ "source": "decks/青葉城西/攔網資源取向測試.csv",
+ "cards": [
+  {
+   "id": "HV-P01-033",
+   "count": 5,
+   "printing": "IP"
+  },
+  {
+   "id": "HV-P01-035",
+   "count": 5,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P03-058",
+   "count": 3,
+   "printing": "RA"
+  },
+  {
+   "id": "HV-P01-039",
+   "count": 6
+  },
+  {
+   "id": "HV-P01-086",
+   "count": 1
+  },
+  {
+   "id": "HV-P01-087",
+   "count": 3
+  },
+  {
+   "id": "HV-P01-088",
+   "count": 2
+  },
+  {
+   "id": "HV-PR-051",
+   "count": 1
+  },
+  {
+   "id": "HV-P02-056",
+   "count": 2,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-PR-024",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-057",
+   "count": 2
+  },
+  {
+   "id": "HV-P02-058",
+   "count": 2
+  },
+  {
+   "id": "HV-P03-059",
+   "count": 2,
+   "printing": "NA"
+  },
+  {
+   "id": "HV-P03-006",
+   "count": 2
+  },
+  {
+   "id": "HV-P03-090",
+   "count": 1,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P03-007",
+   "count": 1
+  }
+ ]
+}

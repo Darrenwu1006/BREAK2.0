@@ -1,7 +1,7 @@
 {
- "name": "ユース-合宿精英-優化",
+ "name": "ユース-烏養測試",
  "school": "ユース",
- "source": "decks/ユース/合宿精英-優化.csv",
+ "source": "decks/ユース/烏養測試.csv",
  "cards": [
   {
    "id": "HV-P03-020",
@@ -18,9 +18,9 @@
    "count": 1,
    "printing": "SP"
   },
-  {
-   "id": "HV-P03-027",
-   "count": 4
+    {
+      "id": "HV-P03-027",
+      "count": 4
   },
   {
    "id": "HV-P03-021",
@@ -39,9 +39,9 @@
    "id": "HV-P03-030",
    "count": 3
   },
-  {
-   "id": "HV-P03-029",
-   "count": 3
+    {
+      "id": "HV-P03-029",
+      "count": 3
   },
   {
    "id": "HV-P03-028",
@@ -54,11 +54,17 @@
   },
   {
    "id": "HV-P03-085",
-   "count": 2
+   "count": 1
   },
   {
-   "id": "HV-P03-087",
-   "count": 1
+   "id": "HV-P01-074",
+   "count": 1,
+   "printing": "NP"
+  },
+  {
+   "id": "HV-P03-086",
+   "count": 1,
+   "printing": "NP"
   },
   {
    "id": "HV-P03-084",
