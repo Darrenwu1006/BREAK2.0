@@ -1071,7 +1071,8 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         desc: `${nameOf(db, state, ctx.source)} 的限制`,
       });
       ctx.anyExecuted = true;
-      log(state, p, "對手下回合的登場受到限制");
+      if (a.restriction.preventOpDecrease) log(state, p, "下個對手回合中，自己的 OP 不會被降低");
+      else log(state, p, "對手下回合的登場受到限制");
       break;
     }
     case "keyword": {
