@@ -5,7 +5,7 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import type { Card } from "../data/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes, isImmediateOneTouchBlocker } from "./heuristic";
 import { enumerateCandidates, type CoachActionEstimate } from "./coach";
-import { __ismctsTest } from "./ismcts";
+import { __ismctsTest, rootDecisionPressureScore } from "./ismcts";
 import { randomAiDecision } from "./random";
 import cardsJson from "../../data/cards.json";
 
@@ -329,6 +329,78 @@ describe("M5 Heuristic v2 決策品質", () => {
       false,
     );
     expect(whenGiveUpIsBest).not.toBeNull();
+  });
+
+  it("Fix D1：defense-choice 生存優先——能守住當前 OP 的 lane 不被壓力 tie-break 反轉成放棄型防守", () => {
+    // [Claude 2026-07-22] 診斷見 reports/27 §D、WORKLOG 2026-07-21：M10 決勝 Set 兩 lane MCTS 皆估 0，
+    // 接球 lane 因抽牌 handDiff↑ 讓壓力分數偏高，被 tie-break 選成「接球→兩步後不登場 Lost」；
+    // 攔網 lane 其實能守住。這裡構造同型盤面（block3 可過 OP3、receive1 過不了）驗證 D1。
+    const s = bareState(["HV-D01-003", "HV-D01-003", "HV-D01-003"]); // block3 / receive1
+    s.turnPlayer = 0;
+    s.phase = "start";
+    s.sub = 1; // start phase 的 defense-choice 子步驟；apply 後才會 enterPhase(block/draw)
+    s.op = { owner: 1, value: 3, source: "attack" }; // 對手攻擊（非發球）→ 攔網為合法選項
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+    const block: Decision = { type: "defense-choice", choice: "block" };
+    const receive: Decision = { type: "defense-choice", choice: "receive" };
+
+    // 生存判定：攔網守得住、接球守不住。
+    expect(__ismctsTest.defenseChoiceSurvivesCurrentOp(db, s, block, 0)).toBe(true);
+    expect(__ismctsTest.defenseChoiceSurvivesCurrentOp(db, s, receive, 0)).toBe(false);
+
+    // 控制：壓力分數本身偏好接球（放棄型），沒有 D1 就會選錯。
+    expect(rootDecisionPressureScore(db, s, receive, 0)).toBeGreaterThan(rootDecisionPressureScore(db, s, block, 0));
+
+    // 兩 lane 勝率皆 0、接球視 sampleCount 為 robust best：D1 必須促成能生存的攔網。
+    const estimate = (decision: Decision, winRate: number, sampleCount: number): CoachActionEstimate => ({
+      decision, label: "test", winRate, confidence: 0.6, sampleCount,
+      wins: Math.round(winRate * sampleCount), errors: 0, maxSteps: 0, principalLine: [], explanation: "test",
+    });
+    const promoted = __ismctsTest.chooseRootTieBreakBest(
+      db, s, [estimate(receive, 0, 100), estimate(block, 0, 90)], 0, 0.04, false,
+    );
+    expect(promoted?.decision).toEqual(block);
+  });
+
+  it("Fix B+：防守技能改評估效果——付 Guts 換防守讓接受分數低於拒絕（不再過度加防）", () => {
+    // [Claude 2026-07-22] 診斷見 reports/27 §B：舊 flat ±0.05 評「開不開技能」，帳面 DP 已足夠時仍付費加防
+    // （M10 S2 T6 付 3 Guts 換多餘 DP）。改成評效果：Guts 成本（evaluatePressureScore 完全不計）扣分。
+    const s = bareState(["HV-D01-006"]);
+    const source = s.players[0].hand[0]!;
+    s.turnPlayer = 0;
+    s.phase = "receive";
+    s.op = { owner: 1, value: 1, source: "serve" }; // 帳面已足夠防守
+    s.pendingDecision = { player: 0, type: "effect-confirm" };
+    s.effectCtx = {
+      player: 0, source, frames: [], lastTarget: null, triggerUid: null, turn1: false, anyExecuted: false,
+      awaiting: { kind: "confirm", what: "gate", costs: [{ type: "guts", count: 3 }], then: [], prompt: "boost DP" },
+      desc: "夜久 衛輔 的防守技能",
+    };
+    expect(__ismctsTest.gateDeclaredGutsCost(s)).toBe(3);
+    const accept = __ismctsTest.defensiveConfirmEffectScore(db, s, { type: "effect-confirm", accept: true }, 0);
+    const decline = __ismctsTest.defensiveConfirmEffectScore(db, s, { type: "effect-confirm", accept: false }, 0);
+    expect(accept).toBeLessThan(decline); // 付 Guts 換防守：拒絕分數較高 → 不再過度加防
+    expect(accept).toBeLessThan(0);
+  });
+
+  it("Fix B+：攻擊側 effect-confirm 維持原積極性（flat bonus 不變）", () => {
+    // [Claude 2026-07-22] B+ 只作用在防守決策點；攻擊側（報告未診斷）保留原 ±0.05 積極用技能行為。
+    const s = bareState(["HV-P01-043", "HV-P01-050", "HV-P01-046"]);
+    const source = s.players[0].hand[0]!;
+    removeEverywhere(s, 0, source);
+    s.players[0].attack = [source];
+    s.phase = "attack";
+    s.turnPlayer = 0;
+    s.pendingDecision = { player: 0, type: "effect-confirm" };
+    s.effectCtx = {
+      player: 0, source, frames: [], lastTarget: null, triggerUid: null, turn1: false, anyExecuted: false,
+      awaiting: { kind: "confirm", what: "gate", costs: [], then: [{ op: "addParam", target: "self", param: "attack", amount: 5 }], prompt: "buff" },
+      desc: "木兎 光太郎 的技能",
+    };
+    const accept = rootDecisionPressureScore(db, s, { type: "effect-confirm", accept: true }, 0);
+    const decline = rootDecisionPressureScore(db, s, { type: "effect-confirm", accept: false }, 0);
+    // flat bonus 0.10 spread 仍在（外加攻擊增益的 base delta）。
+    expect(accept - decline).toBeGreaterThan(0.09);
   });
 
   it("One Touch 被禁止或 OP 條件未成立時，不套用單張節約路線", () => {

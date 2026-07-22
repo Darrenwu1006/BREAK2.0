@@ -148,7 +148,7 @@ function summarizeDiagnostics(items: readonly SearchDecisionDiagnostics[]) {
 }
 
 const usesIsmctsFamily = (p: BenchmarkPolicyId) =>
-  p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "is-mcts-k2" || p === "mo-ismcts" || p === "mo-ismcts-h3";
+  p === "is-mcts" || p === "is-mcts-nofix" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "is-mcts-k2" || p === "mo-ismcts" || p === "mo-ismcts-h3";
 const usesPimcFamily = (p: BenchmarkPolicyId) => p === "pimc-v2" || p === "pimc";
 if (budget !== "wall-clock" && budget !== "iterations") {
   throw new Error("--budget 只支援 wall-clock 或 iterations");

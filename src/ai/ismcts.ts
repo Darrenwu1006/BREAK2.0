@@ -10,7 +10,7 @@ import {
   type CoachActionEstimate,
   type CoachReport,
 } from "./coach";
-import { evaluatePressureScore, evaluateShapedStateValue, explainValue, type ValueModel } from "./rollout-value";
+import { evaluatePressureScore, evaluateShapedStateValue, explainValue, handDeployablePower, type ValueModel } from "./rollout-value";
 import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
 
@@ -98,6 +98,16 @@ export interface IsmctsOptions {
    */
   enableConvergenceEarlyStop?: boolean;
   /**
+   * [Claude 2026-07-22] Fix B+：防守 effect-confirm 改「評估效果」（Guts 成本＋手牌攻擊潛力）而非「開技能動作」。
+   * 預設 true（live default-on）；benchmark baseline 傳 false 保留舊 flat ±0.05 行為做 A/B。
+   */
+  defenseSkillEffectScoring?: boolean;
+  /**
+   * [Claude 2026-07-22] Fix D（D1）：defense-choice 生存優先 tie-break（能通過當前 OP 的 lane 不被壓力反轉）。
+   * 預設 true（live default-on）；benchmark baseline 傳 false 保留舊行為做 A/B。
+   */
+  defenseChoiceSurvivalTieBreak?: boolean;
+  /**
    * [Claude 2026-06-23] 對手節點模型（G2 診斷後新增）：
    *   "heuristic"（預設）：對手節點 = 環境，直接套用 heuristic 決策、不建樹分支。
    *     ＝資訊集樹只在「我方多步決策」上展開，對手/隱藏由 determinize＋heuristic 模擬。
@@ -126,6 +136,16 @@ const DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD = 0.85;
 const ROOT_TIE_BREAK_MIN_VISIT_RATIO = 0.5;
 /** 每 iteration 換 world 的 seed 間距（大質數，避免抽樣相關）。 */
 const SEED_STRIDE = 1000003;
+/**
+ * [Claude 2026-07-22] Fix B+：防守技能確認改「評估效果」而非「開技能動作」的權重。
+ * 量級刻意對齊舊 flat bonus（0.05）並 clamp 在壓力分數 [-0.1,0.1] 的 gradient 帶內，
+ * 只在 root close-set tie-break 生效，不翻轉明確勝負判斷。實際係數待 40 場級 A/B 校準。
+ */
+const DEFENSE_SKILL_GUTS_COST_WEIGHT = 0.02; // 每 1 點 Guts 成本的扣分（evaluatePressureScore 完全不計 Guts）
+const DEFENSE_SKILL_HAND_GAIN_WEIGHT = 0.004; // 每 1 點手牌可用攻擊潛力增益的加分（補手牌湊攻擊鏈）
+const DEFENSE_SKILL_EFFECT_CLAMP = 0.08; // 效果分數上下限
+/** [Claude 2026-07-22] Fix D（D1）：defense-choice 生存 playout 的步數上限（防呆，正常 2~4 步就結算）。 */
+const DEFENSE_SURVIVAL_MAX_STEPS = 16;
 
 interface IsmctsNode {
   /** edgeKey → 子節點。edgeKey＝JSON.stringify(decision)（資訊集級 key）。 */
@@ -272,12 +292,61 @@ function bestLegalTossAttackPairPoint(db: CardDb, state: GameState, perspective:
   return values.length > 0 ? Math.max(...values) : 0;
 }
 
+/**
+ * [Claude 2026-07-22] 是否處於「我方正在防守對手 OP」的決策點（block/receive phase、檯面 OP 屬對手）。
+ * 與 benchmark.ts isDefensiveFreeStep 同語意；此處自帶一份避免跨模組相依。
+ */
+function isDefensiveDecisionStep(state: GameState, perspective: PlayerId): boolean {
+  return (state.phase === "block" || state.phase === "receive") && !!state.op && state.op.owner !== perspective;
+}
+
+/** [Claude 2026-07-22] Fix B+：讀取當前 gate 宣告的 Guts 成本（靜態，不受效果子決策 pause 影響）。 */
+function gateDeclaredGutsCost(state: GameState): number {
+  const aw = state.effectCtx?.awaiting;
+  if (!aw || aw.kind !== "confirm" || aw.what !== "gate" || !aw.costs) return 0;
+  let guts = 0;
+  for (const cost of aw.costs) {
+    if (cost.type === "guts" || cost.type === "gutsAny" || cost.type === "gutsFrom") guts += cost.count;
+  }
+  return guts;
+}
+
+/**
+ * [Claude 2026-07-22] Fix B+：防守技能確認的「效果」評分（取代舊的「開技能動作」flat bonus）。
+ * evaluatePressureScore 本體已含手牌張數（抽牌↑補手牌、丟牌↓耗手牌），這裡只補它摸不到的兩維：
+ *   ① Guts 成本（壓力分數完全不計 Guts）→ 付 Guts 換防守要有代價。
+ *   ② 手牌可用攻擊潛力增益（抽到能打的牌）→ 補手牌湊攻擊鏈給正分。
+ * 回傳＝「接受相對拒絕的淨效果分數」依 decision.accept 簽名；benefit>0 代表接受值得。
+ * 「丟牌未來回收」屬多步策略，交給 MCTS 搜尋、不寫進 tie-break（[使用者 2026-07-22] 定案）。
+ */
+function defensiveConfirmEffectScore(
+  db: CardDb,
+  state: GameState,
+  decision: Extract<Decision, { type: "effect-confirm" }>,
+  perspective: PlayerId,
+): number {
+  const gutsCost = gateDeclaredGutsCost(state);
+  let handGain = 0;
+  try {
+    const acceptState = applyDecision(db, state, { type: "effect-confirm", accept: true });
+    const declineState = applyDecision(db, state, { type: "effect-confirm", accept: false });
+    handGain =
+      handDeployablePower(db, acceptState, acceptState.players[perspective]) -
+      handDeployablePower(db, declineState, declineState.players[perspective]);
+  } catch {
+    handGain = 0;
+  }
+  const rawBenefit = handGain * DEFENSE_SKILL_HAND_GAIN_WEIGHT - gutsCost * DEFENSE_SKILL_GUTS_COST_WEIGHT;
+  const benefit = Math.max(-DEFENSE_SKILL_EFFECT_CLAMP, Math.min(DEFENSE_SKILL_EFFECT_CLAMP, rawBenefit));
+  return decision.accept ? benefit : -benefit;
+}
+
 export function rootDecisionPressureScore(
   db: CardDb,
   state: GameState,
   decision: Decision,
   perspective: PlayerId,
-  options: { pairAware?: boolean } = {},
+  options: { pairAware?: boolean; defenseSkillEffectScoring?: boolean } = {},
 ): number {
   let score = 0;
   try {
@@ -315,7 +384,14 @@ export function rootDecisionPressureScore(
     }
   }
   if (decision.type === "effect-confirm" && state.effectCtx?.desc.includes("技能")) {
-    score += decision.accept ? 0.05 : -0.05;
+    // [Claude 2026-07-22] Fix B+（診斷見 reports/27 §B、WORKLOG 2026-07-21）：舊的固定 ±0.05 評的是
+    // 「開不開技能」這個動作，而非技能效果，導致基礎 DP 已足夠時仍付費過度加防（4pp close-set 內被
+    // 0.10 差反轉）。防守決策點改用效果評分（Guts 成本＋手牌攻擊潛力）；攻擊側維持原積極性行為。
+    if (options.defenseSkillEffectScoring !== false && isDefensiveDecisionStep(state, perspective)) {
+      score += defensiveConfirmEffectScore(db, state, decision, perspective);
+    } else {
+      score += decision.accept ? 0.05 : -0.05;
+    }
   }
   return score;
 }
@@ -340,6 +416,44 @@ function decisionImmediatelyLosesSetOrMatch(
   }
 }
 
+/**
+ * [Claude 2026-07-22] Fix D（D1，診斷見 reports/27 §D、WORKLOG 2026-07-21）：這條 defense-choice lane
+ * 是否「能通過當前這次 OP 判定」。單步 decisionImmediatelyLosesSetOrMatch 看不到「選了接球 lane、兩步後
+ * 才不登場 Lost」；此處用 heuristic 把該 lane 打到判定結算為止，直接看有沒有守下這球。
+ *   FAILED ⟺ playout 中 lostBy 變成 perspective（judge 失敗會 declareLost）或直接被判負。
+ *   PASSED ⟺ 未失分且離開防守 phase（block/receive/draw）＝這球守住了。
+ * playout 用 heuristic（reports/27 實測 heuristic 在該盤面正確選攔網）；若 lane 其實守不住只會回 false
+ * ＝不啟動 D1、退回原行為，不會惡化。
+ */
+function defenseChoiceSurvivesCurrentOp(
+  db: CardDb,
+  state: GameState,
+  decision: Decision,
+  perspective: PlayerId,
+  rolloutPolicy?: HeuristicV2ProfileId,
+): boolean {
+  if (decision.type !== "defense-choice") return true;
+  if (!state.op || state.op.owner === perspective) return true; // 無來襲 OP → 不適用
+  const baseSetLen = state.players[perspective].setArea.length;
+  try {
+    let s = applyDecision(db, state, decision);
+    for (let step = 0; step < DEFENSE_SURVIVAL_MAX_STEPS; step++) {
+      if (s.winner !== null) return s.winner === perspective;
+      if (s.lostBy === perspective) return false;
+      if (s.players[perspective].setArea.length < baseSetLen) return false;
+      // 已離開這次防守（judge 結算後 op 消滅、phase 前進）且未失分 → 守住了。
+      if (s.phase !== "block" && s.phase !== "receive" && s.phase !== "draw") return true;
+      const pd = s.pendingDecision;
+      if (!pd) break;
+      const next = heuristicAiDecision(db, s, rolloutPolicy);
+      s = applyDecision(db, s, decisionWithDefaultNameChoice(db, s, next));
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 function chooseRootTieBreakBest(
   db: CardDb,
   state: GameState,
@@ -348,6 +462,9 @@ function chooseRootTieBreakBest(
   winRateDelta: number,
   pairAware: boolean,
   conservationWinRateThreshold?: number,
+  rolloutPolicy?: HeuristicV2ProfileId,
+  defenseChoiceSurvivalTieBreak: boolean = true,
+  defenseSkillEffectScoring: boolean = true,
 ): CoachActionEstimate | null {
   if (winRateDelta <= 0 || recommendations.length <= 1) return null;
   const robustBest = recommendations[0]!;
@@ -365,6 +482,20 @@ function chooseRootTieBreakBest(
       (item) => item === robustBest || !decisionImmediatelyLosesSetOrMatch(db, state, item.decision, perspective),
     );
     if (close.length <= 1) return null;
+  }
+  // [Claude 2026-07-22] Fix D（D1）：defense-choice 生存優先。close-set 內若同時存在「能通過當前 OP 判定」
+  // 與「不能通過」的 defense-choice lane，收斂到能生存的 lane——避免接球 lane 因抽牌 handDiff↑ 讓壓力
+  // 分數反轉、選到兩步後才不登場 Lost 的放棄型防守（reports/27 §D 決勝局）。全員都守不住＝真的守不住
+  // 這球，維持原行為（尊重 MCTS 放 Set／資源保全）。
+  if (defenseChoiceSurvivalTieBreak && close.some((item) => item.decision.type === "defense-choice")) {
+    const survivors = close.filter((item) =>
+      defenseChoiceSurvivesCurrentOp(db, state, item.decision, perspective, rolloutPolicy),
+    );
+    if (survivors.length >= 1 && survivors.length < close.length) {
+      close = survivors;
+      // 唯一生存者：直接回傳促成它上位；不可回 null，否則會退回可能是放棄型的 robustBest。
+      if (close.length <= 1) return close[0]!;
+    }
   }
   const isOneTouchDeployment = (item: CoachActionEstimate): boolean =>
     item.decision.type === "deploy-block" &&
@@ -413,7 +544,7 @@ function chooseRootTieBreakBest(
     // 非 deploy-attack（或只有 1 個可比候選）：conservation 不適用，回退 H4 原行為。
   }
   return close
-    .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware }) }))
+    .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware, defenseSkillEffectScoring }) }))
     .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
 }
 
@@ -608,6 +739,8 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const rootPressureTieBreakDelta = Math.max(0, options.rootPressureTieBreakDelta ?? DEFAULT_ROOT_PRESSURE_TIE_BREAK_DELTA);
   const rootPairQualityTieBreak = options.rootPairQualityTieBreak ?? DEFAULT_ROOT_PAIR_QUALITY_TIE_BREAK;
   const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold ?? DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD;
+  const defenseSkillEffectScoring = options.defenseSkillEffectScoring ?? true;
+  const defenseChoiceSurvivalTieBreak = options.defenseChoiceSurvivalTieBreak ?? true;
   const enableConvergenceEarlyStop = options.enableConvergenceEarlyStop ?? true;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
@@ -694,6 +827,9 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     rootPressureTieBreakDelta,
     rootPairQualityTieBreak,
     rootConservationWinRateThreshold,
+    rolloutPolicy,
+    defenseChoiceSurvivalTieBreak,
+    defenseSkillEffectScoring,
   );
   if (tieBreakBest) {
     const index = recommendations.indexOf(tieBreakBest);
@@ -725,6 +861,9 @@ export const __ismctsTest = {
   iterate,
   chooseRootTieBreakBest,
   decisionImmediatelyLosesSetOrMatch,
+  defenseChoiceSurvivesCurrentOp,
+  defensiveConfirmEffectScore,
+  gateDeclaredGutsCost,
   shouldStopForRootConvergence,
   confidenceFromRate,
 };

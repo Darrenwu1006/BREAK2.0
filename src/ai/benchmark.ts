@@ -27,6 +27,9 @@ export type BenchmarkPolicyId =
   | "is-mcts-h3"
   | "is-mcts-h4"
   | "is-mcts-k2"
+  // [Claude 2026-07-22] is-mcts 的 A/B baseline：關掉 Fix B+（防守技能效果評分）與 Fix D1（defense-choice
+  // 生存 tie-break），其餘與 is-mcts 完全相同。用於 mirror is-mcts vs is-mcts-nofix 量化兩修正的淨強度影響。
+  | "is-mcts-nofix"
   | "mo-ismcts"
   | "mo-ismcts-h3"
   | HeuristicV2ProfileId;
@@ -574,7 +577,7 @@ export function benchmarkPolicyDecision(
     searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, pimcBenchmarkConfig.candidateLimit));
     return report.bestAction.decision;
   }
-  if (policy === "is-mcts" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-k2") {
+  if (policy === "is-mcts" || policy === "is-mcts-nofix" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-k2") {
     const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
     const report = createIsmctsReport(db, state, {
       perspectivePlayer: player,
@@ -589,10 +592,10 @@ export function benchmarkPolicyDecision(
       rootPressureTieBreakDelta:
         policy === "is-mcts-k2"
           ? ismctsBenchmarkConfig.k2RootPressureTieBreakDelta ?? ismctsBenchmarkConfig.rootPressureTieBreakDelta
-          : policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4"
+          : policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-nofix"
             ? ismctsBenchmarkConfig.rootPressureTieBreakDelta
             : 0,
-      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2",
+      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2" || policy === "is-mcts-nofix",
       rootConservationWinRateThreshold:
         policy === "is-mcts-k2"
           ? ismctsBenchmarkConfig.k2RootConservationWinRateThreshold ?? ismctsBenchmarkConfig.rootConservationWinRateThreshold
@@ -600,9 +603,12 @@ export function benchmarkPolicyDecision(
       valueModel:
         policy === "is-mcts-k2"
           ? ismctsBenchmarkConfig.k2ValueModel
-          : policy === "is-mcts-h3" || policy === "is-mcts-h4"
+          : policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-nofix"
             ? ismctsBenchmarkConfig.valueModel
             : undefined,
+      // [Claude 2026-07-22] Fix B+/D1：is-mcts 系一律 default-on；is-mcts-nofix baseline 關掉做 A/B。
+      defenseSkillEffectScoring: policy !== "is-mcts-nofix",
+      defenseChoiceSurvivalTieBreak: policy !== "is-mcts-nofix",
       rolloutPolicy,
     });
     searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));

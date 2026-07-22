@@ -121,7 +121,7 @@ function handBestParam(db: CardDb | undefined, state: GameState, player: PlayerS
   return player.hand.reduce((best, uid) => Math.max(best, cardParam(db, state, uid, area)), 0);
 }
 
-function handDeployablePower(db: CardDb | undefined, state: GameState, player: PlayerState): number {
+export function handDeployablePower(db: CardDb | undefined, state: GameState, player: PlayerState): number {
   if (!db) return 0;
   return player.hand.reduce((sum, uid) => {
     const id = state.cards[uid];
