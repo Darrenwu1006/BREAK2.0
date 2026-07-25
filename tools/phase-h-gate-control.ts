@@ -1,30 +1,23 @@
 import process from "node:process";
+import { stringArg } from "../src/shared/argv";
 import { readFileSync } from "node:fs";
 import { benchmarkDb } from "../src/ai/benchmark-fixtures";
 import { createIsmctsReport, rootDecisionPressureScore } from "../src/ai/ismcts";
-import { decisionLabel, enumerateCandidates } from "../src/ai/coach";
+import { enumerateCandidates } from "../src/ai/coach";
+import { describeDecision } from "../src/shared/decisionLabels";
 import { heuristicAiDecision } from "../src/ai/heuristic";
 import { runPhaseHFreeAttackGateControl } from "../src/ai/phase-h-gate-control";
 import type { Decision, GameState } from "../src/engine/types";
 import type { ReplaySession } from "../src/shared/replayHistory";
 import type { ValueModel } from "../src/ai/rollout-value";
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-const seed = Number(argValue("seed", "940"));
-const iterations = Number(argValue("iterations", "120"));
-const leafRolloutHorizon = Number(argValue("leaf-rollout-horizon", "40"));
-const rootPressureTieBreakDelta = Number(argValue("root-pressure-delta", "0.03"));
-const replayFile = argValue("replay-file", "");
-const entryIndex = Number(argValue("entry", "54"));
-const valueModel = readModel(argValue("model-file", ""));
+const seed = Number(stringArg("seed", "940"));
+const iterations = Number(stringArg("iterations", "120"));
+const leafRolloutHorizon = Number(stringArg("leaf-rollout-horizon", "40"));
+const rootPressureTieBreakDelta = Number(stringArg("root-pressure-delta", "0.03"));
+const replayFile = stringArg("replay-file", "");
+const entryIndex = Number(stringArg("entry", "54"));
+const valueModel = readModel(stringArg("model-file", ""));
 
 function isObject(value: unknown): value is { model?: unknown } {
   return typeof value === "object" && value !== null;
@@ -91,9 +84,9 @@ if (replayFile) {
 
   console.log(`Phase-H-Gate-Control: replay entry ${entryIndex}`);
   console.log(`Replay: ${replayFile}`);
-  console.log(`Actual decision: ${decisionLabel(benchmarkDb, state, entry.decision)}, accept=${acceptOf(entry.decision)}`);
-  console.log(`Candidates: ${candidates.map((decision) => decisionLabel(benchmarkDb, state, decision)).join(" / ")}`);
-  console.log(`Heuristic fallback: ${decisionLabel(benchmarkDb, state, fallback)}, accept=${acceptOf(fallback)}`);
+  console.log(`Actual decision: ${describeDecision(benchmarkDb, state, entry.decision)}, accept=${acceptOf(entry.decision)}`);
+  console.log(`Candidates: ${candidates.map((decision) => describeDecision(benchmarkDb, state, decision)).join(" / ")}`);
+  console.log(`Heuristic fallback: ${describeDecision(benchmarkDb, state, fallback)}, accept=${acceptOf(fallback)}`);
   for (const [label, report] of [["is-mcts", base], ["is-mcts-root-pressure", rootPressure]] as const) {
     console.log(
       `- ${label}: ${report.bestAction.label}, accept=${acceptOf(report.bestAction.decision)}, ` +

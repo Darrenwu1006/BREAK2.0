@@ -1,15 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { Card } from "../data/types";
 import type { CourtArea } from "../engine/dsl";
-import { applyDecision, canChooseBlock, canDeployTo, createGame, deployNames, deployableUids, freeOptions } from "../engine/engine";
+import { canChooseBlock, canDeployTo, deployNames, deployableUids, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
-import type { CoachWorkerResponse } from "../ai/coach-worker";
-import type { CoachActionEstimate, CoachReport } from "../ai/coach";
+import { createSearchController, createWorkerSearchBackend, isSearchCancelled, type CancelableQuery } from "../ai/ai-search";
+import { describeDecisionShort } from "../shared/decisionLabels";
+import type { CoachReport } from "../ai/coach";
 import type { ValueExplanation } from "../ai/rollout-value";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
-import { buildHumanAnchorDraft } from "../shared/human-anchor";
+import { buildMatchSummary, type SkillUsage } from "../shared/matchSummary";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
 import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER, ValueExplanationSummary } from "./GamePanels";
@@ -19,12 +20,14 @@ import type { OpponentEngine, InspectedCard } from "./gameTypes";
 import { MotionLayer, useGameMotion } from "./useGameMotion";
 import { canUseInPlaceEffectSelection } from "../shared/selection";
 import { ZONE_LABEL, groupCandidatesByZone } from "./zoneLocate";
-import { popUndoSnapshot, pushPlayerUndoSnapshot, type UndoHistory, UNDO_HISTORY_LIMIT } from "./undoHistory";
-import { appendReplayEntry, appendReplaySetFeedback, createReplaySession, keyReplayEntries, pendingReplaySetFeedback, stateAtReplayStep, summarizeReplaySession, truncateReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
+import { MatchSession } from "../shared/matchSession";
+import { keyReplayEntries, pendingReplaySetFeedback, stateAtReplayStep, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
 import type { CardPointerDragInfo } from "./CardView";
 import { SetFeedbackDialog } from "./SetFeedbackDialog";
 
 const HUMAN: PlayerId = 0;
+/** [Claude 2026-07-25] 候選 C：經典介面的 undo 深度（lab 為 20；純 UX 手感，見 matchSession 的 undoLimit）。 */
+const UNDO_HISTORY_LIMIT = 10;
 const AI: PlayerId = 1;
 
 const DEPLOY_AREA: Record<string, CourtArea> = {
@@ -79,48 +82,6 @@ const SFX_ATTACK_YOU = ["ドン！", "バンッ！", "ズバン！"];
 const SFX_ATTACK_OPP = ["ドッ！", "ズバッ！"];
 
 type SplashBanner = { text: string; kind: "set" | "match" };
-type GameRuntime = { state: GameState; replay: ReplaySession };
-type ReplayCritiqueState =
-  | { status: "idle" }
-  | { status: "loading"; step: number }
-  | { status: "ready"; step: number; report: CoachReport }
-  | { status: "error"; step: number; error: string };
-type ReplayCritiqueResult =
-  | { status: "ready"; report: CoachReport }
-  | { status: "error"; error: string };
-type ReplayCritiqueCache = Record<number, ReplayCritiqueResult>;
-type ReplayScanState =
-  | { status: "idle" }
-  | { status: "running"; currentStep: number; done: number; total: number }
-  | { status: "done"; total: number }
-  | { status: "stopped"; done: number; total: number };
-type HumanAnchorStatus =
-  | { status: "idle" }
-  | { status: "scheduled"; replayRef: string }
-  | { status: "saving"; replayRef: string }
-  | { status: "saved"; replayRef: string; duplicate?: boolean }
-  | { status: "skipped"; replayRef?: string }
-  | { status: "error"; replayRef?: string; error: string };
-
-function decisionLabel(decision: Decision): string {
-  switch (decision.type) {
-    case "serve-rights": return decision.take ? "取得發球權" : "讓出發球權";
-    case "mulligan": return decision.returnUids.length ? `換牌 ${decision.returnUids.length} 張` : "不換牌";
-    case "deploy-serve": return decision.uid === null ? "不登場發球" : "發球登場";
-    case "deploy-receive": return decision.uid === null ? "不登場接球" : "接球登場";
-    case "deploy-toss": return decision.uid === null ? "不登場托球" : "托球登場";
-    case "deploy-attack": return decision.uid === null ? "不登場攻擊" : "攻擊登場";
-    case "deploy-block": return decision.uids === null ? "不登場攔網" : `攔網登場 ${decision.uids.length} 張`;
-    case "defense-choice": return decision.choice === "block" ? "選擇攔網" : "選擇接球";
-    case "free": return decision.action === "pass" ? "Pass" : decision.action === "lost" ? "宣告 Lost" : decision.action === "skill" ? "使用技能" : "打出事件";
-    case "resolve-pending": return "選擇待機技能";
-    case "effect-confirm": return decision.accept ? "使用效果" : "不使用效果";
-    case "effect-cards": return `選卡 ${decision.uids.length} 張`;
-    case "effect-option": return "選擇效果選項";
-    case "pick-set-card": return "拿取 Set 卡";
-  }
-}
-
 function actorLabel(entry: ReplayEntry): string {
   return entry.source === "ai" ? "電腦" : entry.player === HUMAN ? "你" : "玩家";
 }
@@ -129,88 +90,8 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function sameDecision(a: Decision, b: Decision): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function findActualEstimate(report: CoachReport, decision: Decision): CoachActionEstimate | null {
-  return report.recommendations.find((item) => sameDecision(item.decision, decision)) ?? null;
-}
-
-function critiqueTone(delta: number, actual: CoachActionEstimate | null): { label: string; className: string } {
-  if (!actual) return { label: "未覆蓋", className: "is-neutral" };
-  if (delta >= 0.15) return { label: "失誤", className: "is-warning" };
-  if (delta <= -0.03) return { label: "妙手", className: "is-good" };
-  return { label: "可接受", className: "is-neutral" };
-}
-
-function gameplanTone(tone: NonNullable<CoachActionEstimate["gameplan"]>["tone"] | undefined): { label: string; className: string } {
-  if (tone === "progress") return { label: "主軸推進", className: "is-good" };
-  if (tone === "risk") return { label: "主軸風險", className: "is-warning" };
-  if (tone === "drift") return { label: "主軸偏離", className: "is-warning" };
-  return { label: "主軸持平", className: "is-neutral" };
-}
-
-function critiqueToneForEntry(entry: ReplayEntry, result: ReplayCritiqueResult | undefined): { label: string; className: string } | null {
-  if (!result) return null;
-  if (result.status === "error") return { label: "錯誤", className: "is-neutral" };
-  const actual = findActualEstimate(result.report, entry.decision);
-  const delta = actual ? result.report.bestAction.winRate - actual.winRate : 0;
-  return critiqueTone(delta, actual);
-}
-
 function statAverage(stats: ReplayAnalytics["op"][number]): string {
   return stats.count === 0 ? "-" : stats.average.toFixed(1);
-}
-
-function winRateBand(rate: number): "low" | "mid" | "good" | "high" {
-  if (rate < 0.4) return "low";
-  if (rate < 0.55) return "mid";
-  if (rate < 0.7) return "good";
-  return "high";
-}
-
-function critiqueSummary(entries: ReplayEntry[], cache: ReplayCritiqueCache) {
-  const summary = {
-    totalPlayerSteps: entries.filter((entry) => entry.source === "player").length,
-    evaluated: 0,
-    mistakes: 0,
-    acceptable: 0,
-    brilliants: 0,
-    uncovered: 0,
-    errors: 0,
-    actualWinRateTotal: 0,
-    bestWinRateTotal: 0,
-    bands: { low: 0, mid: 0, good: 0, high: 0 },
-    largestSwing: null as null | { step: number; delta: number; label: string },
-  };
-  for (const entry of entries) {
-    if (entry.source !== "player") continue;
-    const step = entry.index + 1;
-    const result = cache[step];
-    if (!result) continue;
-    if (result.status === "error") {
-      summary.errors++;
-      continue;
-    }
-    summary.evaluated++;
-    const actual = findActualEstimate(result.report, entry.decision);
-    if (!actual) {
-      summary.uncovered++;
-      continue;
-    }
-    const delta = result.report.bestAction.winRate - actual.winRate;
-    summary.actualWinRateTotal += actual.winRate;
-    summary.bestWinRateTotal += result.report.bestAction.winRate;
-    summary.bands[winRateBand(actual.winRate)]++;
-    if (delta >= 0.15) summary.mistakes++;
-    else if (delta <= -0.03) summary.brilliants++;
-    else summary.acceptable++;
-    if (!summary.largestSwing || delta > summary.largestSwing.delta) {
-      summary.largestSwing = { step, delta, label: decisionLabel(entry.decision) };
-    }
-  }
-  return summary;
 }
 
 function LostSetSection(props: { lostSets: LostSetSummary }) {
@@ -297,86 +178,37 @@ function NarrativeSection(props: { narrative: string[] }) {
   );
 }
 
-function HumanAnchorControls(props: {
-  experimental: boolean;
-  recordEnabled: boolean;
-  status: HumanAnchorStatus;
-  onExperimentalChange: (experimental: boolean) => void;
-  onRecordEnabledChange: (enabled: boolean) => void;
-  onRecordNow: () => void;
-  onCancel: () => void;
-}) {
-  const locked = props.status.status === "saving" || props.status.status === "saved";
-  const statusText =
-    props.status.status === "scheduled" ? "即將自動記錄"
-    : props.status.status === "saving" ? "記錄中"
-    : props.status.status === "saved" ? props.status.duplicate ? "已記錄過" : "已記錄"
-    : props.status.status === "skipped" ? "本場不記錄"
-    : props.status.status === "error" ? `記錄失敗：${props.status.error}`
-    : "等待對戰紀錄儲存";
-  const canRecord =
-    props.status.status === "scheduled" ||
-    props.status.status === "skipped" ||
-    props.status.status === "error";
-
+// [Claude 2026-07-24] 候選 C Part 2：開技能次數（per-card 前幾名），資料來自 matchSummary。
+function SkillUsageSection(props: { human: SkillUsage; ai: SkillUsage }) {
+  const top = (usage: SkillUsage) => usage.byCard.slice(0, 5);
   return (
-    <section className="report-section human-anchor-panel">
-      <div className="human-anchor-head">
-        <b>人類錨點</b>
-        <span className={`human-anchor-status is-${props.status.status}`}>{statusText}</span>
+    <section className="report-section">
+      <b>技能使用</b>
+      <div className="report-compare">
+        <span><small>你 開技能</small><b>{props.human.total}</b><em>次</em></span>
+        <span><small>AI 開技能</small><b>{props.ai.total}</b><em>次</em></span>
       </div>
-      <label>
-        <input
-          type="checkbox"
-          checked={props.recordEnabled}
-          disabled={locked}
-          onChange={(event) => props.onRecordEnabledChange(event.currentTarget.checked)}
-        />
-        <span>記錄本場</span>
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={props.experimental}
-          disabled={locked}
-          onChange={(event) => props.onExperimentalChange(event.currentTarget.checked)}
-        />
-        <span>這場是實驗局</span>
-      </label>
-      <div className="human-anchor-actions">
-        <button className="btn-secondary" disabled={!canRecord} onClick={props.onRecordNow}>記錄本場</button>
-        <button className="btn-quiet" disabled={props.status.status !== "scheduled"} onClick={props.onCancel}>取消本場記錄</button>
-      </div>
+      {top(props.human).length > 0 && (
+        <div className="replay-source-row">
+          {top(props.human).map((card) => (
+            <span key={card.name}>{card.name} ×{card.count}</span>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
 function PostMatchReportBody(props: {
   analytics: ReplayAnalytics;
+  skillUsage: [SkillUsage, SkillUsage];
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
-  humanAnchorExperimental: boolean;
-  humanAnchorRecordEnabled: boolean;
-  humanAnchorStatus: HumanAnchorStatus;
-  keyEntries: ReplayEntry[];
-  critiqueCache: ReplayCritiqueCache;
-  scan: ReplayScanState;
-  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
-  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
-  onHumanAnchorRecordNow: () => void;
-  onHumanAnchorCancel: () => void;
-  onScan: () => void;
-  onStopScan: () => void;
 }) {
-  const { analytics, lostSets, effectiveness, keyEntries, critiqueCache, scan } = props;
-  const quality = critiqueSummary(keyEntries, critiqueCache);
-  const evaluatedWithWinRate = quality.mistakes + quality.acceptable + quality.brilliants;
-  const avgActual = evaluatedWithWinRate ? quality.actualWinRateTotal / evaluatedWithWinRate : 0;
-  const avgBest = evaluatedWithWinRate ? quality.bestWinRateTotal / evaluatedWithWinRate : 0;
-  const bandTotal = Math.max(1, evaluatedWithWinRate);
+  const { analytics, lostSets, effectiveness } = props;
   const humanOp = analytics.op[HUMAN];
   const aiOp = analytics.op[AI];
   const humanDp = analytics.dp[HUMAN];
@@ -391,76 +223,27 @@ function PostMatchReportBody(props: {
 
       <NarrativeSection narrative={props.narrative} />
 
-      <HumanAnchorControls
-        experimental={props.humanAnchorExperimental}
-        recordEnabled={props.humanAnchorRecordEnabled}
-        status={props.humanAnchorStatus}
-        onExperimentalChange={props.onHumanAnchorExperimentalChange}
-        onRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
-        onRecordNow={props.onHumanAnchorRecordNow}
-        onCancel={props.onHumanAnchorCancel}
-      />
-
       <section className="report-section">
         <b>局面估值</b>
         <ValueExplanationSummary explanation={props.valueExplanation} />
       </section>
 
       <section className="report-section">
-        <div className="replay-overview-heading">
-          <b>勝率分布</b>
-          {scan.status === "running" ? (
-            <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
-          ) : (
-            <button className="btn-quiet" disabled={quality.totalPlayerSteps === 0} onClick={props.onScan}>掃描玩家決策</button>
-          )}
-        </div>
-        <div className="report-stat-grid">
-          <span><small>已評估</small><b>{quality.evaluated}/{quality.totalPlayerSteps}</b></span>
-          <span><small>失誤</small><b>{quality.mistakes}</b></span>
-          <span><small>可接受</small><b>{quality.acceptable}</b></span>
-          <span><small>妙手</small><b>{quality.brilliants}</b></span>
-        </div>
-        {scan.status === "running" && <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>}
-        {scan.status === "done" && <small className="summary-idle">玩家決策掃描完成。</small>}
-        {quality.evaluated > 0 ? (
-          <>
-            <div className="winrate-bars" aria-label="實際選擇勝率分布">
-              {([
-                ["low", "<40%", quality.bands.low],
-                ["mid", "40-55%", quality.bands.mid],
-                ["good", "55-70%", quality.bands.good],
-                ["high", "70%+", quality.bands.high],
-              ] as const).map(([key, label, count]) => (
-                <div key={key} className={`winrate-bar is-${key}`}>
-                  <span style={{ width: `${Math.max(6, (count / bandTotal) * 100)}%` }} />
-                  <b>{label}</b>
-                  <small>{count}</small>
-                </div>
-              ))}
-            </div>
-            <p className="report-note">
-              實際選擇平均勝率 {percent(avgActual)}，Coach 最佳候選平均 {percent(avgBest)}
-              {quality.largestSwing && quality.largestSwing.delta > 0
-                ? `；最大可回看差距在 Step ${quality.largestSwing.step}（約 ${percent(quality.largestSwing.delta)}）。`
-                : "。"}
-            </p>
-          </>
-        ) : (
-          <small className="summary-idle">尚未掃描玩家決策；掃描後這裡會出現勝率區間與失誤分布。</small>
-        )}
-        {quality.uncovered > 0 && <small className="summary-idle">有 {quality.uncovered} 步未被 Coach 候選列舉覆蓋，先不要把它當成錯誤。</small>}
-      </section>
-
-      <section className="report-section">
         <b>攻防平均</b>
         <div className="report-compare">
-          <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>最高 {humanOp.max || "-"}</em></span>
-          <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>最高 {aiOp.max || "-"}</em></span>
-          <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count} 次</em></span>
-          <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count} 次</em></span>
+          <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>{humanOp.count ? `${humanOp.min}–${humanOp.max}` : "-"}</em></span>
+          <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>{aiOp.count ? `${aiOp.min}–${aiOp.max}` : "-"}</em></span>
+          <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count ? `${humanDp.min}–${humanDp.max}・${humanDp.count} 次` : "-"}</em></span>
+          <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count ? `${aiDp.min}–${aiDp.max}・${aiDp.count} 次` : "-"}</em></span>
+        </div>
+        <div className="replay-source-row">
+          <span>你 OP≥6 收割 {humanOp.highCount} 手</span>
+          <span>AI OP≥6 收割 {aiOp.highCount} 手</span>
+          <span>得分來源 發 {analytics.opSources.serve}／攔 {analytics.opSources.block}／攻 {analytics.opSources.attack}</span>
         </div>
       </section>
+
+      <SkillUsageSection human={props.skillUsage[HUMAN]} ai={props.skillUsage[AI]} />
 
       <section className="report-section">
         <b>Guts 使用</b>
@@ -486,23 +269,12 @@ function PostMatchReportBody(props: {
 
 function PostMatchReport(props: {
   analytics: ReplayAnalytics;
+  skillUsage: [SkillUsage, SkillUsage];
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
-  humanAnchorExperimental: boolean;
-  humanAnchorRecordEnabled: boolean;
-  humanAnchorStatus: HumanAnchorStatus;
-  keyEntries: ReplayEntry[];
-  critiqueCache: ReplayCritiqueCache;
-  scan: ReplayScanState;
-  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
-  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
-  onHumanAnchorRecordNow: () => void;
-  onHumanAnchorCancel: () => void;
-  onScan: () => void;
-  onStopScan: () => void;
   onReplay: () => void;
 }) {
   return (
@@ -515,23 +287,12 @@ function PostMatchReport(props: {
       </div>
       <PostMatchReportBody
         analytics={props.analytics}
+        skillUsage={props.skillUsage}
         lostSets={props.lostSets}
         effectiveness={props.effectiveness}
         cardDetails={props.cardDetails}
         valueExplanation={props.valueExplanation}
         narrative={props.narrative}
-        humanAnchorExperimental={props.humanAnchorExperimental}
-        humanAnchorRecordEnabled={props.humanAnchorRecordEnabled}
-        humanAnchorStatus={props.humanAnchorStatus}
-        keyEntries={props.keyEntries}
-        critiqueCache={props.critiqueCache}
-        scan={props.scan}
-        onHumanAnchorExperimentalChange={props.onHumanAnchorExperimentalChange}
-        onHumanAnchorRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
-        onHumanAnchorRecordNow={props.onHumanAnchorRecordNow}
-        onHumanAnchorCancel={props.onHumanAnchorCancel}
-        onScan={props.onScan}
-        onStopScan={props.onStopScan}
       />
       <div className="report-actions" style={{ padding: "0 var(--sp-4) var(--sp-4)" }}>
         <button data-primary="true" disabled={props.analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
@@ -542,26 +303,15 @@ function PostMatchReport(props: {
 
 function PostMatchModal(props: {
   analytics: ReplayAnalytics;
+  skillUsage: [SkillUsage, SkillUsage];
   lostSets: LostSetSummary;
   effectiveness: ReplayActionEffectiveness;
   cardDetails: ActionCardDetail[];
   valueExplanation: ValueExplanation;
   narrative: string[];
-  humanAnchorExperimental: boolean;
-  humanAnchorRecordEnabled: boolean;
-  humanAnchorStatus: HumanAnchorStatus;
-  keyEntries: ReplayEntry[];
-  critiqueCache: ReplayCritiqueCache;
-  scan: ReplayScanState;
   winner: PlayerId | null;
   replayMode: boolean;
   opponentHand: { uid: number; card: Card }[];
-  onHumanAnchorExperimentalChange: (experimental: boolean) => void;
-  onHumanAnchorRecordEnabledChange: (enabled: boolean) => void;
-  onHumanAnchorRecordNow: () => void;
-  onHumanAnchorCancel: () => void;
-  onScan: () => void;
-  onStopScan: () => void;
   onReplay: () => void;
   onClose: () => void;
 }) {
@@ -592,23 +342,12 @@ function PostMatchModal(props: {
           )}
           <PostMatchReportBody
             analytics={props.analytics}
+            skillUsage={props.skillUsage}
             lostSets={props.lostSets}
             effectiveness={props.effectiveness}
             cardDetails={props.cardDetails}
             valueExplanation={props.valueExplanation}
             narrative={props.narrative}
-            humanAnchorExperimental={props.humanAnchorExperimental}
-            humanAnchorRecordEnabled={props.humanAnchorRecordEnabled}
-            humanAnchorStatus={props.humanAnchorStatus}
-            keyEntries={props.keyEntries}
-            critiqueCache={props.critiqueCache}
-            scan={props.scan}
-            onHumanAnchorExperimentalChange={props.onHumanAnchorExperimentalChange}
-            onHumanAnchorRecordEnabledChange={props.onHumanAnchorRecordEnabledChange}
-            onHumanAnchorRecordNow={props.onHumanAnchorRecordNow}
-            onHumanAnchorCancel={props.onHumanAnchorCancel}
-            onScan={props.onScan}
-            onStopScan={props.onStopScan}
           />
         </div>
         <div className="postmatch-modal-footer">
@@ -707,25 +446,10 @@ function ReplayStepSummary(props: {
   total: number;
   analytics: ReplayAnalytics;
   keyEntries: ReplayEntry[];
-  critique: ReplayCritiqueState;
-  critiqueCache: ReplayCritiqueCache;
-  scan: ReplayScanState;
-  onEvaluate: () => void;
-  onScan: () => void;
-  onStopScan: () => void;
   onJump: (step: number) => void;
 }) {
-  const { state, entry, step, total, analytics, keyEntries, critique, critiqueCache, scan } = props;
+  const { state, entry, step, total, analytics, keyEntries } = props;
   const newLogs = entry ? entry.after.log.slice(entry.logStart, entry.logEnd) : [];
-  const report = critique.status === "ready" && critique.step === step ? critique.report : null;
-  const error = critique.status === "error" && critique.step === step ? critique.error : null;
-  const loading = critique.status === "loading" && critique.step === step;
-  const actual = report && entry ? findActualEstimate(report, entry.decision) : null;
-  const delta = report && actual ? report.bestAction.winRate - actual.winRate : 0;
-  const tone = report ? critiqueTone(delta, actual) : null;
-  const actualGameplan = actual?.gameplan;
-  const gameplan = gameplanTone(actualGameplan?.tone);
-  const mixedSignal = !!actualGameplan && actualGameplan.tone === "progress" && delta >= 0.15;
   return (
     <div className="replay-panel">
       <div className="panel-heading">
@@ -738,7 +462,7 @@ function ReplayStepSummary(props: {
         {entry ? (
           <div className="replay-card">
             <span className="replay-pill">{actorLabel(entry)}</span>
-            <b>{decisionLabel(entry.decision)}</b>
+            <b>{describeDecisionShort(entry.decision)}</b>
             <small>{PHASE_NAME[entry.phase]}・Set {entry.setNo}・Turn {entry.turnNo}</small>
           </div>
         ) : (
@@ -751,11 +475,6 @@ function ReplayStepSummary(props: {
         <div className="replay-overview">
           <div className="replay-overview-heading">
             <b>全場索引</b>
-            {scan.status === "running" ? (
-              <button className="btn-quiet" onClick={props.onStopScan}>停止掃描</button>
-            ) : (
-              <button className="btn-quiet" disabled={keyEntries.every((item) => item.source !== "player")} onClick={props.onScan}>掃描玩家決策</button>
-            )}
           </div>
           <div className="replay-stat-grid">
             <span><small>玩家決策</small><b>{analytics.playerDecisions}</b></span>
@@ -768,18 +487,11 @@ function ReplayStepSummary(props: {
             <span>攔網 {analytics.opSources.block}</span>
             <span>攻擊 {analytics.opSources.attack}</span>
           </div>
-          {scan.status === "running" && (
-            <small className="summary-idle">正在評估 Step {scan.currentStep}（{scan.done}/{scan.total}）</small>
-          )}
-          {scan.status === "done" && <small className="summary-idle">已完成 {scan.total} 個玩家決策掃描。</small>}
-          {scan.status === "stopped" && <small className="summary-idle">已停止掃描（{scan.done}/{scan.total}）。</small>}
           <div className="replay-step-list">
             {keyEntries.length === 0 ? (
               <small className="summary-idle">目前沒有關鍵步驟。</small>
             ) : keyEntries.map((item) => {
               const itemStep = item.index + 1;
-              const cachedTone = critiqueToneForEntry(item, critiqueCache[itemStep]);
-              const scanning = scan.status === "running" && scan.currentStep === itemStep;
               return (
                 <button
                   key={item.index}
@@ -787,13 +499,8 @@ function ReplayStepSummary(props: {
                   onClick={() => props.onJump(itemStep)}
                 >
                   <span>#{itemStep}</span>
-                  <b>{actorLabel(item)}・{decisionLabel(item.decision)}</b>
+                  <b>{actorLabel(item)}・{describeDecisionShort(item.decision)}</b>
                   <small>{PHASE_NAME[item.phase]}・Set {item.setNo} Turn {item.turnNo}</small>
-                  {(cachedTone || scanning) && (
-                    <em className={`replay-step-badge ${cachedTone?.className ?? "is-neutral"}`}>
-                      {scanning ? "評估中" : cachedTone?.label}
-                    </em>
-                  )}
                 </button>
               );
             })}
@@ -810,42 +517,6 @@ function ReplayStepSummary(props: {
                 <li key={`${log.setNo}-${log.turnNo}-${index}`}>{log.text}</li>
               ))}
             </ul>
-          )}
-        </div>
-        <div className="replay-critique">
-          <div className="replay-critique-heading">
-            <b>出牌檢討</b>
-            <button className="btn-quiet" disabled={!entry || loading} onClick={props.onEvaluate}>
-              {loading ? "評估中" : "評估此步"}
-            </button>
-          </div>
-          {!entry ? (
-            <small className="summary-idle">開局狀態沒有實際決策可評估。</small>
-          ) : error ? (
-            <p className="coach-error">{error}</p>
-          ) : report ? (
-            <div className="critique-result">
-              <span className={`critique-badge ${tone?.className ?? ""}`}>{tone?.label}</span>
-              {actualGameplan && <span className={`critique-badge ${gameplan.className}`}>{gameplan.label}</span>}
-              <div className="critique-row">
-                <small>最佳建議</small>
-                <b>{report.bestAction.label}</b>
-                <span>{percent(report.bestAction.winRate)} 勝率・信心 {percent(report.bestAction.confidence)}</span>
-                {report.bestAction.gameplan && <span>主軸：{report.bestAction.gameplan.stage}・{report.bestAction.gameplan.progressScore} 分・Δ {report.bestAction.gameplan.delta >= 0 ? "+" : ""}{report.bestAction.gameplan.delta}</span>}
-              </div>
-              <div className="critique-row">
-                <small>實際選擇</small>
-                <b>{actual?.label ?? decisionLabel(entry.decision)}</b>
-                <span>{actual ? `${percent(actual.winRate)} 勝率・差距 ${percent(Math.max(0, delta))}` : "此決策不在本次候選評估內"}</span>
-                {actualGameplan && <span>主軸：{actualGameplan.stage}・{actualGameplan.progressScore} 分・Δ {actualGameplan.delta >= 0 ? "+" : ""}{actualGameplan.delta}</span>}
-              </div>
-              {actualGameplan && (actualGameplan.badges.length > 0 || actualGameplan.risks.length > 0) && (
-                <p>{[...actualGameplan.badges.slice(0, 2), ...actualGameplan.risks.slice(0, 2)].join("；")}</p>
-              )}
-              <p>{actual ? (mixedSignal ? "這一步短期勝率較低，但有推進牌組主軸；先不要直接判成單純失誤，值得回看它是否是在啟動引擎。" : delta >= 0.15 ? "這一步可能有更高期望值的選擇，值得回看當時資源與後續防守壓力。" : "這一步和 Coach 推薦差距不大，可先視為合理路線。") : "Coach v1 的候選列舉沒有覆蓋這個實際決策；後續需擴充候選生成再評分。"}</p>
-            </div>
-          ) : (
-            <small className="summary-idle">按下評估後，會用 Coach / PIMC 從此步決策前狀態估算推薦選擇。</small>
           )}
         </div>
       </div>
@@ -865,25 +536,23 @@ export function Game(props: {
     () => heuristicProfileForDeckText(`${props.deckMeta[AI].school} ${props.deckMeta[AI].name}`),
     [props.deckMeta],
   );
-  const initialGameRef = useRef<GameRuntime | null>(null);
-  if (!initialGameRef.current) {
-    if (props.loadedReplay) {
-      initialGameRef.current = {
-        state: stateAtReplayStep(props.loadedReplay, props.loadedReplay.entries.length),
-        replay: props.loadedReplay,
-      };
-    } else {
-      const seed = (Date.now() % 0xffffffff) >>> 0;
-      const initialState = createGame(db, { seed, decks: props.decks });
-      initialGameRef.current = {
-        state: initialState,
-        replay: createReplaySession(initialState, props.decks, props.deckMeta, undefined, seed),
-      };
-    }
+  // [Claude 2026-07-25] 候選 C Part 1：對局編排改用共用 MatchSession（mutable class）。
+  // React 側只留膠水：ref 持有 session、onChange 觸發 bump 重繪；權威狀態一律讀 session.engine／session.replay。
+  const [, bumpSession] = useReducer((tick: number) => tick + 1, 0);
+  const sessionRef = useRef<MatchSession | null>(null);
+  if (!sessionRef.current) {
+    sessionRef.current = props.loadedReplay
+      ? MatchSession.fromReplay(db, props.loadedReplay, { onChange: bumpSession })
+      : new MatchSession(db, props.decks, (Date.now() % 0xffffffff) >>> 0, {
+          deckMeta: props.deckMeta,
+          deferOpponent: true, // 對手決策一律由 ai-search 回填（見下方 AI effect）
+          undoLimit: UNDO_HISTORY_LIMIT,
+          onChange: bumpSession,
+        });
   }
-  const [game, setGame] = useState<GameRuntime>(() => initialGameRef.current!);
-  const state = game.state;
-  const replay = game.replay;
+  const session = sessionRef.current;
+  const state = session.engine;
+  const replay = session.replay;
   const [hovered, setHovered] = useState<InspectedCard | null>(null);
   const [inspected, setInspected] = useState<InspectedCard | null>(null);
   const [multiSel, setMultiSel] = useState<number[]>([]);
@@ -897,39 +566,23 @@ export function Game(props: {
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
-  const [undoHistory, setUndoHistory] = useState<UndoHistory>([]);
-  const [undoReplayLengths, setUndoReplayLengths] = useState<number[]>([]);
   const [replayMode, setReplayMode] = useState(!!props.loadedReplay);
   const [replayStep, setReplayStep] = useState(props.loadedReplay ? props.loadedReplay.entries.length : 0);
   const [feedbackReadyAnchor, setFeedbackReadyAnchor] = useState<number | null>(null);
   const decisionRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLDivElement>(null);
-  const coachRequestRef = useRef(0);
-  const coachWorkerRef = useRef<Worker | null>(null);
-  // [Claude 2026-06-22] Phase F 塊2：強敵 PIMC 思考用的 worker / 請求序號 / 思考提示狀態。
-  const aiRequestRef = useRef(0);
-  const aiWorkerRef = useRef<Worker | null>(null);
+  const coachQueryRef = useRef<CancelableQuery<CoachReport> | null>(null);
+  // [Claude 2026-06-22] Phase F 塊2：強敵 PIMC 思考用的查詢 handle／思考提示狀態。
+  const aiQueryRef = useRef<CancelableQuery<Decision> | null>(null);
   const aiPaceTimerRef = useRef<number | null>(null);
+  // [Claude 2026-07-24] 候選 A：搜尋門面（取消/取代/fallback/調參都在 module 內）。React 只留膠水。
+  const search = useMemo(() => createSearchController({ backend: createWorkerSearchBackend() }), []);
   const [aiThinking, setAiThinking] = useState<{ budgetMs: number } | null>(null);
-  const replayCoachRequestRef = useRef(0);
-  const replayScanTokenRef = useRef(0);
-  const replayCoachWorkerRef = useRef<Worker | null>(null);
-  const replayCoachRejectRef = useRef<((error: Error) => void) | null>(null);
   const savedReplayRef = useRef(false);
-  const replayCritiquesRef = useRef<ReplayCritiqueCache>({});
   const [handWidth, setHandWidth] = useState(0);
   const [handCard, setHandCard] = useState(() => handCardFor(window.innerHeight));
-  const [replayCritique, setReplayCritique] = useState<ReplayCritiqueState>({ status: "idle" });
-  const [replayCritiques, setReplayCritiques] = useState<ReplayCritiqueCache>({});
-  const [replayScan, setReplayScan] = useState<ReplayScanState>({ status: "idle" });
   const [showPostMatchModal, setShowPostMatchModal] = useState(false);
-  const [humanAnchorExperimental, setHumanAnchorExperimental] = useState(false);
-  const [humanAnchorRecordEnabled, setHumanAnchorRecordEnabled] = useState(true);
-  const [humanAnchorStatus, setHumanAnchorStatus] = useState<HumanAnchorStatus>({ status: "idle" });
   const seenLogCount = useRef(state.log.length);
-  const humanAnchorExperimentalRef = useRef(false);
-  const humanAnchorRecordEnabledRef = useRef(true);
-  const humanAnchorTimerRef = useRef<number | null>(null);
 
   const pendingSetFeedback = useMemo(
     () => replayMode ? null : pendingReplaySetFeedback(replay),
@@ -939,6 +592,7 @@ export function Game(props: {
   const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
   const replayEntry = replayStep > 0 ? replay.entries[replayStep - 1] ?? null : null;
   const replayAnalytics = useMemo(() => summarizeReplaySession(replay), [replay]);
+  const matchSkillUsage = useMemo(() => buildMatchSummary(db, replay).skillUsage, [db, replay]);
   const replayReview = useMemo(() => createReplayReviewReport(db, replay, { player: HUMAN }), [db, replay]);
   const replayKeyEntries = useMemo(() => keyReplayEntries(replay), [replay]);
   const isMyDecision = pd?.player === HUMAN && state.phase !== "gameOver";
@@ -954,7 +608,7 @@ export function Game(props: {
   const { motions, recentUids, settledUids } = useGameMotion({ state: viewState, db, deckMeta: props.deckMeta, disabled: replayMode });
 
   const visibleInspection = hovered ?? inspected;
-  const canUndo = !replayMode && !pendingSetFeedback && undoHistory.length > 0;
+  const canUndo = !replayMode && !pendingSetFeedback && session.canUndo;
 
   function cardOf(uid: number): Card {
     return db.get(viewState.cards[uid]!)!;
@@ -982,46 +636,23 @@ export function Game(props: {
   function decide(decision: Decision) {
     if (pendingSetFeedback) return;
     clearTransientUi();
-    setUndoHistory((history) => pushPlayerUndoSnapshot(history, state, HUMAN));
-    setUndoReplayLengths((lengths) => {
-      const next = [...lengths, replay.entries.length];
-      return next.length > UNDO_HISTORY_LIMIT ? next.slice(next.length - UNDO_HISTORY_LIMIT) : next;
-    });
-    setGame((current) => {
-      const nextState = applyDecision(db, current.state, decision);
-      return {
-        state: nextState,
-        replay: appendReplayEntry(current.replay, current.state, decision, nextState, "player"),
-      };
-    });
+    session.decide(decision);
   }
 
   function undoLastDecision() {
-    if (pendingSetFeedback) return;
-    const popped = popUndoSnapshot(undoHistory);
-    if (!popped.snapshot) return;
-    const replayLength = undoReplayLengths[undoReplayLengths.length - 1] ?? replay.entries.length;
+    if (pendingSetFeedback || !session.canUndo) return;
     clearTransientUi();
-    seenLogCount.current = popped.snapshot.log.length;
-    setUndoHistory(popped.stack);
-    setUndoReplayLengths((lengths) => lengths.slice(0, -1));
-    setGame((current) => ({
-      state: popped.snapshot!,
-      replay: truncateReplaySession(current.replay, replayLength),
-    }));
+    if (session.undo()) seenLogCount.current = session.engine.log.length;
   }
 
   function recordSetFeedback(choice: ReplaySetFeedbackChoice, note?: string) {
     if (!pendingSetFeedback) return;
     const target = pendingSetFeedback;
-    setGame((current) => {
-      const nextReplay = appendReplaySetFeedback(current.replay, {
-        setNo: target.setNo,
-        anchorEntryIndex: target.anchorEntryIndex,
-        choice,
-        ...(choice !== "skipped" && note?.trim() ? { note: note.trim() } : {}),
-      });
-      return nextReplay === current.replay ? current : { ...current, replay: nextReplay };
+    session.recordSetFeedback({
+      setNo: target.setNo,
+      anchorEntryIndex: target.anchorEntryIndex,
+      choice,
+      ...(choice !== "skipped" && note?.trim() ? { note: note.trim() } : {}),
     });
     setFeedbackReadyAnchor(null);
   }
@@ -1039,133 +670,6 @@ export function Game(props: {
     clearTransientUi();
     setReplayMode(false);
     setReplayStep(0);
-    setReplayCritique({ status: "idle" });
-    setReplayScan({ status: "idle" });
-    replayScanTokenRef.current++;
-    replayCoachRejectRef.current?.(new Error("__cancelled__"));
-    replayCoachRejectRef.current = null;
-    replayCoachWorkerRef.current?.terminate();
-    replayCoachWorkerRef.current = null;
-  }
-
-  function storeReplayCritique(step: number, result: ReplayCritiqueResult) {
-    replayCritiquesRef.current = { ...replayCritiquesRef.current, [step]: result };
-    setReplayCritiques(replayCritiquesRef.current);
-  }
-
-  function requestReplayCoach(entry: ReplayEntry, step: number, token: number): Promise<CoachReport> {
-    const requestId = String(++replayCoachRequestRef.current);
-    replayCoachRejectRef.current?.(new Error("__cancelled__"));
-    replayCoachRejectRef.current = null;
-    replayCoachWorkerRef.current?.terminate();
-    replayCoachWorkerRef.current = null;
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
-      replayCoachWorkerRef.current = worker;
-      replayCoachRejectRef.current = reject;
-      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
-        if (event.data.requestId !== requestId || replayCoachRequestRef.current !== Number(requestId)) return;
-        worker.terminate();
-        if (replayCoachWorkerRef.current === worker) replayCoachWorkerRef.current = null;
-        if (replayCoachRejectRef.current === reject) replayCoachRejectRef.current = null;
-        if (replayScanTokenRef.current !== token) {
-          reject(new Error("__cancelled__"));
-          return;
-        }
-        if (event.data.ok) resolve(event.data.report);
-        else reject(new Error(event.data.error));
-      };
-      worker.onerror = (event) => {
-        if (replayCoachRequestRef.current !== Number(requestId)) return;
-        worker.terminate();
-        if (replayCoachWorkerRef.current === worker) replayCoachWorkerRef.current = null;
-        if (replayCoachRejectRef.current === reject) replayCoachRejectRef.current = null;
-        if (replayScanTokenRef.current !== token) {
-          reject(new Error("__cancelled__"));
-          return;
-        }
-        reject(new Error(event.message || "Replay Coach worker 發生錯誤"));
-      };
-      worker.postMessage({
-        requestId,
-        state: entry.before,
-        options: {
-          perspectivePlayer: entry.player,
-          knownDecks: props.decks,
-          gameplanDeckLabels: [replay.decks[0].label, replay.decks[1].label],
-          seed: entry.before.rngState + step * 97,
-          sampleCount: 4,
-          candidateLimit: 6,
-          rolloutMaxSteps: 1200,
-          timeLimitMs: 1400,
-        },
-      });
-    });
-  }
-
-  async function evaluateReplayStep() {
-    if (!replayMode || !replayEntry) return;
-    const step = replayStep;
-    const token = ++replayScanTokenRef.current;
-    setReplayScan({ status: "idle" });
-    setReplayCritique({ status: "loading", step });
-    try {
-      const report = await requestReplayCoach(replayEntry, step, token);
-      storeReplayCritique(step, { status: "ready", report });
-      setReplayCritique({ status: "ready", step, report });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === "__cancelled__") return;
-      storeReplayCritique(step, { status: "error", error: message });
-      setReplayCritique({ status: "error", step, error: message });
-    }
-  }
-
-  async function scanReplayDecisions() {
-    if (!replayMode && state.phase !== "gameOver") return;
-    const targets = replayKeyEntries
-      .filter((entry) => entry.source === "player")
-      .filter((entry) => replayCritiquesRef.current[entry.index + 1]?.status !== "ready");
-    const total = targets.length;
-    if (total === 0) {
-      setReplayScan({ status: "done", total: 0 });
-      return;
-    }
-    const token = ++replayScanTokenRef.current;
-    let done = 0;
-    for (const entry of targets) {
-      if (replayScanTokenRef.current !== token) {
-        setReplayScan({ status: "stopped", done, total });
-        return;
-      }
-      const step = entry.index + 1;
-      setReplayScan({ status: "running", currentStep: step, done, total });
-      setReplayCritique({ status: "loading", step });
-      try {
-        const report = await requestReplayCoach(entry, step, token);
-        storeReplayCritique(step, { status: "ready", report });
-        if (replayStep === step) setReplayCritique({ status: "ready", step, report });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message === "__cancelled__") {
-          setReplayScan({ status: "stopped", done, total });
-          return;
-        }
-        storeReplayCritique(step, { status: "error", error: message });
-        if (replayStep === step) setReplayCritique({ status: "error", step, error: message });
-      }
-      done++;
-    }
-    if (replayScanTokenRef.current === token) setReplayScan({ status: "done", total });
-  }
-
-  function stopReplayScan() {
-    replayScanTokenRef.current++;
-    replayCoachRejectRef.current?.(new Error("__cancelled__"));
-    replayCoachRejectRef.current = null;
-    replayCoachWorkerRef.current?.terminate();
-    replayCoachWorkerRef.current = null;
-    setReplayScan((scan) => scan.status === "running" ? { status: "stopped", done: scan.done, total: scan.total } : scan);
   }
 
   function changeEngine(next: OpponentEngine) {
@@ -1187,8 +691,8 @@ export function Game(props: {
   // engine === "heuristic" 為快速模式：直接走 heuristic、不啟動搜尋、不顯思考提示，但保留出手節奏
   // 與動畫/擬音（不瞬間）——即時運算後等 AI_PACE_MS 讓動畫順順跑完。
   useEffect(() => {
-    aiWorkerRef.current?.terminate();
-    aiWorkerRef.current = null;
+    aiQueryRef.current?.cancel();
+    aiQueryRef.current = null;
     if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
     if (replayMode || pendingSetFeedback || pd?.player !== AI || state.phase === "gameOver") {
       setAiThinking(null);
@@ -1197,38 +701,16 @@ export function Game(props: {
 
     function applyAiDecision(decision: Decision) {
       setAiThinking(null);
-      setGame((current) => {
-        if (pendingReplaySetFeedback(current.replay) || current.state.pendingDecision?.player !== AI || current.state.phase === "gameOver") return current;
-        const nextState = applyDecision(db, current.state, decision);
-        return {
-          state: nextState,
-          replay: appendReplayEntry(current.replay, current.state, decision, nextState, "ai"),
-        };
-      });
+      // session 是 mutable，出手前重讀權威狀態：搜尋期間盤面可能已被 undo／Set 回饋改動。
+      if (pendingReplaySetFeedback(session.replay) || !session.awaitingOpponent || session.engine.phase === "gameOver") return;
+      session.decideOpponent(decision);
     }
 
-    if (engine === "heuristic") {
-      setAiThinking(null);
-      const decision = heuristicAiDecision(db, state, aiProfile); // 即時運算
-      aiPaceTimerRef.current = window.setTimeout(() => {
-        aiPaceTimerRef.current = null;
-        applyAiDecision(decision);
-      }, AI_PACE_MS); // 等動畫跑完才推進
-      return () => {
-        if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
-      };
-    }
-
-    const requestId = String(++aiRequestRef.current);
-    // 強敵＝思考預算由 estimateThinkBudgetMs 依盤面自適應（約 0.5–10 秒），不再有速度旋鈕。
-    const timeLimitMs = estimateThinkBudgetMs(state);
-    // [Claude 2026-06-22] 出手節奏下限：S1 EV cut 讓搜尋常在 1 秒內想完，會搶在出手動畫（卡片飛行/落位 ~660ms、
-    // 得分潑墨 900ms）前就推進、把動畫切掉。故設每手最小耗時，思考時間計入此下限——想得久就不額外等、
-    // 想得快就補到下限讓動畫跑完。
+    // [Claude 2026-06-22] 出手節奏下限：搜尋常在 1 秒內想完，會搶在出手動畫前推進、把動畫切掉。
+    // 故設每手最小耗時，思考時間計入此下限——想得久就不額外等、想得快就補到下限讓動畫跑完。
     const startedAt = Date.now();
-    const pacingMs = AI_PACE_MS;
     function applyAiDecisionPaced(decision: Decision) {
-      const remaining = pacingMs - (Date.now() - startedAt);
+      const remaining = AI_PACE_MS - (Date.now() - startedAt);
       if (remaining <= 0) {
         applyAiDecision(decision);
         return;
@@ -1239,55 +721,51 @@ export function Game(props: {
         applyAiDecision(decision);
       }, remaining);
     }
-    const timer = window.setTimeout(() => {
-      setAiThinking({ budgetMs: timeLimitMs });
-      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
-      aiWorkerRef.current = worker;
-      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
-        if (event.data.requestId !== requestId || aiRequestRef.current !== Number(requestId)) return;
-        worker.terminate();
-        if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
-        if (event.data.ok) applyAiDecisionPaced(event.data.report.bestAction.decision);
-        else applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
-      };
-      worker.onerror = () => {
-        if (aiRequestRef.current !== Number(requestId)) return;
-        worker.terminate();
-        if (aiWorkerRef.current === worker) aiWorkerRef.current = null;
-        applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
-      };
-      // [Claude 2026-06-23] Phase G G4：電腦對手改用 SO-ISMCTS（leaf rollout=40、對手模型=heuristic）。
-      // 3s 部署預算同 wall-clock A/B 勝現役 pimc-v2 57.5%（CI 49.8-64.9%，趨勢 40→50→57.5% 隨預算單調上升；
-      // 見 docs/M8_PHASE_G_ISMCTS_SPEC.md §8、WORKLOG 2026-06-23）。iterations 不設＝由 timeLimitMs（think-budget）綁定。
-      worker.postMessage({
-        requestId,
-        state,
-        engine: "ismcts",
-        options: {
-          perspectivePlayer: AI,
-          knownDecks: props.decks,
-          seed: state.rngState,
-          candidateLimit: 8,
-          timeLimitMs,
-          rolloutPolicy: aiProfile,
-          leafRolloutHorizon: 40,
-          opponentModel: "heuristic",
-        },
+
+    // 演出：strong 顯示思考中回饋＋180ms 前置延遲；heuristic 即時。決策來源（worker vs heuristic）由 search 決定。
+    function askOpponent() {
+      // requestOpponentMove 內部：strong→worker(ismcts)；heuristic→同步；搜尋失敗（非取消）自動落 heuristic。
+      const query = search.requestOpponentMove(state, {
+        db,
+        engine: engine === "heuristic" ? "heuristic" : "strong",
+        perspectivePlayer: AI,
+        knownDecks: props.decks,
+        seed: state.rngState,
+        timeLimitMs: engine === "heuristic" ? 0 : estimateThinkBudgetMs(state),
+        rolloutPolicy: aiProfile,
       });
+      aiQueryRef.current = query;
+      query.promise.then(applyAiDecisionPaced).catch((err) => {
+        if (!isSearchCancelled(err)) applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
+      });
+    }
+
+    if (engine === "heuristic") {
+      setAiThinking(null);
+      askOpponent();
+      return () => {
+        if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
+        aiQueryRef.current?.cancel();
+        aiQueryRef.current = null;
+      };
+    }
+
+    const timer = window.setTimeout(() => {
+      setAiThinking({ budgetMs: estimateThinkBudgetMs(state) });
+      askOpponent();
     }, 180);
 
     return () => {
       window.clearTimeout(timer);
       if (aiPaceTimerRef.current !== null) { window.clearTimeout(aiPaceTimerRef.current); aiPaceTimerRef.current = null; }
-      aiWorkerRef.current?.terminate();
-      aiWorkerRef.current = null;
+      aiQueryRef.current?.cancel();
+      aiQueryRef.current = null;
     };
-  }, [aiProfile, db, pd, pendingSetFeedback, props.decks, props.deckMeta, replayMode, engine, state]);
+  }, [aiProfile, db, pd, pendingSetFeedback, props.decks, props.deckMeta, replayMode, engine, state, search]);
 
   useEffect(() => {
-    coachWorkerRef.current?.terminate();
-    coachWorkerRef.current = null;
-    const requestId = String(++coachRequestRef.current);
+    coachQueryRef.current?.cancel();
+    coachQueryRef.current = null;
 
     if (replayMode || !isMyDecision || !pd) {
       setCoach({ status: "idle" });
@@ -1304,142 +782,36 @@ export function Game(props: {
     }
 
     const timer = window.setTimeout(() => {
-      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
-      coachWorkerRef.current = worker;
-      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
-        if (event.data.requestId !== requestId || coachRequestRef.current !== Number(requestId)) return;
-        if (event.data.ok) setCoach({ status: "ready", report: event.data.report });
-        else setCoach({ status: "error", fallback, error: event.data.error });
-        worker.terminate();
-        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
-      };
-      worker.onerror = (event) => {
-        if (coachRequestRef.current !== Number(requestId)) return;
-        setCoach({ status: "error", fallback, error: event.message || "Coach worker 發生錯誤" });
-        worker.terminate();
-        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
-      };
-      worker.postMessage({
-        requestId,
-        state,
-        options: {
-          perspectivePlayer: HUMAN,
-          knownDecks: props.decks,
-          gameplanDeckLabels: [`${props.deckMeta[0].school}-${props.deckMeta[0].name}`, `${props.deckMeta[1].school}-${props.deckMeta[1].name}`],
-          seed: state.rngState,
-          sampleCount: 4,
-          candidateLimit: 6,
-          rolloutMaxSteps: 1400,
-          timeLimitMs: 1200,
-        },
+      const query = search.requestCoachReport(state, {
+        perspectivePlayer: HUMAN,
+        knownDecks: props.decks,
+        gameplanDeckLabels: [`${props.deckMeta[0].school}-${props.deckMeta[0].name}`, `${props.deckMeta[1].school}-${props.deckMeta[1].name}`],
+        seed: state.rngState,
       });
+      coachQueryRef.current = query;
+      query.promise.then(
+        (report) => {
+          if (coachQueryRef.current === query) coachQueryRef.current = null;
+          setCoach({ status: "ready", report });
+        },
+        (err) => {
+          if (coachQueryRef.current === query) coachQueryRef.current = null;
+          if (!isSearchCancelled(err)) setCoach({ status: "error", fallback, error: err instanceof Error ? err.message : String(err) });
+        },
+      );
     }, 180);
 
     return () => {
       window.clearTimeout(timer);
-      coachWorkerRef.current?.terminate();
-      coachWorkerRef.current = null;
+      coachQueryRef.current?.cancel();
+      coachQueryRef.current = null;
     };
-  }, [db, isMyDecision, pd, props.decks, replayMode, state]);
-
-  useEffect(() => {
-    const cached = replayCritiquesRef.current[replayStep];
-    if (cached?.status === "ready") setReplayCritique({ status: "ready", step: replayStep, report: cached.report });
-    else if (cached?.status === "error") setReplayCritique({ status: "error", step: replayStep, error: cached.error });
-    else if (replayScan.status !== "running" || replayScan.currentStep !== replayStep) setReplayCritique({ status: "idle" });
-  }, [replayStep]);
-
-  function clearHumanAnchorTimer() {
-    if (humanAnchorTimerRef.current === null) return;
-    window.clearTimeout(humanAnchorTimerRef.current);
-    humanAnchorTimerRef.current = null;
-  }
-
-  function setHumanAnchorExperimentalValue(next: boolean) {
-    humanAnchorExperimentalRef.current = next;
-    setHumanAnchorExperimental(next);
-  }
-
-  function setHumanAnchorRecordEnabledValue(next: boolean) {
-    humanAnchorRecordEnabledRef.current = next;
-    setHumanAnchorRecordEnabled(next);
-    if (!next && humanAnchorStatus.status === "scheduled") {
-      clearHumanAnchorTimer();
-      setHumanAnchorStatus({ status: "skipped", replayRef: humanAnchorStatus.replayRef });
-    }
-  }
-
-  async function submitHumanAnchorRecord(replayRef: string) {
-    clearHumanAnchorTimer();
-    if (props.loadedReplay) return;
-    if (state.winner !== HUMAN && state.winner !== AI) return;
-    setHumanAnchorStatus({ status: "saving", replayRef });
-    try {
-      const draft = buildHumanAnchorDraft({
-        date: replay.startedAt,
-        aiEngine: engine,
-        playerDeck: replay.decks[0].label,
-        aiDeck: replay.decks[1].label,
-        winner: state.winner,
-        setScore: replayAnalytics.setWins,
-        serious: !humanAnchorExperimentalRef.current,
-        playerDecisions: replayAnalytics.playerDecisions,
-        replayRef,
-      });
-      const res = await fetch("/api/human-anchor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "人類錨點記錄失敗");
-      setHumanAnchorStatus({ status: "saved", replayRef, duplicate: !!data.duplicate });
-    } catch (error) {
-      setHumanAnchorStatus({ status: "error", replayRef, error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  function scheduleHumanAnchorRecord(replayRef: string) {
-    if (props.loadedReplay) return;
-    clearHumanAnchorTimer();
-    if (!humanAnchorRecordEnabledRef.current) {
-      setHumanAnchorStatus({ status: "skipped", replayRef });
-      return;
-    }
-    setHumanAnchorStatus({ status: "scheduled", replayRef });
-    humanAnchorTimerRef.current = window.setTimeout(() => {
-      void submitHumanAnchorRecord(replayRef);
-    }, 2500);
-  }
-
-  function recordHumanAnchorNow() {
-    const replayRef =
-      humanAnchorStatus.status === "scheduled" ||
-      humanAnchorStatus.status === "skipped" ||
-      humanAnchorStatus.status === "error"
-        ? humanAnchorStatus.replayRef
-        : undefined;
-    if (!replayRef) return;
-    humanAnchorRecordEnabledRef.current = true;
-    setHumanAnchorRecordEnabled(true);
-    void submitHumanAnchorRecord(replayRef);
-  }
-
-  function cancelHumanAnchorRecord() {
-    clearHumanAnchorTimer();
-    const replayRef = humanAnchorStatus.status === "scheduled" ? humanAnchorStatus.replayRef : undefined;
-    humanAnchorRecordEnabledRef.current = false;
-    setHumanAnchorRecordEnabled(false);
-    setHumanAnchorStatus({ status: "skipped", replayRef });
-  }
+  }, [db, isMyDecision, pd, props.decks, props.deckMeta, replayMode, state, search]);
 
   useEffect(() => () => {
-    replayCoachRejectRef.current?.(new Error("__cancelled__"));
-    replayCoachWorkerRef.current?.terminate();
-    aiWorkerRef.current?.terminate();
-    coachWorkerRef.current?.terminate();
+    aiQueryRef.current?.cancel();
+    coachQueryRef.current?.cancel();
     if (aiPaceTimerRef.current !== null) window.clearTimeout(aiPaceTimerRef.current);
-    clearHumanAnchorTimer();
   }, []);
 
   // 遊戲結束時自動重置 toolMode 並彈出戰報 Modal，並自動儲存對戰紀錄
@@ -1461,7 +833,6 @@ export function Game(props: {
         })
         .then((data) => {
           console.log("對戰紀錄已儲存:", data.file);
-          if (typeof data.file === "string") scheduleHumanAnchorRecord(data.file);
         })
         .catch((err) => {
           console.error("自動儲存對戰紀錄錯誤:", err);
@@ -1641,7 +1012,7 @@ export function Game(props: {
 
   function DecisionBar() {
     if (replayMode) {
-      return bar(`賽後覆盤 ${replayStep}/${replay.entries.length}${replayEntry ? `・${actorLabel(replayEntry)}：${decisionLabel(replayEntry.decision)}` : "・開局"}`, <>
+      return bar(`賽後覆盤 ${replayStep}/${replay.entries.length}${replayEntry ? `・${actorLabel(replayEntry)}：${describeDecisionShort(replayEntry.decision)}` : "・開局"}`, <>
         <button disabled={replayStep <= 0} onClick={() => setReplayStep((step) => Math.max(0, step - 1))}>上一步</button>
         <button data-primary="true" disabled={replayStep >= replay.entries.length} onClick={() => setReplayStep((step) => Math.min(replay.entries.length, step + 1))}>下一步</button>
         <button className="btn-secondary" onClick={() => setShowPostMatchModal(true)}>查看戰報</button>
@@ -1923,12 +1294,6 @@ export function Game(props: {
                   total={replay.entries.length}
                   analytics={replayAnalytics}
                   keyEntries={replayKeyEntries}
-                  critique={replayCritique}
-                  critiqueCache={replayCritiques}
-                  scan={replayScan}
-                  onEvaluate={evaluateReplayStep}
-                  onScan={scanReplayDecisions}
-                  onStopScan={stopReplayScan}
                   onJump={setReplayStep}
                 />
               )
@@ -1960,23 +1325,12 @@ export function Game(props: {
             ) : state.phase === "gameOver" && !visibleInspection ? (
               <PostMatchReport
                 analytics={replayAnalytics}
+                skillUsage={matchSkillUsage}
                 lostSets={replayReview.lostSets}
                 effectiveness={replayReview.actionEffectiveness}
                 cardDetails={replayReview.actionCardDetails}
                 valueExplanation={replayReview.valueExplanation}
                 narrative={replayReview.narrative}
-                humanAnchorExperimental={humanAnchorExperimental}
-                humanAnchorRecordEnabled={humanAnchorRecordEnabled}
-                humanAnchorStatus={humanAnchorStatus}
-                keyEntries={replayKeyEntries}
-                critiqueCache={replayCritiques}
-                scan={replayScan}
-                onHumanAnchorExperimentalChange={setHumanAnchorExperimentalValue}
-                onHumanAnchorRecordEnabledChange={setHumanAnchorRecordEnabledValue}
-                onHumanAnchorRecordNow={recordHumanAnchorNow}
-                onHumanAnchorCancel={cancelHumanAnchorRecord}
-                onScan={scanReplayDecisions}
-                onStopScan={stopReplayScan}
                 onReplay={enterReplayMode}
               />
             ) : visibleInspection ? (
@@ -2015,26 +1369,15 @@ export function Game(props: {
     {showPostMatchModal && (
       <PostMatchModal
         analytics={replayAnalytics}
+        skillUsage={matchSkillUsage}
         lostSets={replayReview.lostSets}
         effectiveness={replayReview.actionEffectiveness}
         cardDetails={replayReview.actionCardDetails}
         valueExplanation={replayReview.valueExplanation}
         narrative={replayReview.narrative}
-        humanAnchorExperimental={humanAnchorExperimental}
-        humanAnchorRecordEnabled={humanAnchorRecordEnabled}
-        humanAnchorStatus={humanAnchorStatus}
-        keyEntries={replayKeyEntries}
-        critiqueCache={replayCritiques}
-        scan={replayScan}
-        onHumanAnchorExperimentalChange={setHumanAnchorExperimentalValue}
-        onHumanAnchorRecordEnabledChange={setHumanAnchorRecordEnabledValue}
-        onHumanAnchorRecordNow={recordHumanAnchorNow}
-        onHumanAnchorCancel={cancelHumanAnchorRecord}
         winner={state.winner ?? null}
         replayMode={replayMode}
         opponentHand={state.players[AI].hand.map((uid) => ({ uid, card: db.get(state.cards[uid]!)! }))}
-        onScan={scanReplayDecisions}
-        onStopScan={stopReplayScan}
         onReplay={enterReplayMode}
         onClose={() => setShowPostMatchModal(false)}
       />

@@ -8,6 +8,7 @@
  * 用法：npm run fit:rollout-value -- --games 400 --sample-every 4
  */
 import { applyDecision, createGame } from "../engine/engine";
+import { numberArg } from "../shared/argv";
 import { heuristicAiDecision, heuristicProfileForDeckAxes } from "./heuristic";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
 import { extractValueFeatures, VALUE_FEATURE_DIM, VALUE_FEATURE_NAMES } from "./rollout-value";
@@ -23,20 +24,6 @@ const DECKS = [
   "伊達工業-攔網軸改_韋宏",
   "白鳥沢-三彈優化",
 ];
-
-function argNum(name: string, fallback: number): number {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i >= 0 && process.argv[i + 1] !== undefined) {
-    const v = Number(process.argv[i + 1]);
-    if (Number.isFinite(v)) return v;
-  }
-  const inline = process.argv.find((a) => a.startsWith(`--${name}=`));
-  if (inline) {
-    const v = Number(inline.slice(`--${name}=`.length));
-    if (Number.isFinite(v)) return v;
-  }
-  return fallback;
-}
 
 interface Row {
   x: number[];
@@ -160,13 +147,13 @@ function computeAuc(scored: { p: number; y: number }[]): number {
 }
 
 function run(): void {
-  const games = argNum("games", 400);
-  const seedStart = argNum("seed-start", 5000);
-  const sampleEvery = argNum("sample-every", 4);
-  const maxSteps = argNum("max-steps", 4000);
-  const epochs = argNum("epochs", 4000);
-  const lr = argNum("lr", 0.5);
-  const l2 = argNum("l2", 1e-4);
+  const games = numberArg("games", 400);
+  const seedStart = numberArg("seed-start", 5000);
+  const sampleEvery = numberArg("sample-every", 4);
+  const maxSteps = numberArg("max-steps", 4000);
+  const epochs = numberArg("epochs", 4000);
+  const lr = numberArg("lr", 0.5);
+  const l2 = numberArg("l2", 1e-4);
 
   console.log(`蒐集自對弈資料：games=${games}, sampleEvery=${sampleEvery} ...`);
   const rows = collect(games, seedStart, sampleEvery, maxSteps);

@@ -1,12 +1,13 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { numberArg, stringArg } from "../src/shared/argv";
 import { dirname, resolve } from "node:path";
-import process from "node:process";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
-  configureIsmctsBenchmark,
   mirroredSeeds,
   runBenchmarkBatch,
   type BenchmarkDeckInput,
+  type BenchmarkPolicyId,
+  type BenchmarkRunContext,
   type MatchResult,
   type PlayQualitySummary,
   type SearchDecisionDiagnostics,
@@ -36,20 +37,6 @@ interface QualityAcc {
   attackAttempts: number;
   attackSuccesses: number;
   attackOpTotal: number;
-}
-
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((a) => a.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const idx = process.argv.indexOf(`--${name}`);
-  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
 }
 
 function isObject(value: unknown): value is { model?: unknown } {
@@ -176,29 +163,33 @@ function summarizeDiagnostics(items: readonly SearchDecisionDiagnostics[]) {
   };
 }
 
-const modelPath = argValue("value-model-file", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
-const outPath = argValue("out", "data/ab/phase-k-k2-selected-v1-vs-current-h4-mirror-g40.json");
-const games = Math.max(1, Math.floor(argNum("games", 4)));
-const timeMs = Math.max(1, Math.floor(argNum("time-ms", 500)));
-const leafHorizon = Math.max(0, Math.floor(argNum("leaf-horizon", 40)));
-const seedStart = Math.floor(argNum("seed-start", 12000));
-const rootTiebreakDelta = argNum("root-tiebreak-delta", 0.04);
-const rootConservationThreshold = argNum("root-conservation-threshold", 0.85);
-const k2RootTiebreakDelta = argNum("k2-root-tiebreak-delta", rootTiebreakDelta);
-const k2RootConservationThreshold = argNum("k2-root-conservation-threshold", rootConservationThreshold);
+const modelPath = stringArg("value-model-file", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
+const outPath = stringArg("out", "data/ab/phase-k-k2-selected-v1-vs-current-h4-mirror-g40.json");
+const games = Math.max(1, Math.floor(numberArg("games", 4)));
+const timeMs = Math.max(1, Math.floor(numberArg("time-ms", 500)));
+const leafHorizon = Math.max(0, Math.floor(numberArg("leaf-horizon", 40)));
+const seedStart = Math.floor(numberArg("seed-start", 12000));
+const rootTiebreakDelta = numberArg("root-tiebreak-delta", 0.04);
+const rootConservationThreshold = numberArg("root-conservation-threshold", 0.85);
+const k2RootTiebreakDelta = numberArg("k2-root-tiebreak-delta", rootTiebreakDelta);
+const k2RootConservationThreshold = numberArg("k2-root-conservation-threshold", rootConservationThreshold);
 const candidateModel = readValueModel(modelPath);
 
-configureIsmctsBenchmark({
+// [Claude 2026-07-24] 候選 B 塊 2：h4 用 live model（base valueModel 不設）；k2 的候選 model／delta／threshold 走 per-policy override。
+const runContext: BenchmarkRunContext = {
   iterations: 1_000_000,
   timeLimitMs: timeMs,
   leafRolloutHorizon: leafHorizon,
   rootPressureTieBreakDelta: rootTiebreakDelta,
   rootConservationWinRateThreshold: rootConservationThreshold,
-  k2RootPressureTieBreakDelta: k2RootTiebreakDelta,
-  k2RootConservationWinRateThreshold: k2RootConservationThreshold,
-  valueModel: undefined,
-  k2ValueModel: candidateModel,
-});
+};
+const runContextByPolicy: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>> = {
+  "is-mcts-k2": {
+    valueModel: candidateModel,
+    rootPressureTieBreakDelta: k2RootTiebreakDelta,
+    rootConservationWinRateThreshold: k2RootConservationThreshold,
+  },
+};
 
 let candidateWins = 0;
 let completed = 0;
@@ -221,6 +212,8 @@ MIRROR_DECKS.forEach((deckName, index) => {
       decks: [deck(deckName), deck(deckName)],
       policies,
       seeds: mirroredSeeds(seedStart + index * 1000 + seat * 500, games),
+      runContext,
+      runContextByPolicy,
     });
     for (const match of report.matches) {
       allDiagnostics.push(...match.searchDiagnostics);

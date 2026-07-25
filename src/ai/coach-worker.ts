@@ -1,20 +1,9 @@
 import cardsJson from "../../data/cards.json";
 import type { Card } from "../data/types";
-import type { GameState } from "../engine/types";
 import { createPimcCoachReport } from "./coach";
-import type { CoachReport, PimcCoachOptions } from "./coach";
 import { createIsmctsReport } from "./ismcts";
-import type { IsmctsOptions } from "./ismcts";
-
-// [Claude 2026-06-23] Phase G G4：worker 依 engine 分派 PIMC／IS-MCTS。
-// 電腦對手（強敵）走 ismcts；玩家側的 coach 提示與 replay 復盤維持 pimc。
-export type CoachWorkerRequest =
-  | { requestId: string; state: GameState; engine?: "pimc"; options?: PimcCoachOptions }
-  | { requestId: string; state: GameState; engine: "ismcts"; options?: IsmctsOptions };
-
-export type CoachWorkerResponse =
-  | { requestId: string; ok: true; report: CoachReport }
-  | { requestId: string; ok: false; error: string };
+// [Claude 2026-07-24] 候選 A：協定型別移至 ai-search.ts（backend 與 worker 共用一份）。本檔＝純 worker entry。
+import type { CoachWorkerRequest, CoachWorkerResponse } from "./ai-search";
 
 const db = new Map((cardsJson as Card[]).map((card) => [card.id, card]));
 const workerSelf = self as unknown as {

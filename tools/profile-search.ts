@@ -1,11 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { stringArg } from "../src/shared/argv";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { applyDecision, createGame, freeOptions } from "../src/engine/engine";
 import type { CardDb, Decision, GameState, LogEntry, PlayerId } from "../src/engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import { createIsmctsReport } from "../src/ai/ismcts";
-import { decisionLabel, determinizeHiddenState, enumerateCandidates, inferKnownDecks } from "../src/ai/coach";
+import { determinizeHiddenState, enumerateCandidates, inferKnownDecks } from "../src/ai/coach";
+import { describeDecision } from "../src/shared/decisionLabels";
 import { heuristicAiDecision } from "../src/ai/heuristic";
 import { estimateThinkBudgetMs } from "../src/ai/think-budget";
 import type { ReplaySession } from "../src/shared/replayHistory";
@@ -44,19 +46,13 @@ interface TimedSample {
   timedOut: boolean;
 }
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
-}
-
 function parseArgs(): ProfileArgs {
   return {
-    timeMs: Number(argValue("time-ms", "250")),
-    samples: Number(argValue("samples", "3")),
-    microIters: Number(argValue("micro-iters", "200")),
-    leafHorizon: Number(argValue("leaf-horizon", "40")),
-    candidateLimit: Number(argValue("candidate-limit", "8")),
+    timeMs: Number(stringArg("time-ms", "250")),
+    samples: Number(stringArg("samples", "3")),
+    microIters: Number(stringArg("micro-iters", "200")),
+    leafHorizon: Number(stringArg("leaf-horizon", "40")),
+    candidateLimit: Number(stringArg("candidate-limit", "8")),
   };
 }
 
@@ -269,7 +265,7 @@ function timeScenarioMicro(scenario: ScenarioState, args: ProfileArgs) {
     enumerateAvgMs,
     stringifyAvgMs,
     candidateCount: candidates.length,
-    fallbackLabel: decisionLabel(benchmarkDb, state, fallback),
+    fallbackLabel: describeDecision(benchmarkDb, state, fallback),
   };
 }
 

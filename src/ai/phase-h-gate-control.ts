@@ -1,6 +1,7 @@
 import { applyDecision, createGame, effParam } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { decisionLabel, enumerateCandidates } from "./coach";
+import { enumerateCandidates } from "./coach";
+import { describeDecision } from "../shared/decisionLabels";
 import { heuristicAiDecision } from "./heuristic";
 import { createIsmctsReport, rootDecisionPressureScore } from "./ismcts";
 import type { ValueModel } from "./rollout-value";
@@ -167,7 +168,7 @@ export function runPhaseHFreeAttackGateControl(
   const results: PhaseHGatePolicyResult[] = [
     {
       policy: "heuristic-v2-burst",
-      bestLabel: decisionLabel(db, state, fallback),
+      bestLabel: describeDecision(db, state, fallback),
       bestDecision: fallback,
       accept: acceptOf(fallback),
       resultingAttackPoint: resultingAttackPoint(db, state, fallback),
@@ -200,7 +201,7 @@ export function runPhaseHFreeAttackGateControl(
   return {
     scenario: "free-attack-gate",
     description: "HV-P01-043 木兎已站攻擊區，gate 為零成本 attack +5；accept 應把攻擊點數由 0 推到 5。",
-    candidateLabels: candidates.map((decision) => decisionLabel(db, state, decision)),
+    candidateLabels: candidates.map((decision) => describeDecision(db, state, decision)),
     beforeAttackPoint: effParam(db, state, source, "attack") ?? 0,
     acceptAttackPoint: resultingAttackPoint(db, state, { type: "effect-confirm", accept: true }) ?? 0,
     declineAttackPoint: resultingAttackPoint(db, state, { type: "effect-confirm", accept: false }) ?? 0,

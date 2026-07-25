@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyDecision, createGame } from "../engine/engine";
 import type { GameState } from "../engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
-import { createPimcCoachReport, decisionLabel } from "./coach";
+import { createPimcCoachReport } from "./coach";
+import { describeDecision } from "../shared/decisionLabels";
 
 function setupServeDecision(): { state: GameState; decks: readonly [readonly string[], readonly string[]] } {
   const deckA = findBenchmarkDeck("烏野-預組");
@@ -45,7 +46,7 @@ describe("M8 Phase A PIMC coach", () => {
     const id = state.cards[uid]!;
     const shortId = id.split("-").at(-1)!;
 
-    expect(decisionLabel(benchmarkDb, state, { type: "deploy-serve", uid })).toContain(`〔${shortId}〕`);
+    expect(describeDecision(benchmarkDb, state, { type: "deploy-serve", uid })).toContain(`〔${shortId}〕`);
   });
 
   it("同 seed 的結果可重現", () => {

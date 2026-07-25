@@ -3,13 +3,13 @@ import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, isImmediateOneTouchBlocker } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import {
-  decisionLabel,
   determinizeHiddenState,
   enumerateCandidates,
   inferKnownDecks,
   type CoachActionEstimate,
   type CoachReport,
 } from "./coach";
+import { describeDecision } from "../shared/decisionLabels";
 import { evaluatePressureScore, evaluateShapedStateValue, explainValue, handDeployablePower, type ValueModel } from "./rollout-value";
 import type { KnownDecks } from "./remaining-pool";
 import { pickDeployName } from "./util";
@@ -643,7 +643,7 @@ function estimateFromChild(
   const confidence = confidenceFromRate(child.visits, winRate);
   return {
     decision,
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     winRate,
     confidence,
     sampleCount: child.visits,
@@ -658,7 +658,7 @@ function estimateFromChild(
 function fallbackEstimate(db: CardDb, state: GameState, decision: Decision): CoachActionEstimate {
   return {
     decision,
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     winRate: 0,
     confidence: 0,
     sampleCount: 0,
@@ -673,7 +673,7 @@ function fallbackEstimate(db: CardDb, state: GameState, decision: Decision): Coa
 function directEstimate(db: CardDb, state: GameState, decision: Decision, reason: string): CoachActionEstimate {
   return {
     decision,
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     winRate: 0,
     confidence: 0,
     sampleCount: 0,

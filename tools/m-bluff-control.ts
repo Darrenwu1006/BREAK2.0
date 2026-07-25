@@ -1,4 +1,5 @@
 import process from "node:process";
+import { stringArg } from "../src/shared/argv";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb } from "../src/ai/benchmark-fixtures";
@@ -14,22 +15,13 @@ import {
   runMBluffResourceTempoSweep,
 } from "../src/ai/m-bluff-control";
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-const iterations = Number(argValue("iterations", "80"));
-const leafRolloutHorizon = Number(argValue("leaf-horizon", "4"));
-const calibrationHorizon = Number(argValue("calibration-horizon", "12"));
-const scenario = argValue("scenario", "drop-hand");
+const iterations = Number(stringArg("iterations", "80"));
+const leafRolloutHorizon = Number(stringArg("leaf-horizon", "4"));
+const calibrationHorizon = Number(stringArg("calibration-horizon", "12"));
+const scenario = stringArg("scenario", "drop-hand");
 const sweep = process.argv.includes("--sweep");
-const seeds = Number(argValue("seeds", "5"));
-const outPath = argValue("out", "");
+const seeds = Number(stringArg("seeds", "5"));
+const outPath = stringArg("out", "");
 const defaultSeed =
   scenario === "choice-rate-v2"
     ? "980"
@@ -42,7 +34,7 @@ const defaultSeed =
           : scenario === "public-posture"
             ? "940"
             : "930";
-const seed = Number(argValue("seed", defaultSeed));
+const seed = Number(stringArg("seed", defaultSeed));
 const report =
   scenario === "choice-rate-v2" && sweep
     ? runMBluffPublicPostureCalibratedSweep(benchmarkDb, { seedStart: seed, seeds, iterations, leafRolloutHorizon, calibrationHorizon })

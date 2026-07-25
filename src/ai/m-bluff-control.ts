@@ -2,7 +2,8 @@ import { applyDecision, createGame } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { createIsmctsReport } from "./ismcts";
 import { createMoIsmctsReport } from "./mo-ismcts";
-import { decisionLabel, enumerateCandidates } from "./coach";
+import { enumerateCandidates } from "./coach";
+import { describeDecision } from "../shared/decisionLabels";
 import { heuristicAiDecision } from "./heuristic";
 import { observableProjection } from "./mo-ismcts";
 import { evaluateStateValue } from "./rollout-value";
@@ -541,7 +542,7 @@ function candidateBuckets(db: CardDb, state: GameState): Array<{ key: string; la
   for (const decision of candidates) {
     const key = observableProjection(decision, { actor, viewer, before: state });
     const bucket = byKey.get(key) ?? { key, labels: [], decisions: [] };
-    bucket.labels.push(decisionLabel(db, state, decision));
+    bucket.labels.push(describeDecision(db, state, decision));
     bucket.decisions.push(decision);
     byKey.set(key, bucket);
   }
@@ -738,7 +739,7 @@ function attackCandidateScores(db: CardDb, state: GameState, perspective: Player
   return enumerateCandidates(db, state, 8, fallback)
     .filter((decision) => decision.type === "deploy-attack")
     .map((decision) => ({
-      label: decisionLabel(db, state, decision),
+      label: describeDecision(db, state, decision),
       decision,
       attackPoint: attackPointForDecision(db, state, decision),
       value: scoreDecisionAfterRollout(db, state, decision, perspective, horizon),
@@ -758,7 +759,7 @@ function postureCandidateScores(
   return enumerateCandidates(db, state, 8, fallback)
     .filter((decision) => decision.type === "deploy-toss")
     .map((decision) => ({
-      label: decisionLabel(db, state, decision),
+      label: describeDecision(db, state, decision),
       decision,
       choosesPublicStrong: isDeployUid(decision, publicStrongUid),
       value: scoreDecisionAfterRollout(db, state, decision, perspective, horizon),
@@ -786,7 +787,7 @@ function scoreForDecision(
   const found = scores.find((score) => sameDecision(score.decision, decision));
   if (found) return found;
   return {
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     decision,
     attackPoint: attackPointForDecision(db, state, decision),
     value: scoreDecisionAfterRollout(db, state, decision, perspective, horizon),
@@ -810,7 +811,7 @@ function postureScoreForDecision(
   const found = scores.find((score) => sameDecision(score.decision, decision));
   if (found) return found;
   return {
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     decision,
     choosesPublicStrong: isDeployUid(decision, publicStrongUid),
     value: scoreDecisionAfterRollout(db, state, decision, perspective, horizon),

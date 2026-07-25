@@ -74,6 +74,8 @@ export interface ReplayPointStats {
   count: number;
   total: number;
   average: number;
+  /** 最小值（無資料時 0）。 */
+  min: number;
   max: number;
   highCount: number;
 }
@@ -231,7 +233,7 @@ export function keyReplayEntries(session: ReplaySession): ReplayEntry[] {
 }
 
 function blankPointStats(): ReplayPointStats {
-  return { count: 0, total: 0, average: 0, max: 0, highCount: 0 };
+  return { count: 0, total: 0, average: 0, min: 0, max: 0, highCount: 0 };
 }
 
 function blankGutsSourceStats(): Record<ReplayGutsSource, number> {
@@ -239,6 +241,7 @@ function blankGutsSourceStats(): Record<ReplayGutsSource, number> {
 }
 
 function addPoint(stats: ReplayPointStats, value: number): void {
+  stats.min = stats.count === 0 ? value : Math.min(stats.min, value);
   stats.count++;
   stats.total += value;
   stats.average = stats.total / stats.count;

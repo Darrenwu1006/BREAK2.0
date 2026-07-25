@@ -1,5 +1,5 @@
-import process from "node:process";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { argValue, flag, positiveNumberArg } from "../shared/argv";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
 import type { BenchmarkDeck } from "./benchmark-fixtures";
@@ -25,26 +25,6 @@ const PRESETS: Record<Exclude<AnalyzerPreset, "custom">, { games: number; seedSt
   holdout: { games: 10, seedStart: 9000 },
 };
 
-function argValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0) return process.argv[index + 1];
-  return undefined;
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
-
-function numberArg(name: string, fallback: number): number {
-  const raw = argValue(name);
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) throw new Error(`--${name} 必須是正數`);
-  return value;
-}
 
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
@@ -167,7 +147,7 @@ function printComparison(report: DeckAnalyzerComparisonReport): void {
 }
 
 function run(): void {
-  if (hasFlag("list-decks")) {
+  if (flag("list-decks")) {
     printDecks();
     return;
   }
@@ -179,9 +159,9 @@ function run(): void {
   const presetDefaults = preset === "custom" ? DEFAULTS : { ...DEFAULTS, ...PRESETS[preset] };
   const policy = policyArg("policy", DEFAULTS.policy);
   const opponentPolicy = policyArg("opponent-policy", DEFAULTS.opponentPolicy);
-  const seedStart = numberArg("seed-start", presetDefaults.seedStart);
-  const gamesPerSeat = numberArg("games", presetDefaults.games);
-  const maxSteps = numberArg("max-steps", DEFAULTS.maxSteps);
+  const seedStart = positiveNumberArg("seed-start", presetDefaults.seedStart);
+  const gamesPerSeat = positiveNumberArg("games", presetDefaults.games);
+  const maxSteps = positiveNumberArg("max-steps", DEFAULTS.maxSteps);
   const outPath = argValue("out");
   const excluded = new Set([deck.name, compareDeck?.name].filter((name): name is string => !!name));
   const opponents = resolveOpponents(excluded);
@@ -200,7 +180,7 @@ function run(): void {
       maxSteps,
       preset,
     });
-    if (hasFlag("json")) {
+    if (flag("json")) {
       console.log(JSON.stringify(report, null, 2));
       writeReport(outPath, report, true);
       return;
@@ -221,7 +201,7 @@ function run(): void {
     maxSteps,
     preset,
   });
-  if (hasFlag("json")) {
+  if (flag("json")) {
     console.log(JSON.stringify(report, null, 2));
     writeReport(outPath, report, true);
     return;

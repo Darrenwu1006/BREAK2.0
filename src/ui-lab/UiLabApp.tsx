@@ -8,13 +8,15 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import type { CoachWorkerResponse } from "../ai/coach-worker";
+import type { CoachReport } from "../ai/coach";
+import { createSearchController, createWorkerSearchBackend, isSearchCancelled, type CancelableQuery } from "../ai/ai-search";
 import { heuristicAiDecision } from "../ai/heuristic";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
 import { blockDeployMax, canChooseBlock, deployLegality, deployNames, deployableUids, freeCardReasons, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, LogEntry } from "../engine/types";
 import type { DeckMeta } from "../shared/deckMeta";
 import { pendingReplaySetFeedback, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
+import { buildMatchSummary } from "../shared/matchSummary";
 import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { CardInfoPanel } from "./game/CardInfoPanel";
@@ -160,10 +162,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [confirmLost, setConfirmLost] = useState(false);
   const [assetProgress, setAssetProgress] = useState({ loaded: 0, total: 0, done: false });
-  const aiRequestRef = useRef(0);
-  const coachRequestRef = useRef(0);
-  const coachWorkerRef = useRef<Worker | null>(null);
+  const aiQueryRef = useRef<CancelableQuery<Decision> | null>(null);
+  const coachQueryRef = useRef<CancelableQuery<CoachReport> | null>(null);
   const coachCacheRef = useRef<{ key: string; state: LabCoachState } | null>(null);
+  // [Claude 2026-07-24] 候選 A：搜尋門面（取消/取代/fallback/調參都在 module 內）。React 只留膠水。
+  const search = useMemo(() => createSearchController({ backend: createWorkerSearchBackend() }), []);
 
   useEffect(() => {
     const urls = new Set<string>(schools.map((school) => cardBackUrl(school)));
@@ -605,14 +608,11 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       return;
     }
     const state = controller.engine;
-    const requestNo = ++aiRequestRef.current;
-    const requestId = `ui-lab-${requestNo}`;
     const budgetMs = opponentEngine === "strong" ? estimateThinkBudgetMs(state) : 180;
     const startedAt = Date.now();
     setAiThinking({ budgetMs, startedAt });
     setShellNotice(null);
     const applyOpponent = (decision: Decision): void => {
-      if (aiRequestRef.current !== requestNo) return;
       try {
         controller.decideOpponent(decision, Date.now() - startedAt);
         setAiThinking(null);
@@ -622,54 +622,43 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         setFatalError(error instanceof Error ? error.message : String(error));
       }
     };
-    const fallback = (reason: string): void => {
-      setShellNotice(`對手搜尋暫時失敗，已切換快速決策：${reason}`);
-      try {
-        applyOpponent(heuristicAiDecision(db, state));
-      } catch (error) {
-        setFatalError(error instanceof Error ? error.message : String(error));
-      }
-    };
-    if (opponentEngine === "heuristic") {
-      const timer = window.setTimeout(() => applyOpponent(heuristicAiDecision(db, state)), budgetMs);
-      return () => window.clearTimeout(timer);
-    }
-    const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
-      if (aiRequestRef.current !== requestNo || event.data.requestId !== requestId) return;
-      worker.terminate();
-      if (event.data.ok) applyOpponent(event.data.report.bestAction.decision);
-      else fallback(event.data.error);
-    };
-    worker.onerror = (event) => {
-      if (aiRequestRef.current !== requestNo) return;
-      worker.terminate();
-      fallback(event.message || "worker error");
-    };
-    worker.postMessage({
-      requestId,
-      state,
-      engine: "ismcts",
-      options: {
+    // requestOpponentMove 內部：strong→worker(ismcts)；heuristic→同步（不帶 rolloutPolicy＝ismcts/heuristic 預設）；
+    // 搜尋失敗（非取消）自動落 heuristic 並經 onFallback 顯示提示。
+    const runQuery = (): void => {
+      const query = search.requestOpponentMove(state, {
+        db,
+        engine: opponentEngine === "strong" ? "strong" : "heuristic",
         perspectivePlayer: 1,
         knownDecks: expanded,
         seed: state.rngState,
-        candidateLimit: 8,
-        timeLimitMs: budgetMs,
-        leafRolloutHorizon: 40,
-        opponentModel: "heuristic",
-      },
-    });
-    return () => {
-      worker.terminate();
+        timeLimitMs: opponentEngine === "strong" ? budgetMs : 0,
+        onFallback: (reason) => setShellNotice(`對手搜尋暫時失敗，已切換快速決策：${reason}`),
+      });
+      aiQueryRef.current = query;
+      query.promise.then(applyOpponent).catch((err) => {
+        if (!isSearchCancelled(err)) setFatalError(err instanceof Error ? err.message : String(err));
+      });
     };
-  }, [controller, db, expanded, markPlaying, opponentShouldThink, rawPendingDecision, opponentEngine]);
+    if (opponentEngine === "heuristic") {
+      // 最小思考延遲（演出），再即時決策。
+      const timer = window.setTimeout(runQuery, budgetMs);
+      return () => {
+        window.clearTimeout(timer);
+        aiQueryRef.current?.cancel();
+        aiQueryRef.current = null;
+      };
+    }
+    runQuery();
+    return () => {
+      aiQueryRef.current?.cancel();
+      aiQueryRef.current = null;
+    };
+  }, [controller, db, expanded, markPlaying, opponentShouldThink, rawPendingDecision, opponentEngine, search]);
 
   // Coach 僅在 drawer 開啟時啟動，並以當前 replay/pending/rng 快取。
   useEffect(() => {
-    coachWorkerRef.current?.terminate();
-    coachWorkerRef.current = null;
-    const requestNo = ++coachRequestRef.current;
+    coachQueryRef.current?.cancel();
+    coachQueryRef.current = null;
     if (railTool !== "coach" || view.playing || !myPd || inspectTarget) {
       setCoach({ status: "idle" });
       return;
@@ -689,46 +678,35 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
       return;
     }
     const timer = window.setTimeout(() => {
-      const worker = new Worker(new URL("../ai/coach-worker.ts", import.meta.url), { type: "module" });
-      coachWorkerRef.current = worker;
-      const requestId = `ui-lab-coach-${requestNo}`;
-      worker.onmessage = (event: MessageEvent<CoachWorkerResponse>) => {
-        if (coachRequestRef.current !== requestNo || event.data.requestId !== requestId) return;
-        const next: LabCoachState = event.data.ok ? { status: "ready", report: event.data.report } : { status: "error", fallback, error: event.data.error };
-        coachCacheRef.current = { key: cacheKey, state: next };
-        setCoach(next);
-        worker.terminate();
-        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
-      };
-      worker.onerror = (event) => {
-        if (coachRequestRef.current !== requestNo) return;
-        const next: LabCoachState = { status: "error", fallback, error: event.message || "Coach worker 發生錯誤" };
-        coachCacheRef.current = { key: cacheKey, state: next };
-        setCoach(next);
-        worker.terminate();
-        if (coachWorkerRef.current === worker) coachWorkerRef.current = null;
-      };
-      worker.postMessage({
-        requestId,
-        state,
-        options: {
-          perspectivePlayer: HUMAN,
-          knownDecks: expanded,
-          gameplanDeckLabels: [`${props.decks[0].school}-${props.decks[0].name}`, `${props.decks[1].school}-${props.decks[1].name}`],
-          seed: state.rngState,
-          sampleCount: 4,
-          candidateLimit: 6,
-          rolloutMaxSteps: 1400,
-          timeLimitMs: 1200,
-        },
+      const query = search.requestCoachReport(state, {
+        perspectivePlayer: HUMAN,
+        knownDecks: expanded,
+        gameplanDeckLabels: [`${props.decks[0].school}-${props.decks[0].name}`, `${props.decks[1].school}-${props.decks[1].name}`],
+        seed: state.rngState,
       });
+      coachQueryRef.current = query;
+      query.promise.then(
+        (report) => {
+          if (coachQueryRef.current === query) coachQueryRef.current = null;
+          const next: LabCoachState = { status: "ready", report };
+          coachCacheRef.current = { key: cacheKey, state: next };
+          setCoach(next);
+        },
+        (err) => {
+          if (coachQueryRef.current === query) coachQueryRef.current = null;
+          if (isSearchCancelled(err)) return;
+          const next: LabCoachState = { status: "error", fallback, error: err instanceof Error ? err.message : String(err) };
+          coachCacheRef.current = { key: cacheKey, state: next };
+          setCoach(next);
+        },
+      );
     }, 180);
     return () => {
       window.clearTimeout(timer);
-      coachWorkerRef.current?.terminate();
-      coachWorkerRef.current = null;
+      coachQueryRef.current?.cancel();
+      coachQueryRef.current = null;
     };
-  }, [controller, db, expanded, inspectTarget, myPd, props.decks, railTool, view.playing]);
+  }, [controller, db, expanded, inspectTarget, myPd, props.decks, railTool, view.playing, search]);
 
   useEffect(() => {
     if (!aiThinking) return;
@@ -1146,6 +1124,7 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
           setCards={[engine.players[0].setArea.length, engine.players[1].setArea.length]}
           db={db}
           state={engine}
+          summary={buildMatchSummary(db, controller.replay)}
           printingByUid={printingByUid}
           onRematch={props.onRematch}
           onExit={props.onExit}

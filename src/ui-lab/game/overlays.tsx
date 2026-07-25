@@ -8,6 +8,7 @@ import type { Card } from "../../data/types";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import { effParam } from "../../engine/engine";
 import type { ReplaySetFeedbackTag, ReplaySetResult } from "../../shared/replayHistory";
+import type { MatchSummary } from "../../shared/matchSummary";
 import { REPLAY_SET_FEEDBACK_OPTIONS } from "../../shared/replaySetFeedbackOptions";
 import { cardFrontUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
@@ -331,11 +332,18 @@ export function SettlementModal(props: {
   setCards: [number, number];
   db: CardDb;
   state: GameState;
+  summary: MatchSummary;
   printingByUid?: ReadonlyMap<number, string>;
   onRematch: () => void;
   onExit: () => void;
 }): React.JSX.Element {
   const win = props.winner;
+  const a = props.summary.analytics;
+  const skill = props.summary.skillUsage;
+  const opLine = (p: PlayerId) => {
+    const op = a.op[p];
+    return op.count ? `平均 ${op.average.toFixed(1)}（${op.min}–${op.max}）· 收割 ${op.highCount}` : "—";
+  };
   return (
     <div className={styles.modalMask}>
       <div className={`${styles.modal} ${styles.settlement}`}>
@@ -359,6 +367,17 @@ export function SettlementModal(props: {
             </div>
           </section>
         )}
+        <div className={styles.settlementScore} style={{ textAlign: "left", fontSize: "0.85em", lineHeight: 1.7 }}>
+          <div>火力 OP　你：{opLine(HUMAN)}</div>
+          <div>　　　　電腦：{opLine(1)}</div>
+          <div>得分來源　發 {a.opSources.serve}／攔 {a.opSources.block}／攻 {a.opSources.attack}</div>
+          <div>Guts 支付　你 {a.payGuts[HUMAN]}｜電腦 {a.payGuts[1]}</div>
+          <div>
+            開技能　你 {skill[HUMAN].total}｜電腦 {skill[1].total}
+            {skill[HUMAN].byCard.length > 0 ? `（你：${skill[HUMAN].byCard.slice(0, 3).map((c) => `${c.name}×${c.count}`).join("、")}）` : ""}
+          </div>
+          <div>決策數　你 {a.playerDecisions}｜AI {a.aiDecisions}</div>
+        </div>
         <button className={styles.btn} onClick={props.onRematch}>
           再來一場（同牌組）
         </button>

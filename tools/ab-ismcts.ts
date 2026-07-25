@@ -12,46 +12,36 @@
  *   消掉牌組強度差與克制（baseline 天生 50%）→ 偏離 50% 純粹是模型實力差，訊噪比更高。
  *   仍換座位（抵先手偏差）、跨多套牌組（原型覆蓋率）。
  */
-import process from "node:process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { flag, numberArg, stringArg } from "../src/shared/argv";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
-  configureIsmctsBenchmark,
-  configurePimcBenchmark,
   runBenchmarkBatch,
   mirroredSeeds,
   type BenchmarkDeckInput,
   type BenchmarkPolicyId,
+  type BenchmarkRunContext,
   type MatchResult,
   type SearchDecisionDiagnostics,
 } from "../src/ai/benchmark";
 import type { ValueModel } from "../src/ai/rollout-value";
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((a) => a.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const idx = process.argv.indexOf(`--${name}`);
-  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1]!;
-  return fallback;
-}
-
-const games = Number(argValue("games", "20"));
-const budget = argValue("budget", "wall-clock");
-const timeMs = Number(argValue("time-ms", "300"));
-const ismctsIters = Number(argValue("ismcts-iters", "400"));
-const policy = argValue("policy", "is-mcts") as BenchmarkPolicyId;
-const opp = argValue("opp", "pimc-v2") as BenchmarkPolicyId;
-const leafHorizon = Number(argValue("leaf-horizon", "40"));
-const limitUnits = Number(argValue("limit-units", "0"));
-const rootTiebreakDelta = Number(argValue("root-tiebreak-delta", argValue("ismcts-root-tiebreak-delta", "0.04")));
-const rootConservationThreshold = Number(argValue("root-conservation-threshold", argValue("ismcts-root-conservation-threshold", "0.85")));
-const k2RootTiebreakDelta = Number(argValue("k2-root-tiebreak-delta", String(rootTiebreakDelta)));
-const k2RootConservationThreshold = Number(argValue("k2-root-conservation-threshold", String(rootConservationThreshold)));
-const valueModelPath = argValue("value-model-file", "");
-const outPath = argValue("out", "");
-const mirror = process.argv.includes("--mirror");
+const games = numberArg("games", 20);
+const budget = stringArg("budget", "wall-clock");
+const timeMs = numberArg("time-ms", 300);
+const ismctsIters = numberArg("ismcts-iters", 400);
+const policy = stringArg("policy", "is-mcts") as BenchmarkPolicyId;
+const opp = stringArg("opp", "pimc-v2") as BenchmarkPolicyId;
+const leafHorizon = numberArg("leaf-horizon", 40);
+const limitUnits = numberArg("limit-units", 0);
+const rootTiebreakDelta = numberArg("root-tiebreak-delta", numberArg("ismcts-root-tiebreak-delta", 0.04));
+const rootConservationThreshold = numberArg("root-conservation-threshold", numberArg("ismcts-root-conservation-threshold", 0.85));
+const k2RootTiebreakDelta = numberArg("k2-root-tiebreak-delta", rootTiebreakDelta);
+const k2RootConservationThreshold = numberArg("k2-root-conservation-threshold", rootConservationThreshold);
+const valueModelPath = stringArg("value-model-file", "");
+const outPath = stringArg("out", "");
+const mirror = flag("mirror");
 
 // cross-matchup：4 對戰，軸線多樣（hybrid/defense/serve/block/burst 都涵蓋）。
 // [Claude 2026-07-19] 牌組池汰換後舊名（音駒-預組／青葉城西-二彈改／稲荷崎_堆墓改角名／
@@ -149,7 +139,6 @@ function summarizeDiagnostics(items: readonly SearchDecisionDiagnostics[]) {
 
 const usesIsmctsFamily = (p: BenchmarkPolicyId) =>
   p === "is-mcts" || p === "is-mcts-nofix" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "is-mcts-k2" || p === "mo-ismcts" || p === "mo-ismcts-h3";
-const usesPimcFamily = (p: BenchmarkPolicyId) => p === "pimc-v2" || p === "pimc";
 if (budget !== "wall-clock" && budget !== "iterations") {
   throw new Error("--budget 只支援 wall-clock 或 iterations");
 }
@@ -232,24 +221,26 @@ function formatQuality(label: string, acc: QualityAcc): string {
     `M-Throw3 OP ${summary.averageOpPressure.toFixed(2)} (${summary.opPressureSamples} samples)`;
 }
 
-// wall-clock＝上線強度尺；iterations＝Phase I R1 研究尺（排除 MO per-iteration 成本干擾）。
-if (usesIsmctsFamily(policy) || usesIsmctsFamily(opp)) {
-  configureIsmctsBenchmark({
-    iterations: budget === "iterations" ? ismctsIters : 1_000_000,
-    timeLimitMs: budget === "iterations" ? undefined : timeMs,
-    leafRolloutHorizon: leafHorizon,
-    rootPressureTieBreakDelta: rootTiebreakDelta,
-    rootConservationWinRateThreshold: rootConservationThreshold,
-    k2RootPressureTieBreakDelta: k2RootTiebreakDelta,
-    k2RootConservationWinRateThreshold: k2RootConservationThreshold,
-    ...(valueModelPath
-      ? policy === "is-mcts-k2" || opp === "is-mcts-k2"
-        ? { k2ValueModel: readValueModel(valueModelPath) }
-        : { valueModel: readValueModel(valueModelPath) }
-      : {}),
-  });
-}
-if (usesPimcFamily(policy) || usesPimcFamily(opp)) configurePimcBenchmark({ timeLimitMs: timeMs });
+// [Claude 2026-07-24] 候選 B 塊 2：改建顯式 runContext（取代舊全域）。wall-clock＝上線強度尺；
+// iterations＝Phase I R1 研究尺。k2 專屬旋鈕改走 per-policy override map（只作用於 is-mcts-k2）。
+const k2InPlay = policy === "is-mcts-k2" || opp === "is-mcts-k2";
+const runContext: BenchmarkRunContext = {
+  iterations: budget === "iterations" ? ismctsIters : 1_000_000,
+  timeLimitMs: budget === "iterations" ? undefined : timeMs,
+  leafRolloutHorizon: leafHorizon,
+  rootPressureTieBreakDelta: rootTiebreakDelta,
+  rootConservationWinRateThreshold: rootConservationThreshold,
+  ...(valueModelPath && !k2InPlay ? { valueModel: readValueModel(valueModelPath) } : {}),
+};
+const runContextByPolicy: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>> = k2InPlay
+  ? {
+      "is-mcts-k2": {
+        rootPressureTieBreakDelta: k2RootTiebreakDelta,
+        rootConservationWinRateThreshold: k2RootConservationThreshold,
+        ...(valueModelPath ? { valueModel: readValueModel(valueModelPath) } : {}),
+      },
+    }
+  : {};
 
 const budgetLabel = budget === "iterations" ? `iteration-matched ${ismctsIters} iters` : `same wall-clock ${timeMs}ms`;
 console.log(`Phase I A/B — ${policy}(leaf=${leafHorizon}) vs ${opp} @ ${budgetLabel}${mirror ? "  [MIRROR 同牌組]" : ""}`);
@@ -280,6 +271,8 @@ units.forEach(([a, b], mi) => {
       decks,
       policies,
       seeds: mirroredSeeds(seedStart, games),
+      runContext,
+      runContextByPolicy,
     });
     for (const m of report.matches) allSearchDiagnostics.push(...m.searchDiagnostics);
     for (const m of report.matches) {

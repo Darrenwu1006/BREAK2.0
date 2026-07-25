@@ -1,11 +1,12 @@
 import { applyDecision, createGame } from "../src/engine/engine";
+import { flag, numberArg, stringArg } from "../src/shared/argv";
 import type { Decision, GameState, PlayerId } from "../src/engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckAxes } from "../src/ai/heuristic";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
   benchmarkPolicyDecision,
-  configureIsmctsBenchmark,
   type BenchmarkPolicyId,
+  type BenchmarkRunContext,
 } from "../src/ai/benchmark";
 import { evaluatePressureScore, extractValueFeatures, VALUE_FEATURE_NAMES } from "../src/ai/rollout-value";
 import { fitPhaseHValueModel, rawPhaseHValueScore, scorePhaseHValueModel, type PhaseHGatePairRow, type PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
@@ -15,7 +16,6 @@ import type { ReplaySession } from "../src/shared/replayHistory";
 import type { KnownDecks } from "../src/ai/remaining-pool";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import process from "node:process";
 import type { ValueFeatureName } from "../src/ai/rollout-value";
 
 const DECKS = [
@@ -89,24 +89,6 @@ interface WithinGamePairMetrics {
   averagePairMargin: number;
 }
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
-
 function seededRnd(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -151,6 +133,7 @@ function selfPlayDecision(policy: BenchmarkPolicyId, state: GameState, profiles:
     benchmarkDb,
     state,
     [seededRnd(seed * 3 + 11), seededRnd(seed * 5 + 17)],
+    runCtx,
     [decks[0].axes, decks[1].axes],
     [decks[0].ids, decks[1].ids],
   );
@@ -407,7 +390,7 @@ function nonNegativeFeatures(): ValueFeatureName[] {
 }
 
 function featureListArg(name: string): ValueFeatureName[] {
-  const values = argValue(name, "")
+  const values = stringArg(name, "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -427,11 +410,11 @@ function packageVersion(): string {
 }
 
 function replayFiles(): string[] {
-  const file = argValue("file", "");
+  const file = stringArg("file", "");
   if (file) return [file];
-  const dir = argValue("dir", join("data", "replays"));
+  const dir = stringArg("dir", join("data", "replays"));
   if (!existsSync(dir)) return [];
-  const limit = argNum("limit", 80);
+  const limit = numberArg("limit", 80);
   const files = readdirSync(dir)
     .filter((candidate) => candidate.endsWith(".json"))
     .sort((a, b) => a.localeCompare(b))
@@ -472,10 +455,10 @@ function gatePairFromState(state: GameState, minPressureDelta: number, knownDeck
 
 function collectGatePairs(sessions: readonly ReplaySession[], includeSynthetic: boolean): PhaseHGatePairRow[] {
   const pairs: PhaseHGatePairRow[] = [];
-  const minPressureDelta = argNum("min-pressure-delta", 0);
+  const minPressureDelta = numberArg("min-pressure-delta", 0);
   if (includeSynthetic) {
-    const synthetic = gatePairFromState(createFreeAttackGateState(benchmarkDb, argNum("seed", 940)), minPressureDelta);
-    if (synthetic) pairs.push({ ...synthetic, weight: argNum("synthetic-weight", 8) });
+    const synthetic = gatePairFromState(createFreeAttackGateState(benchmarkDb, numberArg("seed", 940)), minPressureDelta);
+    if (synthetic) pairs.push({ ...synthetic, weight: numberArg("synthetic-weight", 8) });
   }
   for (const session of sessions) {
     const knownDecks: KnownDecks = [session.decks[0].cardIds, session.decks[1].cardIds];
@@ -491,19 +474,19 @@ function auditSessions(sessions: readonly ReplaySession[], files: readonly strin
   return sessions.flatMap((session, index) => auditReplaySession(benchmarkDb, session, files[index] ?? `replay-${index}`, { model }).pairs);
 }
 
-const games = argNum("games", 400);
-const seedStart = argNum("seed-start", 5000);
-const sampleEvery = argNum("sample-every", 4);
-const maxSteps = argNum("max-steps", 4000);
-const outcomePolicy = parsePolicy(argValue("outcome-policy", "heuristic-v2-personality"));
-const deckPairMode = parseDeckPairMode(argValue("deck-pair-mode", "cross-archetype"));
-const timeMs = argNum("time-ms", 0);
-const iterations = argNum("iterations", 64);
-const leafHorizon = argNum("leaf-horizon", outcomePolicy === "mo-ismcts" ? 0 : 40);
-const candidateLimit = argNum("candidate-limit", 4);
+const games = numberArg("games", 400);
+const seedStart = numberArg("seed-start", 5000);
+const sampleEvery = numberArg("sample-every", 4);
+const maxSteps = numberArg("max-steps", 4000);
+const outcomePolicy = parsePolicy(stringArg("outcome-policy", "heuristic-v2-personality"));
+const deckPairMode = parseDeckPairMode(stringArg("deck-pair-mode", "cross-archetype"));
+const timeMs = numberArg("time-ms", 0);
+const iterations = numberArg("iterations", 64);
+const leafHorizon = numberArg("leaf-horizon", outcomePolicy === "mo-ismcts" ? 0 : 40);
+const candidateLimit = numberArg("candidate-limit", 4);
 const engineVersion = `breaktcg@${packageVersion()}`;
-const mirror = !hasFlag("no-mirror");
-const rowCache = argValue("row-cache", "");
+const mirror = !flag("no-mirror");
+const rowCache = stringArg("row-cache", "");
 const outcomeConfig: OutcomeSourceConfig = {
   outcomePolicy,
   deckPairMode,
@@ -519,20 +502,20 @@ const outcomeConfig: OutcomeSourceConfig = {
   engine: engineVersion,
   valueFeatureNames: [...VALUE_FEATURE_NAMES],
 };
-configureIsmctsBenchmark({
+const runCtx: BenchmarkRunContext = {
   iterations,
   timeLimitMs: timeMs > 0 ? timeMs : undefined,
   leafRolloutHorizon: leafHorizon,
   candidateLimit,
-});
+};
 const files = replayFiles();
 const sessions = files.map(readReplay).filter((session): session is ReplaySession => session !== null);
 const omitted = omittedFeatures();
 const nonNegative = nonNegativeFeatures();
-const minOutcomeRows = argNum("min-outcome-rows", 100);
-const skipGatePairs = hasFlag("no-gate-pairs");
-const holdoutEvery = Math.max(0, Math.floor(argNum("holdout-every", 0)));
-const holdoutOffset = Math.floor(argNum("holdout-offset", Math.max(0, holdoutEvery - 1)));
+const minOutcomeRows = numberArg("min-outcome-rows", 100);
+const skipGatePairs = flag("no-gate-pairs");
+const holdoutEvery = Math.max(0, Math.floor(numberArg("holdout-every", 0)));
+const holdoutOffset = Math.floor(numberArg("holdout-offset", Math.max(0, holdoutEvery - 1)));
 
 console.log(
   `Phase-H-Value-Fit: outcome policy=${outcomePolicy}, deckPairMode=${deckPairMode}, games=${games}, replayFiles=${files.length}, ` +
@@ -547,21 +530,21 @@ const outcomeRows = rowCache
 const split = splitOutcomeRowsByGame(outcomeRows, holdoutEvery, holdoutOffset);
 const trainOutcomeRows = split.trainRows.map(stripCachedRow);
 const holdoutOutcomeRows = split.holdoutRows.map(stripCachedRow);
-const gatePairs = skipGatePairs ? [] : collectGatePairs(sessions, !hasFlag("no-synthetic"));
+const gatePairs = skipGatePairs ? [] : collectGatePairs(sessions, !flag("no-synthetic"));
 console.log(
   `outcomeRows=${outcomeRows.length}, trainRows=${trainOutcomeRows.length}, holdoutRows=${holdoutOutcomeRows.length}, ` +
     `holdoutGames=${split.holdoutGames.length}, gatePairs=${gatePairs.length}`,
 );
 if (outcomeRows.length < minOutcomeRows) throw new Error(`outcome rows too few: ${outcomeRows.length} < ${minOutcomeRows}`);
 if (trainOutcomeRows.length === 0) throw new Error("train outcome rows too few: 0");
-if (gatePairs.length === 0 && !hasFlag("allow-no-gate-pairs") && !skipGatePairs) throw new Error("gate pairs too few");
+if (gatePairs.length === 0 && !flag("allow-no-gate-pairs") && !skipGatePairs) throw new Error("gate pairs too few");
 
 const fitLabel = outcomePolicy === "mixed-k0" ? "Phase K K1 candidate fit" : "Phase H candidate fit";
 const result = fitPhaseHValueModel(trainOutcomeRows, gatePairs, {
-  epochs: argNum("epochs", 4000),
-  lr: argNum("lr", 0.5),
-  l2: argNum("l2", 1e-4),
-  pairWeight: argNum("pair-weight", 4),
+  epochs: numberArg("epochs", 4000),
+  lr: numberArg("lr", 0.5),
+  l2: numberArg("l2", 1e-4),
+  pairWeight: numberArg("pair-weight", 4),
   omittedFeatures: omitted,
   nonNegativeFeatures: nonNegative,
   provenance:
@@ -570,7 +553,7 @@ const result = fitPhaseHValueModel(trainOutcomeRows, gatePairs, {
     `holdoutRows=${holdoutOutcomeRows.length} holdoutEvery=${holdoutEvery} holdoutOffset=${holdoutOffset} decks=${DECKS.join("|")} ` +
     `search(iter=${iterations},timeMs=${timeMs},leaf=${leafHorizon},candidate=${candidateLimit}) ` +
     `rowCache=${rowCache || "none"} ` +
-    `gatePairs=${gatePairs.length} pairWeight=${argNum("pair-weight", 4)} ` +
+    `gatePairs=${gatePairs.length} pairWeight=${numberArg("pair-weight", 4)} ` +
     `omitted=${omitted.join("|") || "none"} nonNegative=${nonNegative.join("|") || "none"} ` +
     `engine=${engineVersion} [Codex 2026-07-04]`,
 });
@@ -613,7 +596,7 @@ console.log(
     `avgValueDelta=${auditSummary.averageValueDelta.toFixed(4)}`,
 );
 
-const out = argValue("out", "");
+const out = stringArg("out", "");
 if (out) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify({

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { numberArg, stringArg } from "../src/shared/argv";
 import { dirname } from "node:path";
-import process from "node:process";
 import { rawPhaseHValueScore } from "../src/ai/phase-h-value-fit";
 import {
   phaseKMlpCalibratedLogit,
@@ -113,22 +113,8 @@ interface CandidateResult {
   platt: { a: number; b: number; calibrationRows: number };
 }
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
-}
-
 function parseNumList(name: string, fallback: number[]): number[] {
-  const raw = argValue(name, "");
+  const raw = stringArg(name, "");
   if (!raw) return fallback;
   const values = raw.split(",").map((v) => Number(v.trim())).filter((v) => Number.isFinite(v));
   return values.length > 0 ? values : fallback;
@@ -554,19 +540,19 @@ function evaluateCandidate(
 function candidateGrid(): TrainCandidate[] {
   const seeds = parseNumList("train-seeds", [4101, 4102]);
   const pairWeights = parseNumList("pair-weights", [0, 0.5]);
-  const lr = argNum("lr", 0.003);
-  const l2 = argNum("l2", 1e-4);
-  const epochs = Math.max(1, Math.floor(argNum("epochs", 180)));
+  const lr = numberArg("lr", 0.003);
+  const l2 = numberArg("l2", 1e-4);
+  const epochs = Math.max(1, Math.floor(numberArg("epochs", 180)));
   return seeds.flatMap((seed) => pairWeights.map((pairWeight) => ({ seed, pairWeight, lr, l2, epochs })));
 }
 
-const rowCachePath = argValue("row-cache", "data/ab/phase-k-k15-outcome-rows-feature-v1-mixed-h4-heur-g2000-i16.json");
-const selectedPath = argValue("selected-v1", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
-const outPath = argValue("out", "data/ab/phase-k-k4-mlp-fit-holdout-g2000-i16.json");
-const games = Math.floor(argNum("games", 2000));
-const holdoutEvery = Math.max(2, Math.floor(argNum("holdout-every", 5)));
-const holdoutOffset = Math.floor(argNum("holdout-offset", 4));
-const calibrationOffset = Math.floor(argNum("calibration-offset", 3));
+const rowCachePath = stringArg("row-cache", "data/ab/phase-k-k15-outcome-rows-feature-v1-mixed-h4-heur-g2000-i16.json");
+const selectedPath = stringArg("selected-v1", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
+const outPath = stringArg("out", "data/ab/phase-k-k4-mlp-fit-holdout-g2000-i16.json");
+const games = Math.floor(numberArg("games", 2000));
+const holdoutEvery = Math.max(2, Math.floor(numberArg("holdout-every", 5)));
+const holdoutOffset = Math.floor(numberArg("holdout-offset", 4));
+const calibrationOffset = Math.floor(numberArg("calibration-offset", 3));
 const cache = readCache(rowCachePath);
 const rows = cache.rows.filter((row) => row.gameIndex < games);
 const split = splitRows(rows, holdoutEvery, holdoutOffset, calibrationOffset);

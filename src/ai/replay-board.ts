@@ -6,6 +6,7 @@
 import type { Card } from "../data/types";
 import type { CardDb, Decision, GameState, PlayerId, PointValue, Stack } from "../engine/types";
 import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
+import { describeDecision } from "../shared/decisionLabels";
 
 const PLAYER_LABEL: Record<PlayerId, string> = { 0: "玩家", 1: "AI" };
 
@@ -58,51 +59,6 @@ function pointStr(pv: PointValue | null): string {
   return pv ? `${pv.value}（owner P${pv.owner}, source ${pv.source}）` : "－";
 }
 
-/** 把一個 Decision 轉成人類可讀字串（triage headline 與 board 共用）。 */
-export function decisionLabel(state: GameState, db: CardDb, decision: Decision): string {
-  const n = (uid: number | null | undefined) => (uid == null ? "(無)" : nameOf(state, db, uid));
-  switch (decision.type) {
-    case "serve-rights":
-      return decision.take ? "取得首次發球權" : "讓出首次發球權";
-    case "mulligan":
-      return decision.returnUids.length === 0
-        ? "不換牌"
-        : `換牌 ${decision.returnUids.length} 張（${decision.returnUids.map(n).join("、")}）`;
-    case "deploy-serve":
-      return decision.uid == null ? "發球區不登場 → 宣告 Lost" : `發球登場 ${n(decision.uid)}`;
-    case "deploy-receive":
-      return decision.uid == null ? "接球區不登場 → 宣告 Lost" : `接球登場 ${n(decision.uid)}`;
-    case "deploy-toss":
-      return decision.uid == null ? "托球區不登場 → 宣告 Lost" : `托球登場 ${n(decision.uid)}`;
-    case "deploy-attack":
-      return decision.uid == null ? "攻擊區不登場 → 宣告 Lost" : `攻擊登場 ${n(decision.uid)}`;
-    case "deploy-block": {
-      if (decision.uids == null) return "不攔網 → 宣告 Lost";
-      const others = decision.uids.filter((uid) => uid !== decision.center);
-      const rest = others.length ? `，其餘 ${others.map(n).join("、")}` : "";
-      return `攔網 ${decision.uids.length} 張（中央＝${n(decision.center)}${rest}）`;
-    }
-    case "defense-choice":
-      return decision.choice === "block" ? "防守選擇：攔網" : "防守選擇：接球";
-    case "free":
-      if (decision.action === "pass") return "自由步驟：Pass";
-      if (decision.action === "lost") return "自由步驟：主動宣告 Lost";
-      if (decision.action === "skill") return `使用技能：${n(decision.uid)}（技能#${decision.skillIndex}）`;
-      return `打出事件：${n(decision.uid)}`;
-    case "resolve-pending":
-      return `解決待機技能 #${decision.id}`;
-    case "effect-confirm":
-      return decision.accept ? "效果：接受" : "效果：拒絕／不使用";
-    case "effect-cards":
-      return decision.uids.length === 0 ? "效果選卡：不選" : `效果選卡：${decision.uids.map(n).join("、")}`;
-    case "effect-option":
-      return `效果選項：#${decision.index}`;
-    case "pick-set-card":
-      return `撿 Set 卡：#${decision.index}`;
-    default:
-      return JSON.stringify(decision);
-  }
-}
 
 /** 渲染單一 entry 的盤面（用 before 狀態＝決策當下面對的局面）＋實際決策＋該步 log。 */
 export function renderEntry(db: CardDb, entry: ReplayEntry): string {
@@ -127,7 +83,7 @@ export function renderEntry(db: CardDb, entry: ReplayEntry): string {
     lines.push(`  牌庫：${ps.deck.length}｜棄牌：${ps.drop.length}｜Set區：${ps.setArea.length}`);
   }
   lines.push(`OP：${pointStr(s.op)}｜DP：${pointStr(s.dp)}`);
-  lines.push(`決策：${decisionLabel(s, db, entry.decision)}`);
+  lines.push(`決策：${describeDecision(db, s, entry.decision, "verbose")}`);
   const logs = replayEntryLogs(entry);
   if (logs.length) {
     lines.push(`log[${entry.logStart}..${entry.logEnd}]：`);

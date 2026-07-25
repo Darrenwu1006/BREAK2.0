@@ -9,7 +9,7 @@
 
 import type { CardDb, LogEntry, PlayerId } from "../engine/types";
 import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
-import { decisionLabel } from "./replay-board";
+import { describeDecision } from "../shared/decisionLabels";
 import { createReplayReviewReport, type LostSetCause } from "./replay-review";
 
 export type TriageCategory = "mistake" | "good-play" | "concern";
@@ -235,7 +235,7 @@ export function buildTriage(db: CardDb, session: ReplaySession, options: TriageO
       pendingType: entry.pendingType,
       category,
       strength,
-      headline: `${decisionLabel(entry.before, db, entry.decision)}｜${dominant.detail}`,
+      headline: `${describeDecision(db, entry.before, entry.decision, "verbose")}｜${dominant.detail}`,
       signals: signals.map(({ category: _c, ...rest }) => rest),
     });
   }

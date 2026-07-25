@@ -12,27 +12,10 @@ import type { GameState, PlayerId } from "../src/engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
   benchmarkPolicyDecision,
-  configureIsmctsBenchmark,
   seededRnd,
 } from "../src/ai/benchmark";
-import type { BenchmarkPolicyId } from "../src/ai/benchmark";
-
-function argValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0) return process.argv[index + 1];
-  return undefined;
-}
-
-function numberArg(name: string, fallback: number): number {
-  const raw = argValue(name);
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) throw new Error(`--${name} 必須是數字`);
-  return value;
-}
+import type { BenchmarkPolicyId, BenchmarkRunContext } from "../src/ai/benchmark";
+import { argValue, numberArg } from "../src/shared/argv";
 
 const deckAName = argValue("deck-a") ?? "青葉城西-第三彈測試_調整C萬用體";
 const deckBName = argValue("deck-b") ?? "音駒-音駒-三彈官方";
@@ -43,7 +26,7 @@ const maxSteps = numberArg("max-steps", 5000);
 const timeLimitMs = numberArg("ismcts-time-ms", 3000);
 const outDir = argValue("out-dir") ?? "data/ab/full-log";
 
-configureIsmctsBenchmark({ timeLimitMs });
+const runCtx: BenchmarkRunContext = { timeLimitMs };
 
 const deckA = findBenchmarkDeck(deckAName);
 const deckB = findBenchmarkDeck(deckBName);
@@ -73,6 +56,7 @@ for (let game = 0; game < games; game++) {
       benchmarkDb,
       state,
       randomByPlayer,
+      runCtx,
       [deckA.axes, deckB.axes],
       [deckA.ids, deckB.ids],
     );

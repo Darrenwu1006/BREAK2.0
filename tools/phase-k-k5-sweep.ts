@@ -1,12 +1,13 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { numberArg, stringArg } from "../src/shared/argv";
 import { dirname, resolve } from "node:path";
-import process from "node:process";
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
-  configureIsmctsBenchmark,
   mirroredSeeds,
   runBenchmarkBatch,
   type BenchmarkDeckInput,
+  type BenchmarkPolicyId,
+  type BenchmarkRunContext,
   type MatchResult,
   type PlayQualitySummary,
   type SearchDecisionDiagnostics,
@@ -41,24 +42,8 @@ interface QualityAcc {
   attackOpTotal: number;
 }
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((a) => a.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const idx = process.argv.indexOf(`--${name}`);
-  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const raw = argValue(name, String(fallback));
-  if (raw === "off" || raw === "inf" || raw === "Infinity") return Number.POSITIVE_INFINITY;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
 function argList(name: string, fallback: string): number[] {
-  return argValue(name, fallback)
+  return stringArg(name, fallback)
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean)
@@ -190,12 +175,12 @@ function summarizeDiagnostics(items: readonly SearchDecisionDiagnostics[]) {
   };
 }
 
-const modelPath = argValue("value-model-file", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
-const outPath = argValue("out", "data/ab/phase-k-k5-sweep-selected-v1.json");
-const games = Math.max(1, Math.floor(argNum("games", 1)));
-const timeMs = Math.max(1, Math.floor(argNum("time-ms", 500)));
-const leafHorizon = Math.max(0, Math.floor(argNum("leaf-horizon", 40)));
-const seedStart = Math.floor(argNum("seed-start", 14000));
+const modelPath = stringArg("value-model-file", "data/ab/phase-k-k15-selected-v1-fit-holdout-g2000-i16.json");
+const outPath = stringArg("out", "data/ab/phase-k-k5-sweep-selected-v1.json");
+const games = Math.max(1, Math.floor(numberArg("games", 1)));
+const timeMs = Math.max(1, Math.floor(numberArg("time-ms", 500)));
+const leafHorizon = Math.max(0, Math.floor(numberArg("leaf-horizon", 40)));
+const seedStart = Math.floor(numberArg("seed-start", 14000));
 const deltas = argList("deltas", "0.02,0.04,0.06");
 const thresholds = argList("thresholds", "0.75,0.85,0.95");
 const candidateModel = readValueModel(modelPath);
@@ -210,17 +195,21 @@ console.log(`Structure per combo: ${MIRROR_DECKS.length} mirror decks x 2 seats 
 
 for (const delta of deltas) {
   for (const threshold of thresholds) {
-    configureIsmctsBenchmark({
+    // [Claude 2026-07-24] 候選 B 塊 2：h4 用 live knobs（base）；被 sweep 的 delta／threshold 與候選 model 走 k2 per-policy override。
+    const runContext: BenchmarkRunContext = {
       iterations: 1_000_000,
       timeLimitMs: timeMs,
       leafRolloutHorizon: leafHorizon,
       rootPressureTieBreakDelta: CURRENT_ROOT_DELTA,
       rootConservationWinRateThreshold: CURRENT_CONSERVATION_THRESHOLD,
-      k2RootPressureTieBreakDelta: delta,
-      k2RootConservationWinRateThreshold: threshold,
-      valueModel: undefined,
-      k2ValueModel: candidateModel,
-    });
+    };
+    const runContextByPolicy: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>> = {
+      "is-mcts-k2": {
+        valueModel: candidateModel,
+        rootPressureTieBreakDelta: delta,
+        rootConservationWinRateThreshold: threshold,
+      },
+    };
 
     let candidateWins = 0;
     let completed = 0;
@@ -240,6 +229,8 @@ for (const delta of deltas) {
           decks: [deck(deckName), deck(deckName)],
           policies,
           seeds: mirroredSeeds(comboSeedStart + deckIndex * 1000 + seat * 500, games),
+          runContext,
+          runContextByPolicy,
         });
         for (const match of report.matches) {
           diagnostics.push(...match.searchDiagnostics);

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import process from "node:process";
+import { numberArg, stringArg } from "../src/shared/argv";
 import { VALUE_FEATURE_NAMES, type ValueModel } from "../src/ai/rollout-value";
 import type { PhaseHOutcomeRow } from "../src/ai/phase-h-value-fit";
 
@@ -29,20 +29,6 @@ interface AnalysisRow extends CachedOutcomeRow {
   localIndex: number;
   perspective: 0 | 1;
   game: OutcomeCacheGame;
-}
-
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
 }
 
 function sigmoid(z: number): number {
@@ -118,7 +104,7 @@ function summarizeGroup(name: string, rows: readonly AnalysisRow[], model: Value
 function printTopGroups(title: string, groups: Map<string, AnalysisRow[]>, model: ValueModel, top: number): void {
   console.log(`\n${title}`);
   [...groups.entries()]
-    .filter(([, rows]) => rows.length >= argNum("min-group-rows", 40))
+    .filter(([, rows]) => rows.length >= numberArg("min-group-rows", 40))
     .map(([name, rows]) => ({ name, rows, auc: auc(rows.map((row) => ({ p: sigmoid(rawScore(model, row.x)), y: row.y }))) }))
     .sort((a, b) => a.auc - b.auc)
     .slice(0, top)
@@ -175,7 +161,7 @@ function printGameOutcomes(title: string, games: readonly OutcomeCacheGame[], ke
 
 function printExclusionSensitivity(rows: readonly AnalysisRow[], model: ValueModel, keyFn: (row: AnalysisRow) => string, topCount: number): void {
   const groups = [...groupBy(rows, keyFn).entries()]
-    .filter(([, groupRows]) => groupRows.length >= argNum("min-group-rows", 40))
+    .filter(([, groupRows]) => groupRows.length >= numberArg("min-group-rows", 40))
     .map(([name, groupRows]) => ({ name, groupRows, auc: auc(groupRows.map((row) => ({ p: sigmoid(rawScore(model, row.x)), y: row.y }))) }))
     .sort((a, b) => a.auc - b.auc)
     .slice(0, topCount);
@@ -186,9 +172,9 @@ function printExclusionSensitivity(rows: readonly AnalysisRow[], model: ValueMod
   }
 }
 
-const cachePath = argValue("cache", "data/ab/phase-h-outcome-rows-so-leaf40-i16.json");
-const modelPath = argValue("model-file", "data/ab/phase-h-value-fit-so-leaf40-g80-nn.json");
-const top = argNum("top", 12);
+const cachePath = stringArg("cache", "data/ab/phase-h-outcome-rows-so-leaf40-i16.json");
+const modelPath = stringArg("model-file", "data/ab/phase-h-value-fit-so-leaf40-g80-nn.json");
+const top = numberArg("top", 12);
 const cache = JSON.parse(readFileSync(cachePath, "utf8")) as OutcomeRowCache;
 const model = modelFromFile(modelPath);
 const games = new Map(cache.games.map((game) => [game.gameIndex, game]));
@@ -220,7 +206,7 @@ printTopGroups("Buckets by serving", groupBy(rows, (row) => `serving=${row.x[5] 
 printFeatureDeltas(rows);
 
 const weakestGroups = [...groupBy(rows, (row) => `${row.game.decks[0]} vs ${row.game.decks[1]}`).entries()]
-  .filter(([, groupRows]) => groupRows.length >= argNum("min-group-rows", 40))
+  .filter(([, groupRows]) => groupRows.length >= numberArg("min-group-rows", 40))
   .map(([name, groupRows]) => ({ name, groupRows, auc: auc(groupRows.map((row) => ({ p: sigmoid(rawScore(model, row.x)), y: row.y }))) }))
   .sort((a, b) => a.auc - b.auc)
   .slice(0, Math.min(3, top));

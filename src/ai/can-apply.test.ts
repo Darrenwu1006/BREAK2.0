@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyDecision, createGame } from "../engine/engine";
 import type { Decision, GameState } from "../engine/types";
 import { benchmarkDb, findBenchmarkDeck } from "./benchmark-fixtures";
-import { canApplyDecision, enumerateCandidates } from "./coach";
+import { enumerateCandidates } from "./coach";
+import { canApplyDecision } from "../engine/decisions";
 import { heuristicAiDecision } from "./heuristic";
 
 const PAIRS = [

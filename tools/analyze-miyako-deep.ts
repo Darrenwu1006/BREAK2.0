@@ -1,6 +1,7 @@
 import { benchmarkDb, findBenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import { createGame, applyDecision } from "../src/engine/engine";
-import { benchmarkPolicyDecision, seededRnd, configureIsmctsBenchmark } from "../src/ai/benchmark";
+import { benchmarkPolicyDecision, seededRnd } from "../src/ai/benchmark";
+import type { BenchmarkRunContext } from "../src/ai/benchmark";
 
 const opponents = [
   "梟谷-第三彈官方",
@@ -17,12 +18,12 @@ const versions = [
 ];
 
 // Configure MCTS to run fast (32 iterations)
-configureIsmctsBenchmark({
+const runCtx: BenchmarkRunContext = {
   iterations: 32,
   explorationC: Math.SQRT2,
   candidateLimit: 8,
-  leafRolloutHorizon: 40
-});
+  leafRolloutHorizon: 40,
+};
 
 console.log("Starting deep analysis of Miyako-Komori (HV-PR-059) usage (v2)...");
 
@@ -89,6 +90,7 @@ for (const ver of versions) {
           benchmarkDb,
           state,
           randomByPlayer,
+          runCtx,
           [deckA.axes, deckB.axes],
           [deckA.ids, deckB.ids],
           []

@@ -1,15 +1,16 @@
 import { applyDecision, effParam } from "../src/engine/engine";
+import { numberArg, stringArg } from "../src/shared/argv";
 import type { Decision, GameState, PlayerId } from "../src/engine/types";
 import { heuristicAiDecision } from "../src/ai/heuristic";
 import { benchmarkDb } from "../src/ai/benchmark-fixtures";
-import { decisionLabel, determinizeHiddenState, enumerateCandidates } from "../src/ai/coach";
+import { determinizeHiddenState, enumerateCandidates } from "../src/ai/coach";
+import { describeDecision } from "../src/shared/decisionLabels";
 import { ucbScore } from "../src/ai/ismcts";
 import { phaseKMlpProbability, type PhaseKMlpValueModel } from "../src/ai/phase-k-mlp-value";
 import { extractValueFeatures } from "../src/ai/rollout-value";
 import { createGame } from "../src/engine/engine";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import process from "node:process";
 
 const H5_FILLER = "HV-D01-005";
 const SEED_STRIDE = 1000003;
@@ -37,20 +38,6 @@ interface Node {
 
 function node(): Node {
   return { children: new Map(), availability: new Map(), visits: 0, valueSum: 0 };
-}
-
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
 }
 
 function h5MoveToHand(state: GameState, p: PlayerId, cardId: string, used: Set<number>): number {
@@ -221,7 +208,7 @@ function runOne(seed: number, scenario: "rich" | "poor", model: PhaseKMlpValueMo
     .filter((item): item is { key: string; child: Node; decision: Decision } => item.decision !== undefined)
     .map((item) => ({
       decision: item.decision,
-      label: decisionLabel(benchmarkDb, built.state, item.decision),
+      label: describeDecision(benchmarkDb, built.state, item.decision),
       winRate: item.child.visits === 0 ? 0 : item.child.valueSum / item.child.visits,
       sampleCount: item.child.visits,
     }))
@@ -243,13 +230,13 @@ function runOne(seed: number, scenario: "rich" | "poor", model: PhaseKMlpValueMo
   };
 }
 
-const modelPath = argValue("model", "data/ab/phase-k-k4-mlp-fit-holdout-g2000-i16.json");
-const outPath = argValue("out", "data/ab/phase-k-k4-behavior-probe-mlp.json");
-const seedStart = argNum("seed-start", 970);
-const seeds = argNum("seeds", 5);
-const iterations = argNum("iterations", 800);
-const candidateLimit = argNum("candidate-limit", 8);
-const leafHorizon = argNum("leaf-horizon", 4);
+const modelPath = stringArg("model", "data/ab/phase-k-k4-mlp-fit-holdout-g2000-i16.json");
+const outPath = stringArg("out", "data/ab/phase-k-k4-behavior-probe-mlp.json");
+const seedStart = numberArg("seed-start", 970);
+const seeds = numberArg("seeds", 5);
+const iterations = numberArg("iterations", 800);
+const candidateLimit = numberArg("candidate-limit", 8);
+const leafHorizon = numberArg("leaf-horizon", 4);
 const model = loadMlp(modelPath);
 const rows: ProbeRow[] = [];
 

@@ -1,4 +1,6 @@
-import { applyDecision, autoPickCards, blockDeployMax, canChooseBlock, canDeployTo, deployNames, deployableUids, freeOptions, nameOf, normName } from "../engine/engine";
+import { applyDecision, autoPickCards, blockDeployMax, canChooseBlock, deployableUids, freeOptions } from "../engine/engine";
+import { canApplyDecision } from "../engine/decisions";
+import { describeDecision } from "../shared/decisionLabels";
 import { cloneStateForSearch } from "../engine/search-clone";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import type { CourtArea } from "../engine/dsl";
@@ -111,15 +113,6 @@ function other(p: PlayerId): PlayerId {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
-}
-
-function cardName(db: CardDb, state: GameState, uid: number): string {
-  const id = state.cards[uid];
-  if (!id) return `uid ${uid}`;
-  const card = db.get(id);
-  const name = card?.nameZh || card?.nameJa || id;
-  const shortId = id.split("-").at(-1);
-  return shortId ? `${name}〔${shortId}〕` : name;
 }
 
 function cardParam(db: CardDb, state: GameState, uid: number, area: CourtArea): number {
@@ -245,130 +238,6 @@ function uniqueDecisions(decisions: Decision[]): Decision[] {
     result.push(decision);
   }
   return result;
-}
-
-function handContainsAll(state: GameState, p: PlayerId, uids: readonly number[]): boolean {
-  if (new Set(uids).size !== uids.length) return false;
-  return uids.every((uid) => state.players[p].hand.includes(uid));
-}
-
-function validDeployNameChoice(db: CardDb, state: GameState, p: PlayerId, uid: number, area: DeployArea | "block", nameChoice: string | undefined): boolean {
-  const names = deployNames(db, state, uid);
-  if (names) {
-    if (nameChoice === undefined) return false;
-    if (!names.map(normName).includes(normName(nameChoice))) return false;
-  } else if (nameChoice !== undefined) {
-    return false;
-  }
-  return canDeployTo(db, state, p, uid, area, nameChoice);
-}
-
-function areaOfGuts(state: GameState, p: PlayerId, uid: number): "serve" | "receive" | "toss" | "attack" | "blockCenter" | null {
-  const ps = state.players[p];
-  for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
-    if (ps[key].slice(0, -1).includes(uid)) return key;
-  }
-  return null;
-}
-
-function canApplyEffectCards(db: CardDb, state: GameState, decision: Extract<Decision, { type: "effect-cards" }>): boolean {
-  const aw = state.effectCtx?.awaiting;
-  if (!aw || aw.kind !== "cards") return false;
-  const uids = decision.uids;
-  if (uids.length < aw.min || uids.length > aw.max) return false;
-  if (uids.some((uid) => !aw.candidates.includes(uid)) || new Set(uids).size !== uids.length) return false;
-  if (aw.distinctNames && new Set(uids.map((uid) => nameOf(db, state, uid))).size !== uids.length) return false;
-
-  const p = state.effectCtx!.player;
-  const ps = state.players[p];
-  switch (aw.purpose) {
-    case "gutsToHand": {
-      if (uids.length === 0) return true;
-      const areas = new Set(uids.map((uid) => areaOfGuts(state, p, uid)));
-      if (areas.size !== 1 || areas.has(null)) return false;
-      const names = uids.map((uid) => nameOf(db, state, uid));
-      if (new Set(names).size === names.length) return true;
-      const affiliationSets = uids.map((uid) => db.get(state.cards[uid]!)?.affiliations ?? []);
-      const shared = affiliationSets.slice(1).reduce((acc, cur) => acc.filter((affiliation) => cur.includes(affiliation)), affiliationSets[0] ?? []);
-      return shared.length > 0;
-    }
-    case "dropToHand":
-      return uids.every((uid) => ps.drop.includes(uid));
-    case "eventToHand":
-      return uids.every((uid) => ps.eventArea.includes(uid));
-    default:
-      return true;
-  }
-}
-
-function canApplyFast(db: CardDb, state: GameState, decision: Decision): boolean | null {
-  const pending = state.pendingDecision;
-  if (!pending || pending.type !== decision.type) return false;
-  const p = pending.player as PlayerId;
-
-  switch (decision.type) {
-    case "serve-rights":
-      return typeof decision.take === "boolean";
-    case "mulligan":
-      return handContainsAll(state, p, decision.returnUids);
-    case "deploy-serve":
-    case "deploy-receive":
-    case "deploy-toss":
-    case "deploy-attack": {
-      if (decision.uid === null) return true;
-      const area = decision.type.slice("deploy-".length) as DeployArea;
-      if (!state.players[p].hand.includes(decision.uid)) return false;
-      return validDeployNameChoice(db, state, p, decision.uid, area, decision.nameChoice);
-    }
-    case "deploy-block": {
-      if (decision.uids === null) return true;
-      const { uids, center } = decision;
-      if (uids.length < 1 || uids.length > 3 || uids.length > blockDeployMax(state, p)) return false;
-      if (!uids.includes(center) || !handContainsAll(state, p, uids)) return false;
-      const choices = decision.nameChoices ?? {};
-      const names: string[] = [];
-      for (const uid of uids) {
-        if (!validDeployNameChoice(db, state, p, uid, "block", choices[uid])) return false;
-        const cardName = choices[uid] ?? db.get(state.cards[uid]!)?.nameJa;
-        if (!cardName) return false;
-        names.push(normName(cardName));
-      }
-      return new Set(names).size === names.length;
-    }
-    case "defense-choice":
-      return decision.choice === "receive" || (decision.choice === "block" && canChooseBlock(state));
-    case "free": {
-      if (decision.action === "pass" || decision.action === "lost") return true;
-      const opts = freeOptions(db, state);
-      if (decision.action === "skill") return opts.skills.some((skill) => skill.uid === decision.uid && skill.skillIndex === decision.skillIndex);
-      return opts.events.some((event) => event.uid === decision.uid);
-    }
-    case "resolve-pending":
-      return pending.candidates?.includes(decision.id) ?? false;
-    case "effect-confirm":
-      return state.effectCtx?.awaiting?.kind === "confirm" && typeof decision.accept === "boolean";
-    case "effect-cards":
-      return canApplyEffectCards(db, state, decision);
-    case "effect-option": {
-      const aw = state.effectCtx?.awaiting;
-      if (!aw || aw.kind !== "option") return false;
-      const max = aw.purpose === "param" ? aw.options.length : aw.labels.length;
-      return Number.isInteger(decision.index) && decision.index >= 0 && decision.index < max;
-    }
-    case "pick-set-card":
-      return Number.isInteger(decision.index) && decision.index >= 0 && decision.index < state.players[p].setArea.length;
-  }
-}
-
-export function canApplyDecision(db: CardDb, state: GameState, decision: Decision): boolean {
-  const fast = canApplyFast(db, state, decision);
-  if (fast !== null) return fast;
-  try {
-    applyDecision(db, state, decision, { execMode: "search" });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function isApplicable(db: CardDb, state: GameState, decision: Decision): boolean {
@@ -518,39 +387,6 @@ export function enumerateCandidates(db: CardDb, state: GameState, limit: number,
   return legal.slice(0, Math.max(1, limit));
 }
 
-export function decisionLabel(db: CardDb, state: GameState, decision: Decision): string {
-  switch (decision.type) {
-    case "serve-rights":
-      return decision.take ? "取得首次發球權" : "讓出首次發球權";
-    case "mulligan":
-      return decision.returnUids.length ? `換掉 ${decision.returnUids.map((uid) => cardName(db, state, uid)).join("、")}` : "不換牌";
-    case "defense-choice":
-      return decision.choice === "block" ? "選擇攔網" : "選擇接球";
-    case "free":
-      if (decision.action === "pass") return "自由步驟 Pass";
-      if (decision.action === "lost") return "主動 Lost";
-      return decision.action === "event" ? `使用事件 ${cardName(db, state, decision.uid)}` : `使用技能 ${cardName(db, state, decision.uid)}`;
-    case "resolve-pending":
-      return `解決待機效果 #${decision.id}`;
-    case "effect-confirm":
-      return decision.accept ? "接受效果 / 付款" : "拒絕效果";
-    case "effect-cards":
-      return decision.uids.length ? `選 ${decision.uids.map((uid) => cardName(db, state, uid)).join("、")}` : "不選卡";
-    case "effect-option":
-      return `選項：${state.pendingDecision?.options?.[decision.index] ?? decision.index}`;
-    case "pick-set-card":
-      return `拿取 Set 卡 #${decision.index + 1}`;
-    case "deploy-block":
-      return decision.uids === null
-        ? "不登場攔網"
-        : `攔網 ${decision.uids.map((uid) => cardName(db, state, uid)).join("、")}`;
-    case "deploy-serve":
-    case "deploy-receive":
-    case "deploy-toss":
-    case "deploy-attack":
-      return decision.uid === null ? "不登場角色" : `登場 ${cardName(db, state, decision.uid)}`;
-  }
-}
 
 function explanationFor(decision: Decision, winRate: number, confidence: number): string {
   const lead = confidence >= 0.55 ? "目前樣本較穩定" : "目前樣本仍偏少";
@@ -684,7 +520,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
   const candidates = enumerateCandidates(db, state, candidateLimit, fallbackDecision);
   const stats: MutableStats[] = candidates.map((decision) => ({
     decision,
-    label: decisionLabel(db, state, decision),
+    label: describeDecision(db, state, decision),
     wins: 0,
     valueSum: 0,
     samples: 0,
@@ -757,7 +593,7 @@ export function createPimcCoachReport(db: CardDb, state: GameState, options: Pim
     .map((x) => x.est);
   const bestAction = recommendations[0] ?? estimateFromStats({
     decision: fallbackDecision,
-    label: decisionLabel(db, state, fallbackDecision),
+    label: describeDecision(db, state, fallbackDecision),
     wins: 0,
     valueSum: 0,
     samples: 0,

@@ -2,10 +2,11 @@ import process from "node:process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
-import type { BatchReport, BenchmarkPolicyId, MatrixMode, MatrixReport } from "./benchmark";
-import { configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
+import type { BatchReport, BenchmarkPolicyId, BenchmarkRunContext, MatrixMode, MatrixReport } from "./benchmark";
+import { mirroredSeeds, runBenchmarkBatch, runBenchmarkMatrix } from "./benchmark";
 import { createBenchmarkReportEnvelope } from "./benchmark-report";
 import { isHeuristicV2ProfileId } from "./heuristic";
+import { argValue, flag, numberArg } from "../shared/argv";
 import type { ValueModel } from "./rollout-value";
 
 const DEFAULTS = {
@@ -18,26 +19,6 @@ const DEFAULTS = {
   maxSteps: 5000,
 };
 
-function argValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0) return process.argv[index + 1];
-  return undefined;
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
-
-function numberArg(name: string, fallback: number): number {
-  const raw = argValue(name);
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) throw new Error(`--${name} 必須是數字`);
-  return value;
-}
 
 function policyArg(name: string, fallback: BenchmarkPolicyId): BenchmarkPolicyId {
   const raw = argValue(name);
@@ -143,7 +124,7 @@ function writeReport(path: string | undefined, kind: "batch" | "matrix", report:
 }
 
 function run(): void {
-  if (hasFlag("list-decks")) {
+  if (flag("list-decks")) {
     printDecks();
     return;
   }
@@ -155,37 +136,37 @@ function run(): void {
   // [Claude 2026-06-22] Phase F：PIMC policy 的 sample budget 旋鈕（強度↔速度）。預設保守，可覆寫。
   // [Claude 2026-06-23] Phase G：--time-ms 同時套用到 pimc 與 ismcts（同 wall-clock A/B 的便捷旋鈕）。
   const sharedTimeMs = argValue("time-ms") !== undefined ? numberArg("time-ms", 0) : undefined;
-  if ([policyA, policyB].some((p) => p === "pimc" || p === "pimc-v2")) {
-    configurePimcBenchmark({
-      ...(argValue("pimc-samples") !== undefined ? { sampleCount: numberArg("pimc-samples", 8) } : {}),
-      ...(argValue("pimc-rollout-steps") !== undefined ? { rolloutMaxSteps: numberArg("pimc-rollout-steps", 600) } : {}),
-      ...(argValue("pimc-candidates") !== undefined ? { candidateLimit: numberArg("pimc-candidates", 8) } : {}),
-      ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
-      ...(argValue("pimc-time-ms") !== undefined ? { timeLimitMs: numberArg("pimc-time-ms", 0) } : {}),
-      ...(argValue("pimc-value-cut") !== undefined ? { valueCutHorizon: numberArg("pimc-value-cut", 30) } : {}),
-    });
+  // [Claude 2026-07-24] 候選 B 塊 2：改建顯式 BenchmarkRunContext（取代舊全域 configure*）。
+  // pimc 與 ismcts 旋鈕合進同一 base（各引擎只讀相關欄位）；k2 專屬旋鈕改走 per-policy override map。
+  const runContext: BenchmarkRunContext = {
+    ...(argValue("pimc-samples") !== undefined ? { sampleCount: numberArg("pimc-samples", 8) } : {}),
+    ...(argValue("pimc-rollout-steps") !== undefined ? { rolloutMaxSteps: numberArg("pimc-rollout-steps", 600) } : {}),
+    ...(argValue("pimc-candidates") !== undefined ? { candidateLimit: numberArg("pimc-candidates", 8) } : {}),
+    ...(argValue("pimc-value-cut") !== undefined ? { valueCutHorizon: numberArg("pimc-value-cut", 30) } : {}),
+    ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
+    ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
+    ...(argValue("ismcts-c") !== undefined ? { explorationC: numberArg("ismcts-c", Math.SQRT2) } : {}),
+    ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
+    ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
+    ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
+    ...(argValue("ismcts-root-conservation-threshold") !== undefined ? { rootConservationWinRateThreshold: numberArg("ismcts-root-conservation-threshold", 0) } : {}),
+    ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
+    ...(argValue("pimc-time-ms") !== undefined ? { timeLimitMs: numberArg("pimc-time-ms", 0) } : {}),
+    ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
+  };
+  if (argValue("value-model-file") !== undefined && ![policyA, policyB].some((p) => p === "is-mcts-k2")) {
+    runContext.valueModel = readValueModel(argValue("value-model-file"));
   }
-  // [Claude 2026-06-23] Phase G：IS-MCTS 旋鈕（iterations／同 wall-clock 的 time-ms／UCB c／候選寬度）。
-  if ([policyA, policyB].some((p) => p === "is-mcts" || p === "is-mcts-h2" || p === "is-mcts-h2b" || p === "is-mcts-h2c" || p === "is-mcts-h3" || p === "is-mcts-h4" || p === "is-mcts-k2" || p === "mo-ismcts" || p === "mo-ismcts-h3")) {
-    configureIsmctsBenchmark({
-      ...(argValue("ismcts-iters") !== undefined ? { iterations: numberArg("ismcts-iters", 800) } : {}),
-      ...(argValue("ismcts-candidates") !== undefined ? { candidateLimit: numberArg("ismcts-candidates", 8) } : {}),
-      ...(argValue("ismcts-c") !== undefined ? { explorationC: numberArg("ismcts-c", Math.SQRT2) } : {}),
-      ...(argValue("ismcts-leaf-horizon") !== undefined ? { leafRolloutHorizon: numberArg("ismcts-leaf-horizon", 0) } : {}),
-      ...(argValue("ismcts-pressure-epsilon") !== undefined ? { pressureShapingEpsilon: numberArg("ismcts-pressure-epsilon", 0) } : {}),
-      ...(argValue("ismcts-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("ismcts-root-tiebreak-delta", 0) } : {}),
-      ...(argValue("ismcts-root-conservation-threshold") !== undefined ? { rootConservationWinRateThreshold: numberArg("ismcts-root-conservation-threshold", 0) } : {}),
-      ...(argValue("k2-root-tiebreak-delta") !== undefined ? { k2RootPressureTieBreakDelta: numberArg("k2-root-tiebreak-delta", 0) } : {}),
-      ...(argValue("k2-root-conservation-threshold") !== undefined ? { k2RootConservationWinRateThreshold: numberArg("k2-root-conservation-threshold", 0) } : {}),
-      ...(argValue("value-model-file") !== undefined
-        ? [policyA, policyB].some((p) => p === "is-mcts-k2")
-          ? { k2ValueModel: readValueModel(argValue("value-model-file")) }
-          : { valueModel: readValueModel(argValue("value-model-file")) }
-        : {}),
-      ...(sharedTimeMs !== undefined ? { timeLimitMs: sharedTimeMs } : {}),
-      ...(argValue("ismcts-time-ms") !== undefined ? { timeLimitMs: numberArg("ismcts-time-ms", 0) } : {}),
-    });
-  }
+  // k2 專屬旋鈕（value model／tie-break delta／conservation threshold）→ 只作用於 is-mcts-k2。
+  const k2Override: BenchmarkRunContext = {
+    ...(argValue("value-model-file") !== undefined && [policyA, policyB].some((p) => p === "is-mcts-k2")
+      ? { valueModel: readValueModel(argValue("value-model-file")) }
+      : {}),
+    ...(argValue("k2-root-tiebreak-delta") !== undefined ? { rootPressureTieBreakDelta: numberArg("k2-root-tiebreak-delta", 0) } : {}),
+    ...(argValue("k2-root-conservation-threshold") !== undefined ? { rootConservationWinRateThreshold: numberArg("k2-root-conservation-threshold", 0) } : {}),
+  };
+  const runContextByPolicy: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>> =
+    Object.keys(k2Override).length > 0 ? { "is-mcts-k2": k2Override } : {};
   const seedStart = numberArg("seed-start", DEFAULTS.seedStart);
   const games = numberArg("games", DEFAULTS.games);
   const maxSteps = numberArg("max-steps", DEFAULTS.maxSteps);
@@ -203,9 +184,11 @@ function run(): void {
       gamesPerPair: games,
       maxSteps,
       mode: matrixMode,
+      runContext,
+      runContextByPolicy,
     });
 
-    if (hasFlag("json")) {
+    if (flag("json")) {
       console.log(JSON.stringify(report, null, 2));
       writeReport(outPath, "matrix", report, true);
       return;
@@ -246,9 +229,11 @@ function run(): void {
     seeds,
     maxSteps,
     focusCardId,
+    runContext,
+    runContextByPolicy,
   });
 
-  if (hasFlag("json")) {
+  if (flag("json")) {
     console.log(JSON.stringify(report, null, 2));
     writeReport(outPath, "batch", report, true);
     return;

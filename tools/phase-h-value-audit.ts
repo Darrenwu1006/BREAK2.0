@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { flag, stringArg } from "../src/shared/argv";
 import { dirname, join } from "node:path";
-import process from "node:process";
 import { benchmarkDb } from "../src/ai/benchmark-fixtures";
 import { createFreeAttackGateState } from "../src/ai/phase-h-gate-control";
 import {
@@ -13,25 +13,12 @@ import {
 import type { ValueModel } from "../src/ai/rollout-value";
 import type { ReplaySession } from "../src/shared/replayHistory";
 
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
-
 function replayFiles(): string[] {
-  const file = argValue("file", "");
+  const file = stringArg("file", "");
   if (file) return [file];
-  const dir = argValue("dir", join("data", "replays"));
+  const dir = stringArg("dir", join("data", "replays"));
   if (!existsSync(dir)) return [];
-  const limit = Number(argValue("limit", "0"));
+  const limit = Number(stringArg("limit", "0"));
   const files = readdirSync(dir)
     .filter((candidate) => candidate.endsWith(".json"))
     .sort((a, b) => a.localeCompare(b))
@@ -85,16 +72,16 @@ function formatPair(pair: PhaseHGateValuePair): string {
 }
 
 const options: PhaseHValueAuditOptions = {
-  model: readModel(argValue("model-file", "")),
-  minPressureDelta: Number(argValue("min-pressure-delta", "0")),
-  tieEpsilon: Number(argValue("tie-epsilon", "0.000001")),
+  model: readModel(stringArg("model-file", "")),
+  minPressureDelta: Number(stringArg("min-pressure-delta", "0")),
+  tieEpsilon: Number(stringArg("tie-epsilon", "0.000001")),
 };
 const pairs: PhaseHGateValuePair[] = [];
-const includeSynthetic = !hasFlag("no-synthetic") || hasFlag("include-synthetic");
+const includeSynthetic = !flag("no-synthetic") || flag("include-synthetic");
 if (includeSynthetic) {
   const synthetic = analyzeGateValuePair(
     benchmarkDb,
-    createFreeAttackGateState(benchmarkDb, Number(argValue("seed", "940"))),
+    createFreeAttackGateState(benchmarkDb, Number(stringArg("seed", "940"))),
     "synthetic:free-attack-gate",
     options,
   );
@@ -108,7 +95,7 @@ for (const file of replayFiles()) {
 }
 
 const summary = summarizeGateValuePairs(pairs, options);
-const topCount = Number(argValue("top", "10"));
+const topCount = Number(stringArg("top", "10"));
 const topFailures = [...pairs]
   .sort((a, b) => a.valueDelta - b.valueDelta || b.pressureDelta - a.pressureDelta)
   .slice(0, topCount);
@@ -123,7 +110,7 @@ console.log(
 console.log("Top value failures/ties among gate-positive pairs:");
 for (const pair of topFailures) console.log(`- ${formatPair(pair)}`);
 
-const out = argValue("out", "");
+const out = stringArg("out", "");
 if (out) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify({ summary, pairs }, null, 2)}\n`);

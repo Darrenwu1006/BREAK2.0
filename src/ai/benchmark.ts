@@ -1,6 +1,6 @@
 import { applyDecision, card, createGame, deployableUids, effParam, effectDefOf, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { heuristicAiDecision, heuristicProfileForDeckAxes, isHeuristicV2ProfileId } from "./heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckAxes } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { heuristicV1AiDecision } from "./heuristic-v1";
 import { randomAiDecision } from "./random";
@@ -10,106 +10,22 @@ import { createIsmctsReport } from "./ismcts";
 import { createMoIsmctsReport, observableProjection } from "./mo-ismcts";
 import type { DeckAxis } from "./benchmark-fixtures";
 import type { ValueModel } from "./rollout-value";
+// [Claude 2026-07-24] 候選 B：policy registry（宣告式資料）＋純 builder。dispatch 改查表，無 policy id 字串比對。
+import { POLICIES, buildIsmctsOptions, buildPimcOptions, buildMoOptions, resolveRunContext, type BenchmarkRunContext } from "./benchmark-policies";
+export type { BenchmarkPolicyId, BenchmarkRunContext } from "./benchmark-policies";
+import type { BenchmarkPolicyId } from "./benchmark-policies";
 
 // [Claude 2026-06-22] Phase F PIMC benchmark policy：pimc＝現況基準（無 EV cut）；
 // pimc-v2＝S1（EV cut@valueCutHorizon），已 A/B PASS、default-on。兩者共用同一 sample budget，方便同預算 A/B。
 // [Claude 2026-06-23] Phase G：is-mcts＝SO-ISMCTS。成本單位是 iteration（≠ PIMC sample），故 A/B 一律同 wall-clock。
 // [Codex 2026-06-30] Phase I：mo-ismcts 只接 benchmark policy，尚不接 live opponent/UI。
-export type BenchmarkPolicyId =
-  | "random"
-  | "heuristic-v1"
-  | "pimc"
-  | "pimc-v2"
-  | "is-mcts"
-  | "is-mcts-h2"
-  | "is-mcts-h2b"
-  | "is-mcts-h2c"
-  | "is-mcts-h3"
-  | "is-mcts-h4"
-  | "is-mcts-k2"
-  // [Claude 2026-07-22] is-mcts 的 A/B baseline：關掉 Fix B+（防守技能效果評分）與 Fix D1（defense-choice
-  // 生存 tie-break），其餘與 is-mcts 完全相同。用於 mirror is-mcts vs is-mcts-nofix 量化兩修正的淨強度影響。
-  | "is-mcts-nofix"
-  | "mo-ismcts"
-  | "mo-ismcts-h3"
-  | HeuristicV2ProfileId;
+// [Claude 2026-07-24] 候選 B：BenchmarkPolicyId 移至 benchmark-policies.ts（與 registry 同源），此處 re-export。
+// is-mcts-nofix＝is-mcts 的 A/B baseline：關掉 Fix B+／Fix D1，其餘相同（見 benchmark-policies.ts POLICIES）。
 
-// [Claude 2026-06-22] Phase F 第一槓桿：把 PIMC 搜尋接成 benchmark policy，量化「PIMC vs heuristic」強度。
-// sample budget 是強度/速度的旋鈕（屬「模型能力」gate），先給保守可跑的初探預設，CLI 可覆寫。
-export interface PimcBenchmarkConfig {
-  sampleCount: number;
-  rolloutMaxSteps: number;
-  candidateLimit: number;
-  timeLimitMs?: number;
-  /** [Claude 2026-06-22] S1：pimc-v2 的 EV cut horizon（rollout 步數）。只作用於 pimc-v2，pimc 不受影響。 */
-  valueCutHorizon: number;
-}
+// [Claude 2026-07-24] 候選 B 塊 2：預算與注入模型改由 config 顯式帶入（BenchmarkRunContext），
+// 兩個模組級可變全域（configurePimcBenchmark／configureIsmctsBenchmark）與 get* 已移除。
+// 預設值見 benchmark-policies.ts 的 DEFAULT_BENCHMARK_RUN_CONTEXT；per-policy 覆寫走 config.runContextByPolicy。
 
-const DEFAULT_PIMC_BENCHMARK_CONFIG: PimcBenchmarkConfig = {
-  sampleCount: 8,
-  rolloutMaxSteps: 600,
-  candidateLimit: 8,
-  valueCutHorizon: 40, // [Claude 2026-06-23] horizon sweep 取最強（與 UI 一致）
-};
-
-let pimcBenchmarkConfig: PimcBenchmarkConfig = { ...DEFAULT_PIMC_BENCHMARK_CONFIG };
-
-export function configurePimcBenchmark(patch: Partial<PimcBenchmarkConfig>): void {
-  pimcBenchmarkConfig = { ...pimcBenchmarkConfig, ...patch };
-}
-
-export function getPimcBenchmarkConfig(): PimcBenchmarkConfig {
-  return { ...pimcBenchmarkConfig };
-}
-
-// [Claude 2026-06-23] Phase G：IS-MCTS benchmark 旋鈕。iterations＝無 deadline 時硬上限；
-// 同 wall-clock A/B 時設 timeLimitMs（與 pimc-v2 同值）。leafRolloutHorizon 保留給 G3 方案 B，G1 忽略（leaf＝純 V）。
-export interface IsmctsBenchmarkConfig {
-  iterations: number;
-  timeLimitMs?: number;
-  explorationC: number;
-  candidateLimit: number;
-  /** [G3 保留] 方案 B：leaf 淺 rollout horizon。G1＝0（純 evaluateStateValue）。 */
-  leafRolloutHorizon: number;
-  /** [Codex 2026-06-29] Phase H H2：is-mcts-h2 公開壓制力 shaping 強度。 */
-  pressureShapingEpsilon: number;
-  /** [Codex 2026-06-29] Phase H H2B/H2C：root tie-break winRate delta。 */
-  rootPressureTieBreakDelta: number;
-  /** [Codex 2026-07-04] Phase H H5：root conservation certainty threshold。 */
-  rootConservationWinRateThreshold: number;
-  /** [Codex 2026-06-30] Phase H H3：benchmark-only 候選 value model，僅 h3 policy 使用。 */
-  valueModel?: ValueModel;
-  /** [Codex 2026-07-04] Phase K K2：benchmark-only selected-v1 candidate，和 live H4 同場 A/B 用。 */
-  k2ValueModel?: ValueModel;
-  /** [Codex 2026-07-04] Phase K K5：K2 candidate 專用 root tie-break delta，避免污染 current H4。 */
-  k2RootPressureTieBreakDelta?: number;
-  /** [Codex 2026-07-04] Phase K K5：K2 candidate 專用 conservation threshold，避免污染 current H4。 */
-  k2RootConservationWinRateThreshold?: number;
-}
-
-const DEFAULT_ISMCTS_BENCHMARK_CONFIG: IsmctsBenchmarkConfig = {
-  // [Claude 2026-06-23] 同 wall-clock A/B 由 timeLimitMs 綁定預算；iterations 設高當安全上限，
-  // 否則（如 800）會在 ~0.5s 就達上限、浪費剩餘 think budget → 對 is-mcts 不公平。
-  iterations: 1_000_000,
-  explorationC: Math.SQRT2,
-  candidateLimit: 8,
-  // [Claude 2026-06-23] G2 診斷後預設＝40（方案 B，對齊 PIMC horizon）：純 V leaf（=0）淺樹下區分力不足、
-  // 對手模型預設＝heuristic（createIsmctsReport 預設）——adversarial 對固定 heuristic 對手有害。
-  leafRolloutHorizon: 40,
-  pressureShapingEpsilon: 0.05,
-  rootPressureTieBreakDelta: 0.04,
-  rootConservationWinRateThreshold: 0.85,
-};
-
-let ismctsBenchmarkConfig: IsmctsBenchmarkConfig = { ...DEFAULT_ISMCTS_BENCHMARK_CONFIG };
-
-export function configureIsmctsBenchmark(patch: Partial<IsmctsBenchmarkConfig>): void {
-  ismctsBenchmarkConfig = { ...ismctsBenchmarkConfig, ...patch };
-}
-
-export function getIsmctsBenchmarkConfig(): IsmctsBenchmarkConfig {
-  return { ...ismctsBenchmarkConfig };
-}
 export type MatchOutcome = "complete" | "error" | "max-steps";
 export type MatrixMode = "ring" | "all-vs-all";
 export type LostReason = "judge-fail" | "no-deploy" | "voluntary" | "effect" | "unknown";
@@ -127,6 +43,10 @@ export interface MatchConfig {
   seed: number;
   maxSteps?: number;
   focusCardId?: string;
+  /** [Claude 2026-07-24] 候選 B：搜尋預算＋注入模型（取代舊全域）。基底套所有 policy，缺項用 DEFAULT_BENCHMARK_RUN_CONTEXT。 */
+  runContext?: BenchmarkRunContext;
+  /** per-policy 覆寫（如 h4 注入 model A、k2 注入 model B 同場 A/B）。 */
+  runContextByPolicy?: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>>;
 }
 
 export interface PlayerInvariant {
@@ -343,6 +263,8 @@ export interface BatchConfig {
   seeds: number[];
   maxSteps?: number;
   focusCardId?: string;
+  runContext?: BenchmarkRunContext;
+  runContextByPolicy?: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>>;
 }
 
 export interface ConfidenceInterval {
@@ -415,6 +337,8 @@ export interface MatrixConfig {
   gamesPerPair: number;
   maxSteps?: number;
   mode?: MatrixMode;
+  runContext?: BenchmarkRunContext;
+  runContextByPolicy?: Partial<Record<BenchmarkPolicyId, BenchmarkRunContext>>;
 }
 
 export interface MatrixSummary {
@@ -536,6 +460,7 @@ export function benchmarkPolicyDecision(
   db: CardDb,
   state: GameState,
   randomByPlayer: [() => number, () => number],
+  runCtx: BenchmarkRunContext,
   deckAxesByPlayer: readonly [readonly DeckAxis[], readonly DeckAxis[]] = [[], []],
   knownDecksByPlayer?: readonly [readonly string[], readonly string[]],
   searchDiagnostics?: SearchDecisionDiagnostics[],
@@ -543,81 +468,38 @@ export function benchmarkPolicyDecision(
   const pending = state.pendingDecision;
   if (!pending) throw new Error("目前沒有待決策，benchmark 無法推進");
   const player = pending.player as PlayerId;
-  if (policy === "mo-ismcts" || policy === "mo-ismcts-h3") {
-    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
-    const report = createMoIsmctsReport(db, state, {
-      perspectivePlayer: player,
-      knownDecks: knownDecksByPlayer,
-      iterations: ismctsBenchmarkConfig.iterations,
-      timeLimitMs: ismctsBenchmarkConfig.timeLimitMs,
-      explorationC: ismctsBenchmarkConfig.explorationC,
-      candidateLimit: ismctsBenchmarkConfig.candidateLimit,
-      leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
-      rolloutPolicy,
-      valueModel: policy === "mo-ismcts-h3" ? ismctsBenchmarkConfig.valueModel : undefined,
-    });
-    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));
-    return report.bestAction.decision;
-  }
-  if (policy === "pimc" || policy === "pimc-v2") {
-    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
-    const report = createPimcCoachReport(db, state, {
-      perspectivePlayer: player,
-      // 牌組身份在遊戲中是公開資訊，傳入真實 knownDecks 讓 determinize 從牌組重建對手未知牌、
-      // 不依賴對手現有隱藏區的排列（否則翻轉對手手牌會改變抽樣路徑）。
-      knownDecks: knownDecksByPlayer,
-      sampleCount: pimcBenchmarkConfig.sampleCount,
-      rolloutMaxSteps: pimcBenchmarkConfig.rolloutMaxSteps,
-      candidateLimit: pimcBenchmarkConfig.candidateLimit,
-      timeLimitMs: pimcBenchmarkConfig.timeLimitMs,
-      rolloutPolicy,
-      // pimc-v2＝載 S1 EV cut；pimc＝現況（打到終局）。
-      valueCutHorizon: policy === "pimc-v2" ? pimcBenchmarkConfig.valueCutHorizon : undefined,
-    });
-    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, pimcBenchmarkConfig.candidateLimit));
-    return report.bestAction.decision;
-  }
-  if (policy === "is-mcts" || policy === "is-mcts-nofix" || policy === "is-mcts-h2" || policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-k2") {
-    const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
-    const report = createIsmctsReport(db, state, {
-      perspectivePlayer: player,
+  const def = POLICIES[policy];
+  const rolloutPolicy = heuristicProfileForDeckAxes(deckAxesByPlayer[player]);
+  const common = { perspectivePlayer: player, knownDecks: knownDecksByPlayer, rolloutPolicy };
+  const candidateLimit = runCtx.candidateLimit ?? 8;
+  const pushDiagnostics = (report: CoachReport): void => {
+    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, candidateLimit));
+  };
+  switch (def.engine) {
+    case "ismcts": {
       // 牌組身份公開：傳真實 knownDecks，讓 determinize 從牌組重建對手未知牌（不依賴隱藏排列）。
-      knownDecks: knownDecksByPlayer,
-      iterations: ismctsBenchmarkConfig.iterations,
-      timeLimitMs: ismctsBenchmarkConfig.timeLimitMs,
-      explorationC: ismctsBenchmarkConfig.explorationC,
-      candidateLimit: ismctsBenchmarkConfig.candidateLimit,
-      leafRolloutHorizon: ismctsBenchmarkConfig.leafRolloutHorizon,
-      pressureShapingEpsilon: policy === "is-mcts-h2" ? ismctsBenchmarkConfig.pressureShapingEpsilon : 0,
-      rootPressureTieBreakDelta:
-        policy === "is-mcts-k2"
-          ? ismctsBenchmarkConfig.k2RootPressureTieBreakDelta ?? ismctsBenchmarkConfig.rootPressureTieBreakDelta
-          : policy === "is-mcts-h2b" || policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-nofix"
-            ? ismctsBenchmarkConfig.rootPressureTieBreakDelta
-            : 0,
-      rootPairQualityTieBreak: policy === "is-mcts-h2c" || policy === "is-mcts-h4" || policy === "is-mcts-k2" || policy === "is-mcts-nofix",
-      rootConservationWinRateThreshold:
-        policy === "is-mcts-k2"
-          ? ismctsBenchmarkConfig.k2RootConservationWinRateThreshold ?? ismctsBenchmarkConfig.rootConservationWinRateThreshold
-          : ismctsBenchmarkConfig.rootConservationWinRateThreshold,
-      valueModel:
-        policy === "is-mcts-k2"
-          ? ismctsBenchmarkConfig.k2ValueModel
-          : policy === "is-mcts-h3" || policy === "is-mcts-h4" || policy === "is-mcts-nofix"
-            ? ismctsBenchmarkConfig.valueModel
-            : undefined,
-      // [Claude 2026-07-22] Fix B+/D1：is-mcts 系一律 default-on；is-mcts-nofix baseline 關掉做 A/B。
-      defenseSkillEffectScoring: policy !== "is-mcts-nofix",
-      defenseChoiceSurvivalTieBreak: policy !== "is-mcts-nofix",
-      rolloutPolicy,
-    });
-    searchDiagnostics?.push(searchDiagnosticsFromReport(db, state, policy, player, pending.type, report, ismctsBenchmarkConfig.candidateLimit));
-    return report.bestAction.decision;
+      const report = createIsmctsReport(db, state, buildIsmctsOptions(def, runCtx, common));
+      pushDiagnostics(report);
+      return report.bestAction.decision;
+    }
+    case "mo-ismcts": {
+      const report = createMoIsmctsReport(db, state, buildMoOptions(def, runCtx, common));
+      pushDiagnostics(report);
+      return report.bestAction.decision;
+    }
+    case "pimc": {
+      const report = createPimcCoachReport(db, state, buildPimcOptions(def, runCtx, common));
+      pushDiagnostics(report);
+      return report.bestAction.decision;
+    }
+    case "heuristic-v2":
+      return heuristicAiDecision(db, state, def.profileFromDeckAxes ? rolloutPolicy : def.heuristicProfile!);
+    case "heuristic-v1":
+      return heuristicV1AiDecision(db, state);
+    case "random":
+      return randomAiDecision(db, state, randomByPlayer[player]);
   }
-  if (policy === "heuristic-v2-personality") return heuristicAiDecision(db, state, heuristicProfileForDeckAxes(deckAxesByPlayer[player]));
-  if (isHeuristicV2ProfileId(policy)) return heuristicAiDecision(db, state, policy);
-  if (policy === "heuristic-v1") return heuristicV1AiDecision(db, state);
-  return randomAiDecision(db, state, randomByPlayer[player]);
+  throw new Error(`未知的 benchmark policy engine：${def.engine as string}`);
 }
 
 function collectPlayerUids(state: GameState, p: PlayerId): number[] {
@@ -1199,11 +1081,13 @@ export function playBenchmarkMatch(config: MatchConfig): MatchResult {
 
     try {
       const player = pending.player as PlayerId;
+      const policy = config.policies[player];
       const decision = benchmarkPolicyDecision(
-        config.policies[player],
+        policy,
         config.db,
         state,
         randomByPlayer,
+        resolveRunContext(policy, config.runContext, config.runContextByPolicy),
         [config.decks[0].axes ?? [], config.decks[1].axes ?? []],
         [config.decks[0].ids, config.decks[1].ids],
         searchDiagnostics,
@@ -1483,6 +1367,8 @@ export function runBenchmarkMatrix(config: MatrixConfig): MatrixReport {
       policies: config.policies,
       seeds: mirroredSeeds(seedStart, config.gamesPerPair),
       maxSteps,
+      runContext: config.runContext,
+      runContextByPolicy: config.runContextByPolicy,
     });
     return {
       ...report,

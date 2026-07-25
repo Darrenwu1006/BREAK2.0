@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { numberArg, stringArg } from "../src/shared/argv";
 import { dirname, resolve } from "node:path";
-import process from "node:process";
 import {
   DEFAULT_LADDER_CONFIG,
   LADDER_POLICY_IDS,
@@ -8,20 +8,6 @@ import {
   type LadderConfig,
   type LadderPolicyId,
 } from "../src/ai/policy-ladder";
-
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
-}
 
 function parsePolicies(raw: string): LadderPolicyId[] {
   const policies = raw.split(",").map((item) => item.trim()).filter(Boolean);
@@ -41,19 +27,19 @@ function pad(value: string, width: number): string {
   return value.length >= width ? value : `${value}${" ".repeat(width - value.length)}`;
 }
 
-const outPath = argValue("out", "data/ladder/elo.json");
-const policies = parsePolicies(argValue("policies", DEFAULT_LADDER_CONFIG.policies.join(",")));
+const outPath = stringArg("out", "data/ladder/elo.json");
+const policies = parsePolicies(stringArg("policies", DEFAULT_LADDER_CONFIG.policies.join(",")));
 const config: LadderConfig = {
   ...DEFAULT_LADDER_CONFIG,
   policies,
   basePolicies: DEFAULT_LADDER_CONFIG.basePolicies.filter((policy) => policies.includes(policy)),
-  gamesPerSeat: Math.max(1, Math.floor(argNum("games", DEFAULT_LADDER_CONFIG.gamesPerSeat))),
-  seedStart: Math.floor(argNum("seed-start", DEFAULT_LADDER_CONFIG.seedStart)),
-  maxSteps: Math.max(1, Math.floor(argNum("max-steps", DEFAULT_LADDER_CONFIG.maxSteps))),
-  pimcSamples: Math.max(1, Math.floor(argNum("pimc-samples", DEFAULT_LADDER_CONFIG.pimcSamples))),
-  searchIterations: Math.max(1, Math.floor(argNum("search-iters", DEFAULT_LADDER_CONFIG.searchIterations))),
-  leafRolloutHorizon: Math.max(0, Math.floor(argNum("leaf-horizon", DEFAULT_LADDER_CONFIG.leafRolloutHorizon))),
-  candidateLimit: Math.max(1, Math.floor(argNum("candidate-limit", DEFAULT_LADDER_CONFIG.candidateLimit))),
+  gamesPerSeat: Math.max(1, Math.floor(numberArg("games", DEFAULT_LADDER_CONFIG.gamesPerSeat))),
+  seedStart: Math.floor(numberArg("seed-start", DEFAULT_LADDER_CONFIG.seedStart)),
+  maxSteps: Math.max(1, Math.floor(numberArg("max-steps", DEFAULT_LADDER_CONFIG.maxSteps))),
+  pimcSamples: Math.max(1, Math.floor(numberArg("pimc-samples", DEFAULT_LADDER_CONFIG.pimcSamples))),
+  searchIterations: Math.max(1, Math.floor(numberArg("search-iters", DEFAULT_LADDER_CONFIG.searchIterations))),
+  leafRolloutHorizon: Math.max(0, Math.floor(numberArg("leaf-horizon", DEFAULT_LADDER_CONFIG.leafRolloutHorizon))),
+  candidateLimit: Math.max(1, Math.floor(numberArg("candidate-limit", DEFAULT_LADDER_CONFIG.candidateLimit))),
 };
 
 const started = Date.now();

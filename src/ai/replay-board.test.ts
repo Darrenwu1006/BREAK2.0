@@ -3,7 +3,8 @@ import cardsJson from "../../data/cards.json";
 import type { Card } from "../data/types";
 import type { CardDb, Decision, GameState, PlayerState } from "../engine/types";
 import type { ReplayEntry, ReplaySession } from "../shared/replayHistory";
-import { decisionLabel, renderBoardRange, renderEntryBoard } from "./replay-board";
+import { renderBoardRange, renderEntryBoard } from "./replay-board";
+import { describeDecision } from "../shared/decisionLabels";
 
 const db: CardDb = new Map((cardsJson as Card[]).map((card) => [card.id, card]));
 
@@ -104,11 +105,11 @@ describe("replay-board renderBoardRange & decisionLabel", () => {
   });
 
   it("labels a null deploy as a Lost declaration", () => {
-    expect(decisionLabel(before, db, { type: "deploy-attack", uid: null })).toContain("不登場 → 宣告 Lost");
+    expect(describeDecision(db, before, { type: "deploy-attack", uid: null }, "verbose")).toContain("不登場 → 宣告 Lost");
   });
 
   it("labels a mulligan with returned card names", () => {
-    const label = decisionLabel(before, db, { type: "mulligan", returnUids: [1] });
+    const label = describeDecision(db, before, { type: "mulligan", returnUids: [1] }, "verbose");
     expect(label).toContain("換牌 1 張");
     expect(label).toContain(db.get(IWAIZUMI)!.nameZh || db.get(IWAIZUMI)!.nameJa);
   });

@@ -4,6 +4,7 @@
 import type { Card } from "../../data/types";
 import { effParam, type DeployLegalityCode } from "../../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../../engine/types";
+import { decisionTypeLabel } from "../../shared/decisionLabels";
 
 export interface RailPlayerSummary {
   player: PlayerId;
@@ -119,7 +120,7 @@ export function buildBattleRailView(state: GameState, labels: [string, string]):
   return {
     players: [summary(0), summary(1)],
     actionPlayer,
-    actionLabel: state.pendingDecision ? decisionLabel(state.pendingDecision.type) : state.phase === "gameOver" ? "已結束" : "規則結算中",
+    actionLabel: state.pendingDecision ? decisionTypeLabel(state.pendingDecision.type) : state.phase === "gameOver" ? "已結束" : "規則結算中",
     phaseLabel: PHASE_LABEL[state.phase],
     op: state.op ? { owner: state.op.owner, value: state.op.value } : null,
     dp: state.dp ? { owner: state.dp.owner, value: state.dp.value } : null,
@@ -129,25 +130,6 @@ export function buildBattleRailView(state: GameState, labels: [string, string]):
   };
 }
 
-function decisionLabel(type: Decision["type"]): string {
-  const labels: Record<Decision["type"], string> = {
-    "serve-rights": "選擇發球權",
-    mulligan: "選擇換牌",
-    "deploy-serve": "發球登場",
-    "deploy-block": "攔網登場",
-    "deploy-receive": "接球登場",
-    "deploy-toss": "托球登場",
-    "deploy-attack": "攻擊登場",
-    "defense-choice": "選擇防守路線",
-    free: "自由步驟",
-    "resolve-pending": "決定技能順序",
-    "effect-confirm": "確認技能",
-    "effect-cards": "選擇卡片",
-    "effect-option": "選擇效果",
-    "pick-set-card": "選擇 Set 卡",
-  };
-  return labels[type];
-}
 
 /**
  * selectableUids 必須由 engine legal helper 產生；本函式只把權威結果翻成 UI 語言。

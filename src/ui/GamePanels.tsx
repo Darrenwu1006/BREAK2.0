@@ -6,6 +6,7 @@ import type { CoachReport } from "../ai/coach";
 import type { ValueExplanation } from "../ai/rollout-value";
 import { CardView, displayName, cardRarity } from "./CardView";
 import type { DeckMeta } from "../shared/deckMeta";
+import { describeDecision } from "../shared/decisionLabels";
 import { buildCardSkillPresentation, getGlossaryItems } from "../shared/cardSkillPresentation";
 import type { InspectedCard } from "./gameTypes";
 
@@ -397,43 +398,6 @@ function gameplanToneLabel(tone: NonNullable<CoachReport["bestAction"]["gameplan
   return "主軸持平";
 }
 
-function cardLabel(db: CardDb, state: GameState, uid: number): string {
-  const id = state.cards[uid];
-  const card = id ? db.get(id) : null;
-  return card ? displayName(card) : `uid ${uid}`;
-}
-
-function decisionLabel(db: CardDb, state: GameState, decision: Decision): string {
-  switch (decision.type) {
-    case "serve-rights":
-      return decision.take ? "取得首次發球權" : "讓出首次發球權";
-    case "mulligan":
-      return decision.returnUids.length ? `換 ${decision.returnUids.length} 張` : "不換牌";
-    case "defense-choice":
-      return decision.choice === "block" ? "選擇攔網" : "選擇接球";
-    case "free":
-      if (decision.action === "pass") return "自由步驟 Pass";
-      if (decision.action === "lost") return "主動 Lost";
-      return decision.action === "event" ? `使用事件 ${cardLabel(db, state, decision.uid)}` : `使用技能 ${cardLabel(db, state, decision.uid)}`;
-    case "resolve-pending":
-      return `解決待機效果 #${decision.id}`;
-    case "effect-confirm":
-      return decision.accept ? "使用 / 接受" : "不使用 / 拒絕";
-    case "effect-cards":
-      return decision.uids.length ? `選 ${decision.uids.length} 張` : "不選卡";
-    case "effect-option":
-      return `選項：${state.pendingDecision?.options?.[decision.index] ?? decision.index + 1}`;
-    case "pick-set-card":
-      return `拿 Set 卡 #${decision.index + 1}`;
-    case "deploy-block":
-      return decision.uids === null ? "不登場攔網" : `攔網 ${decision.uids.map((uid) => cardLabel(db, state, uid)).join("、")}`;
-    case "deploy-serve":
-    case "deploy-receive":
-    case "deploy-toss":
-    case "deploy-attack":
-      return decision.uid === null ? "不登場角色" : `登場 ${cardLabel(db, state, decision.uid)}`;
-  }
-}
 
 export function CoachPanel(props: {
   db: CardDb;
@@ -476,7 +440,7 @@ export function CoachPanel(props: {
         {coach.fallback && (
           <div className="coach-best">
             <small>Heuristic fallback</small>
-            <b>{decisionLabel(db, state, coach.fallback)}</b>
+            <b>{describeDecision(db, state, coach.fallback)}</b>
             <button onClick={() => props.onApply(coach.fallback!)}>採用</button>
           </div>
         )}
@@ -491,7 +455,7 @@ export function CoachPanel(props: {
         <div className="panel-heading"><div><b>Coach</b><span>PIMC 計算中</span></div></div>
         <div className="coach-best">
           <small>Heuristic fallback</small>
-          <b>{decisionLabel(db, state, coach.fallback)}</b>
+          <b>{describeDecision(db, state, coach.fallback)}</b>
           <p>先用快速 AI 給出可採用建議；背景會繼續計算勝率。</p>
           <button onClick={() => props.onApply(coach.fallback)}>採用</button>
         </div>

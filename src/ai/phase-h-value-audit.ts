@@ -1,7 +1,7 @@
 import { applyDecision } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import type { ReplaySession } from "../shared/replayHistory";
-import { decisionLabel } from "./coach";
+import { describeDecision } from "../shared/decisionLabels";
 import { evaluatePressureScore, evaluateStateValue, type ValueModel } from "./rollout-value";
 
 export interface PhaseHGateValuePair {
@@ -78,8 +78,8 @@ export function analyzeGateValuePair(
   return {
     label,
     player,
-    acceptLabel: decisionLabel(db, state, acceptDecision()),
-    declineLabel: decisionLabel(db, state, declineDecision()),
+    acceptLabel: describeDecision(db, state, acceptDecision()),
+    declineLabel: describeDecision(db, state, declineDecision()),
     actualAccept: actualDecision?.type === "effect-confirm" ? actualDecision.accept : null,
     acceptValue,
     declineValue,

@@ -1,11 +1,11 @@
 import { applyDecision, createGame, effParam } from "../src/engine/engine";
+import { numberArg, stringArg } from "../src/shared/argv";
 import type { GameState, PlayerId } from "../src/engine/types";
 import { benchmarkDb } from "../src/ai/benchmark-fixtures";
 import { createIsmctsReport } from "../src/ai/ismcts";
 import type { ValueModel } from "../src/ai/rollout-value";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import process from "node:process";
 
 const H5_FILLER = "HV-D01-005";
 
@@ -22,20 +22,6 @@ interface ProbeRow {
   winRate: number;
   sampleCount: number;
   completedSamples: number;
-}
-
-function argValue(name: string, fallback: string): string {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!;
-  return fallback;
-}
-
-function argNum(name: string, fallback: number): number {
-  const value = Number(argValue(name, String(fallback)));
-  return Number.isFinite(value) ? value : fallback;
 }
 
 function h5MoveToHand(state: GameState, p: PlayerId, cardId: string, used: Set<number>): number {
@@ -162,11 +148,11 @@ function runOne(
   };
 }
 
-const modelPath = argValue("model", "data/ab/phase-k-k1-feature-v1-selected-fit-holdout-g500-i16.json");
-const outPath = argValue("out", "data/ab/phase-k-k15-behavior-probe-selected-v1.json");
-const seedStart = argNum("seed-start", 970);
-const seeds = argNum("seeds", 5);
-const iterations = argNum("iterations", 800);
+const modelPath = stringArg("model", "data/ab/phase-k-k1-feature-v1-selected-fit-holdout-g500-i16.json");
+const outPath = stringArg("out", "data/ab/phase-k-k15-behavior-probe-selected-v1.json");
+const seedStart = numberArg("seed-start", 970);
+const seeds = numberArg("seeds", 5);
+const iterations = numberArg("iterations", 800);
 const valueModel = loadValueModel(modelPath);
 const rows: ProbeRow[] = [];
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyDecision, createGame, deployableUids, effParam } from "../engine/engine";
 import { benchmarkDb, benchmarkDecks, findBenchmarkDeck } from "./benchmark-fixtures";
-import { benchmarkPolicyDecision, collectMatchStats, configureIsmctsBenchmark, configurePimcBenchmark, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
-import type { BenchmarkPolicyId, PlayQualityStats, SearchDecisionDiagnostics } from "./benchmark";
+import { benchmarkPolicyDecision, collectMatchStats, mirroredSeeds, playBenchmarkMatch, recordPlayQualityDecision, runBenchmarkBatch, runBenchmarkMatrix, seededRnd } from "./benchmark";
+import type { BenchmarkPolicyId, BenchmarkRunContext, PlayQualityStats, SearchDecisionDiagnostics } from "./benchmark";
 import { BENCHMARK_REPORT_SCHEMA_VERSION, createBenchmarkReportEnvelope } from "./benchmark-report";
 import { ROLLOUT_VALUE_MODEL } from "./rollout-value";
 
@@ -325,8 +325,8 @@ describe("M8 benchmark harness", () => {
     for (const policy of ["heuristic-v1", "heuristic-v2", "heuristic-v2-safe", "heuristic-v2-aggressive", "heuristic-v2-personality"] satisfies BenchmarkPolicyId[]) {
       const rndA = [seededRnd(1), seededRnd(2)] as [() => number, () => number];
       const rndB = [seededRnd(1), seededRnd(2)] as [() => number, () => number];
-      expect(benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, rndB)).toEqual(
-        benchmarkPolicyDecision(policy, benchmarkDb, state, rndA),
+      expect(benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, rndB, {})).toEqual(
+        benchmarkPolicyDecision(policy, benchmarkDb, state, rndA, {}),
       );
     }
   });
@@ -385,7 +385,7 @@ describe("M8 benchmark harness", () => {
   // [Claude 2026-06-22] Phase F：PIMC 接成 benchmark policy。此處只驗單一決策點（接上＋合法＋不洩漏）；
   // 全場強度量測由 CLI 小規模實跑承擔，因為全場逐點搜尋的成本正是 sample budget gate 要決定的事。
   it("pimc policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
-    configurePimcBenchmark({ sampleCount: 4, rolloutMaxSteps: 150, candidateLimit: 4 });
+    const runCtx: BenchmarkRunContext = { sampleCount: 4, rolloutMaxSteps: 150, candidateLimit: 4 };
     const deckA = findBenchmarkDeck("烏野-預組");
     const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
     let state = createGame(benchmarkDb, { seed: 170, decks: [deckA.ids, deckB.ids] });
@@ -399,7 +399,7 @@ describe("M8 benchmark harness", () => {
     const acting = state.pendingDecision!.player;
     const oppo = acting === 0 ? 1 : 0;
 
-    const decision = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+    const decision = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
     expect(decision.type).toBeTruthy();
     expect(() => applyDecision(benchmarkDb, state, decision)).not.toThrow();
 
@@ -408,13 +408,13 @@ describe("M8 benchmark harness", () => {
     hiddenChanged.players[oppo].hand.reverse();
     hiddenChanged.players[oppo].deck.reverse();
     hiddenChanged.players[oppo].setArea.reverse();
-    const fromHidden = benchmarkPolicyDecision("pimc", benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], axes, known);
-    const fromClean = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+    const fromHidden = benchmarkPolicyDecision("pimc", benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
+    const fromClean = benchmarkPolicyDecision("pimc", benchmarkDb, state, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
     expect(fromHidden).toEqual(fromClean);
   });
 
   it("mo-ismcts 可在 benchmark harness 產生合法決策與 search diagnostics", () => {
-    configureIsmctsBenchmark({ iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0, valueModel: ROLLOUT_VALUE_MODEL });
+    const runCtx: BenchmarkRunContext = { iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0, valueModel: ROLLOUT_VALUE_MODEL };
     const deckA = findBenchmarkDeck("烏野-預組");
     const deckB = findBenchmarkDeck("音駒-音駒-三彈官方");
     let state = createGame(benchmarkDb, { seed: 192, decks: [deckA.ids, deckB.ids] });
@@ -430,6 +430,7 @@ describe("M8 benchmark harness", () => {
         benchmarkDb,
         state,
         [seededRnd(1), seededRnd(2)],
+        runCtx,
         [deckA.axes, deckB.axes],
         [deckA.ids, deckB.ids],
         searchDiagnostics,
@@ -445,7 +446,8 @@ describe("M8 benchmark harness", () => {
   });
 
   it("is-mcts h2/h3/h4/k2 policy 可在 benchmark harness 產生合法決策並維持隱藏資訊不洩漏", () => {
-    configureIsmctsBenchmark({ iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10, valueModel: ROLLOUT_VALUE_MODEL, k2ValueModel: ROLLOUT_VALUE_MODEL });
+    // [Claude 2026-07-24] 塊 2：k2ValueModel 雙欄已收掉——k2 與 h4 同吃 runCtx.valueModel（per-policy 差異走 override map，見 registry 測試）。
+    const runCtx: BenchmarkRunContext = { iterations: 80, candidateLimit: 6, leafRolloutHorizon: 10, valueModel: ROLLOUT_VALUE_MODEL };
     const deckA = findBenchmarkDeck("青葉城西-第三彈測試");
     const deckB = findBenchmarkDeck("青葉城西-第三彈測試");
     let state = createGame(benchmarkDb, { seed: 191, decks: [deckA.ids, deckB.ids] });
@@ -463,23 +465,23 @@ describe("M8 benchmark harness", () => {
     hiddenChanged.players[oppo].deck.reverse();
     hiddenChanged.players[oppo].setArea.reverse();
     for (const policy of ["is-mcts-h2", "is-mcts-h2b", "is-mcts-h2c", "is-mcts-h3", "is-mcts-h4", "is-mcts-k2"] satisfies BenchmarkPolicyId[]) {
-      const decision = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+      const decision = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
       expect(decision.type, policy).toBeTruthy();
       expect(() => applyDecision(benchmarkDb, state, decision), policy).not.toThrow();
-      const fromHidden = benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], axes, known);
-      const fromClean = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], axes, known);
+      const fromHidden = benchmarkPolicyDecision(policy, benchmarkDb, hiddenChanged, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
+      const fromClean = benchmarkPolicyDecision(policy, benchmarkDb, state, [seededRnd(1), seededRnd(2)], runCtx, axes, known);
       expect(fromHidden, policy).toEqual(fromClean);
     }
   });
 
   it("search policy benchmark summary 會輸出 I0 收斂診斷欄位", () => {
-    configureIsmctsBenchmark({ iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0 });
     const report = runBenchmarkBatch({
       db: benchmarkDb,
       decks: [findBenchmarkDeck("烏野-預組"), findBenchmarkDeck("音駒-音駒-三彈官方")],
       policies: ["is-mcts", "random"],
       seeds: [193],
       maxSteps: 5000,
+      runContext: { iterations: 12, timeLimitMs: undefined, candidateLimit: 4, leafRolloutHorizon: 0 },
     });
 
     const diagnostics = report.summary.searchDiagnosticsByPolicy["is-mcts"];

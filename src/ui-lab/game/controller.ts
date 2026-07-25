@@ -1,96 +1,76 @@
-// M9a CP4 對局控制器：引擎的 ui-lab 消費者（純 TS、無 React、可單元測試）。
-// 職責：state 先到位（邏輯即時）——非人類互動的決策由 heuristic 立即代打並連續推進，
-// 每手 applyDecision 前後餵 derivePresentationEvents 進 PresentationTimeline；
+// M9a CP4 對局控制器：共用 MatchSession 的 ui-lab adapter（純 TS、無 React、可單元測試）。
+// [Claude 2026-07-25] 候選 C Part 1：權威編排（engine 推進／replay 鏈／undo／Set 回饋／對手回填）
+// 已移入 shared/matchSession，兩介面共用；本檔只剩 lab 專屬的**演出層**——訂閱 session 的 onStep，
+// 把每一手轉成 PresentationBatch 進 PresentationTimeline，並保存批次 meta 供 renderer 取底圖。
 // 演出節奏與互動閘（佇列清空前不開放操作）屬 renderer 層，本檔不管時間。
 //
-// LP1~LP5（[使用者 2026-07-11] 完整對局路線）：P0 的**全部**決策型別由人類親手操作
-// （serve-rights/mulligan/deploy-*/defense-choice/free/resolve-pending/effect-*/pick-set-card）；
+// LP1~LP5（[使用者 2026-07-11] 完整對局路線）：P0 的**全部**決策型別由人類親手操作；
 // 「AI 代打」按鈕仍可對任何單手委託 heuristic。對手 P1 與 chooser=對手的效果決策照舊自動。
 
-import { heuristicAiDecision } from "../../ai/heuristic";
-import { applyDecision, createGame } from "../../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../../engine/types";
 import type { DeckMeta } from "../../shared/deckMeta";
-import {
-  appendReplayEntry,
-  appendReplaySetFeedback,
-  createReplaySession,
-  truncateReplaySession,
-  type ReplaySession,
-  type ReplaySetFeedback,
-} from "../../shared/replayHistory";
+import { HUMAN, MatchSession, type StepMeta } from "../../shared/matchSession";
+import type { ReplaySession, ReplaySetFeedback } from "../../shared/replayHistory";
 import { derivePresentationEvents } from "../presentation/derive";
 import { PresentationTimeline, type PresentationBatch } from "../presentation/timeline";
 
-export const HUMAN: PlayerId = 0;
+export { HUMAN };
 
 export interface BatchMeta {
   /** 這批演出開始前的盤面（演出底圖） */
   before: GameState;
   /** 這批演出結束後的盤面（card-moved 的目標擺位來源） */
   after: GameState;
-  /** true＝人類的決策由 AI 代打（M9a 未實作互動的型別） */
+  /** true＝人類的決策由 AI 代打 */
   auto: boolean;
 }
 
-const MAX_AUTO_STEPS = 5000; // 全場 heuristic 對局遠低於此；防呆上限
 export const LAB_UNDO_LIMIT = 20;
-
-interface UndoCheckpoint {
-  state: GameState;
-  replayLength: number;
-}
 
 export class LabGameController {
   readonly db: CardDb;
   readonly timeline = new PresentationTimeline();
-  /** 權威盤面（邏輯即時；演出落後於它） */
-  engine: GameState;
-  /** 與經典介面共用的正式 replay 歷史鏈；CP6A undo／CP6C 分支會沿用此 schema。 */
-  replay: ReplaySession;
   private meta = new WeakMap<PresentationBatch, BatchMeta>();
-  private undoHistory: UndoCheckpoint[] = [];
-  private readonly deferOpponent: boolean;
+  private readonly session: MatchSession;
 
   constructor(db: CardDb, decks: [string[], string[]], seed: number, deckMeta?: [DeckMeta, DeckMeta], options?: { deferOpponent?: boolean }) {
     this.db = db;
-    this.deferOpponent = options?.deferOpponent ?? false;
-    this.engine = createGame(db, { seed, decks });
-    const fallbackMeta = (player: PlayerId): DeckMeta => ({
-      school: player === HUMAN ? "Player" : "AI",
-      name: "ui-lab",
-      total: decks[player].length,
-      implementedCount: decks[player].length,
-      unimplementedCount: 0,
+    this.session = new MatchSession(db, decks, seed, {
+      deckMeta,
+      deferOpponent: options?.deferOpponent ?? false,
+      undoLimit: LAB_UNDO_LIMIT,
+      onStep: (step) => this.enqueuePresentation(step),
     });
-    this.replay = createReplaySession(
-      this.engine,
-      decks,
-      deckMeta ?? [fallbackMeta(0), fallbackMeta(1)],
-      undefined,
-      seed,
-    );
-    this.advance();
   }
 
-  /** 是否輪到人類親手操作（P0 的所有決策型別） */
+  /** 權威盤面（邏輯即時；演出落後於它）。setter 供測試注入構造盤面。 */
+  get engine(): GameState {
+    return this.session.engine;
+  }
+
+  set engine(next: GameState) {
+    this.session.engine = next;
+  }
+
+  /** 與經典介面共用的正式 replay 歷史鏈。 */
+  get replay(): ReplaySession {
+    return this.session.replay;
+  }
+
   get awaitingHuman(): boolean {
-    const pd = this.engine.pendingDecision;
-    return !!pd && pd.player === HUMAN;
+    return this.session.awaitingHuman;
   }
 
-  /** 正式 shell 由 worker 接手 P1；測試／headless 預設仍可同步 heuristic 跑完整局。 */
   get awaitingOpponent(): boolean {
-    const pd = this.engine.pendingDecision;
-    return !!pd && pd.player !== HUMAN;
+    return this.session.awaitingOpponent;
   }
 
   get canUndo(): boolean {
-    return this.undoHistory.length > 0;
+    return this.session.canUndo;
   }
 
   get undoDepth(): number {
-    return this.undoHistory.length;
+    return this.session.undoDepth;
   }
 
   metaOf(batch: PresentationBatch): BatchMeta | undefined {
@@ -99,85 +79,38 @@ export class LabGameController {
 
   /** Set 結束軟暫停寫入玩家當下意圖；同一結果只接受第一次回饋。 */
   recordSetFeedback(feedback: ReplaySetFeedback): boolean {
-    const next = appendReplaySetFeedback(this.replay, feedback);
-    if (next === this.replay) return false;
-    this.replay = next;
-    return true;
+    return this.session.recordSetFeedback(feedback);
   }
 
-  /** 人類決策入口：套用後自動推進到下一個人類互動點 */
+  /** 人類決策入口：套用後自動推進到下一個人類互動點。過期輸入安全回 false。 */
   decide(decision: Decision, delegated = false): boolean {
-    // UI event handlers may retain a render-time closure while the engine has
-    // already advanced (including across the human/opponent boundary). A stale
-    // input is harmless and must never end a match or surface a scary toast.
-    const pending = this.engine.pendingDecision;
-    if (!pending || pending.player !== HUMAN || pending.type !== decision.type) return false;
-    const checkpoint = !delegated ? {
-      state: structuredClone(this.engine) as GameState,
-      replayLength: this.replay.entries.length,
-    } : null;
-    try {
-      this.step(decision, delegated);
-      if (checkpoint) {
-        this.undoHistory.push(checkpoint);
-        if (this.undoHistory.length > LAB_UNDO_LIMIT) this.undoHistory.splice(0, this.undoHistory.length - LAB_UNDO_LIMIT);
-      }
-      // If an unexpected auto-advance failure happens after the human step,
-      // retain the checkpoint so the fatal recovery modal can genuinely undo.
-      this.advance();
-      return true;
-    } catch (error) {
-      throw error;
-    }
+    return this.session.decide(decision, delegated);
   }
 
   /** CP6C worker 回傳的對手決策入口。 */
   decideOpponent(decision: Decision, thinkMs?: number): void {
-    if (!this.awaitingOpponent) throw new Error("目前不是對手決策");
-    this.step(decision, true, thinkMs);
-    this.advance();
+    this.session.decideOpponent(decision, thinkMs);
   }
 
   /** 回到上一個人類決策前；timeline 直接作廢，renderer 由 usePlayback.skip 對齊恢復後 state。 */
   undo(): boolean {
-    const checkpoint = this.undoHistory.pop();
-    if (!checkpoint) return false;
+    if (!this.session.canUndo) return false;
     this.timeline.skip();
-    this.engine = structuredClone(checkpoint.state) as GameState;
-    const previousRewinds = this.replay.rewindCount ?? 0;
-    this.replay = {
-      ...truncateReplaySession(this.replay, checkpoint.replayLength),
-      rewound: true,
-      rewindCount: previousRewinds + 1,
-    };
-    return true;
+    return this.session.undo();
   }
 
-  /** 連續代打直到：需要人類互動／對局結束 */
-  private advance(): void {
-    for (let i = 0; i < MAX_AUTO_STEPS; i++) {
-      const pd = this.engine.pendingDecision;
-      if (!pd || this.awaitingHuman) return;
-      if (this.deferOpponent && pd.player !== HUMAN) return;
-      this.step(heuristicAiDecision(this.db, this.engine), pd.player === HUMAN);
-    }
-    throw new Error("advance 超過步數上限（引擎疑似未收斂）");
-  }
-
-  private step(decision: Decision, auto: boolean, thinkMs?: number): void {
-    const before = this.engine;
-    const actor = before.pendingDecision!.player;
-    const after = applyDecision(this.db, before, decision);
-    const events = derivePresentationEvents(this.db, before, decision, after);
+  /** session 每落地一手 → 轉成演出批次進佇列（本 adapter 的唯一職責）。 */
+  private enqueuePresentation(step: StepMeta): void {
+    const events = derivePresentationEvents(this.db, step.before, step.decision, step.after);
     const batch: PresentationBatch = {
       events,
-      actor,
-      decisionType: decision.type,
-      ...(thinkMs !== undefined ? { thinkMs } : {}),
+      actor: step.actor,
+      decisionType: step.decision.type,
+      ...(step.thinkMs !== undefined ? { thinkMs: step.thinkMs } : {}),
     };
-    this.meta.set(batch, { before, after, auto });
+    this.meta.set(batch, { before: step.before, after: step.after, auto: step.auto });
     this.timeline.enqueue(batch);
-    this.replay = appendReplayEntry(this.replay, before, decision, after, actor === HUMAN && !auto ? "player" : "ai");
-    this.engine = after;
   }
 }
+
+export type { PlayerId };

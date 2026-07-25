@@ -1,6 +1,6 @@
-import process from "node:process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { argValue, flag, positiveNumberArg } from "../shared/argv";
 import type { AnalyzerPreset } from "./deck-analyzer";
 import type { BenchmarkPolicyId } from "./benchmark";
 import type { BenchmarkDeck } from "./benchmark-fixtures";
@@ -43,26 +43,6 @@ const PRESETS: Record<Exclude<AnalyzerPreset, "custom">, { games: number; seedSt
 
 const OBJECTIVES: DeckOptimizerObjectiveProfile[] = ["serve", "block", "burst", "defense", "hybrid", "preserve-current"];
 
-function argValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const inline = process.argv.find((arg) => arg.startsWith(prefix));
-  if (inline) return inline.slice(prefix.length);
-  const index = process.argv.indexOf(`--${name}`);
-  if (index >= 0) return process.argv[index + 1];
-  return undefined;
-}
-
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
-}
-
-function numberArg(name: string, fallback: number): number {
-  const raw = argValue(name);
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) throw new Error(`--${name} 必須是正數`);
-  return value;
-}
 
 function integerArg(name: string, fallback: number): number {
   const raw = argValue(name);
@@ -205,7 +185,7 @@ function printProposal(proposal: DeckOptimizerProposal, pool: OptimizerCardPool,
 }
 
 function run(): void {
-  if (hasFlag("list-decks")) {
+  if (flag("list-decks")) {
     printDecks();
     return;
   }
@@ -215,9 +195,9 @@ function run(): void {
   const presetDefaults = preset === "custom" ? DEFAULTS : { ...DEFAULTS, ...PRESETS[preset] };
   const policy = policyArg("policy", DEFAULTS.policy);
   const opponentPolicy = policyArg("opponent-policy", DEFAULTS.opponentPolicy);
-  const seedStart = numberArg("seed-start", presetDefaults.seedStart);
-  const gamesPerSeat = numberArg("games", presetDefaults.games);
-  const maxSteps = numberArg("max-steps", DEFAULTS.maxSteps);
+  const seedStart = positiveNumberArg("seed-start", presetDefaults.seedStart);
+  const gamesPerSeat = positiveNumberArg("games", presetDefaults.games);
+  const maxSteps = positiveNumberArg("max-steps", DEFAULTS.maxSteps);
   const maxReplacements = integerArg("max-replacements", DEFAULTS.maxReplacements);
   const explicitLocked = parseLockedCards(argValue("locked"));
   const bannedCards = splitList(argValue("banned"));
@@ -227,7 +207,7 @@ function run(): void {
   assertKnownCardIds("banned", bannedCards);
   assertKnownCardIds("unlock", unlockCards);
 
-  const autoLockEnabled = !hasFlag("no-auto-lock");
+  const autoLockEnabled = !flag("no-auto-lock");
   const lockedCards = autoLockEnabled
     ? autoLockCoreCards(benchmarkDb, deck.ids, { unlock: unlockCards, explicit: explicitLocked })
     : explicitLocked;
@@ -242,7 +222,7 @@ function run(): void {
   const opponents = resolveOpponents(new Set([deck.name]));
   if (opponents.length === 0) throw new Error("沒有可記錄的對手牌組；請調整 --opponents");
 
-  let proposal = hasFlag("scaffold") ? createDeckOptimizerProposalScaffold({
+  let proposal = flag("scaffold") ? createDeckOptimizerProposalScaffold({
     db: benchmarkDb,
     sourceDeck: deck,
     constraints: { lockedCards, bannedCards },
@@ -300,7 +280,7 @@ function run(): void {
     ],
   });
 
-  if (hasFlag("evaluate")) {
+  if (flag("evaluate")) {
     const comparison = runDeckAnalyzerComparison({
       db: benchmarkDb,
       baseDeck: deck,
@@ -320,7 +300,7 @@ function run(): void {
     proposal = attachDeckOptimizerEvaluation(proposal, comparison);
   }
 
-  if (hasFlag("validate-c2")) {
+  if (flag("validate-c2")) {
     const validationGamesRaw = argValue("validation-games");
     const validationGames = validationGamesRaw === undefined ? undefined : integerArg("validation-games", DEFAULTS.games);
     const candidateDeck = {
@@ -350,13 +330,13 @@ function run(): void {
   }
 
   const outPath = argValue("out");
-  if (hasFlag("json")) {
+  if (flag("json")) {
     console.log(JSON.stringify(proposal, null, 2));
     writeProposal(outPath, proposal, true);
     return;
   }
 
-  printProposal(proposal, cardPool, autoLockEnabled, hasFlag("evaluate") || hasFlag("validate-c2"));
+  printProposal(proposal, cardPool, autoLockEnabled, flag("evaluate") || flag("validate-c2"));
   writeProposal(outPath, proposal);
 }
 
