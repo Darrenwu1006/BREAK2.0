@@ -7,13 +7,10 @@ import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristi
 import { createSearchController, createWorkerSearchBackend, isSearchCancelled, type CancelableQuery } from "../ai/ai-search";
 import { describeDecisionShort } from "../shared/decisionLabels";
 import type { CoachReport } from "../ai/coach";
-import type { ValueExplanation } from "../ai/rollout-value";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
-import { createReplayReviewReport, lostSetCauseLabel, type ActionCardDetail, type LostSetSummary, type ReplayActionEffectiveness } from "../ai/replay-review";
-import { buildMatchSummary, type SkillUsage } from "../shared/matchSummary";
 import { CardView } from "./CardView";
 import { GameBoard } from "./GameBoard";
-import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER, ValueExplanationSummary } from "./GamePanels";
+import { CardCounter, CardDetails, CoachPanel, DropBrowser, GameLog, MatchSummary, PHASE_NAME, PHASE_ORDER } from "./GamePanels";
 import type { CoachPanelState } from "./GamePanels";
 import type { DeckMeta } from "../shared/deckMeta";
 import type { OpponentEngine, InspectedCard } from "./gameTypes";
@@ -24,6 +21,7 @@ import { MatchSession } from "../shared/matchSession";
 import { keyReplayEntries, pendingReplaySetFeedback, stateAtReplayStep, summarizeReplaySession, type ReplayAnalytics, type ReplayEntry, type ReplaySession, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
 import type { CardPointerDragInfo } from "./CardView";
 import { SetFeedbackDialog } from "./SetFeedbackDialog";
+import { PostMatchModal, PostMatchReport } from "../shared/PostMatchReport";
 
 const HUMAN: PlayerId = 0;
 /** [Claude 2026-07-25] 候選 C：經典介面的 undo 深度（lab 為 20；純 UX 手感，見 matchSession 的 undoLimit）。 */
@@ -84,285 +82,6 @@ const SFX_ATTACK_OPP = ["ドッ！", "ズバッ！"];
 type SplashBanner = { text: string; kind: "set" | "match" };
 function actorLabel(entry: ReplayEntry): string {
   return entry.source === "ai" ? "電腦" : entry.player === HUMAN ? "你" : "玩家";
-}
-
-function percent(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function statAverage(stats: ReplayAnalytics["op"][number]): string {
-  return stats.count === 0 ? "-" : stats.average.toFixed(1);
-}
-
-function LostSetSection(props: { lostSets: LostSetSummary }) {
-  const { lostSets } = props;
-  if (lostSets.total === 0) {
-    return (
-      <section className="report-section">
-        <b>失 Set 歸因</b>
-        <small className="summary-idle">本場沒有失 Set。</small>
-      </section>
-    );
-  }
-  const causes = (Object.entries(lostSets.byCause) as [keyof LostSetSummary["byCause"], number][])
-    .filter(([, count]) => count > 0);
-  return (
-    <section className="report-section">
-      <b>失 Set 歸因</b>
-      <div className="report-stat-grid">
-        <span><small>失 Set</small><b>{lostSets.total}</b></span>
-        {causes.map(([cause, count]) => (
-          <span key={cause}><small>{lostSetCauseLabel(cause)}</small><b>{count}</b></span>
-        ))}
-      </div>
-      <ul className="lostset-list">
-        {lostSets.attributions.map((item) => (
-          <li key={item.entryIndex}>
-            <b>Set {item.setNo}{item.matchPoint ? "（敗北）" : ""}</b>
-            <span>{item.detail}</span>
-            <small>Step {item.entryIndex + 1}・Turn {item.turnNo}</small>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function ActionEffectivenessSection(props: { effectiveness: ReplayActionEffectiveness; cardDetails: ActionCardDetail[] }) {
-  const lines = [props.effectiveness.event, props.effectiveness.skill];
-  if (lines.every((line) => line.uses === 0)) {
-    return (
-      <section className="report-section">
-        <b>事件 / 技能效率</b>
-        <small className="summary-idle">本場沒有打出事件或宣告技能。</small>
-      </section>
-    );
-  }
-  return (
-    <section className="report-section">
-      <b>事件 / 技能效率</b>
-      <small className="report-note">「有效」＝打出後有抽牌、入手、登場或點數修正等可觀察效果。</small>
-      <div className="report-compare">
-        {lines.map((line) => (
-          <span key={line.kind}>
-            <small>{line.kind === "event" ? "事件" : "技能"}</small>
-            <b>{line.uses === 0 ? "未使用" : `${line.effectiveUses}/${line.uses}・${percent(line.rate)}`}</b>
-            <em>抽{line.draws}・入手{line.handAdds}・登場{line.deploys}・點數{line.pointMods}</em>
-          </span>
-        ))}
-      </div>
-      {props.cardDetails.length > 0 && (
-        <ul className="action-card-list">
-          {props.cardDetails.map((detail) => (
-            <li key={`${detail.kind}:${detail.cardName}`} className={detail.effectiveUses < detail.uses ? "is-partial" : ""}>
-              <span className="action-card-kind">{detail.kind === "event" ? "事件" : "技能"}</span>
-              <b>{detail.cardName}</b>
-              <small>{detail.effectiveUses}/{detail.uses} 有效</small>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function NarrativeSection(props: { narrative: string[] }) {
-  if (props.narrative.length === 0) return null;
-  return (
-    <section className="report-section report-narrative">
-      <b>檢討重點</b>
-      <ul className="narrative-list">
-        {props.narrative.map((line, index) => <li key={index}>{line}</li>)}
-      </ul>
-    </section>
-  );
-}
-
-// [Claude 2026-07-24] 候選 C Part 2：開技能次數（per-card 前幾名），資料來自 matchSummary。
-function SkillUsageSection(props: { human: SkillUsage; ai: SkillUsage }) {
-  const top = (usage: SkillUsage) => usage.byCard.slice(0, 5);
-  return (
-    <section className="report-section">
-      <b>技能使用</b>
-      <div className="report-compare">
-        <span><small>你 開技能</small><b>{props.human.total}</b><em>次</em></span>
-        <span><small>AI 開技能</small><b>{props.ai.total}</b><em>次</em></span>
-      </div>
-      {top(props.human).length > 0 && (
-        <div className="replay-source-row">
-          {top(props.human).map((card) => (
-            <span key={card.name}>{card.name} ×{card.count}</span>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function PostMatchReportBody(props: {
-  analytics: ReplayAnalytics;
-  skillUsage: [SkillUsage, SkillUsage];
-  lostSets: LostSetSummary;
-  effectiveness: ReplayActionEffectiveness;
-  cardDetails: ActionCardDetail[];
-  valueExplanation: ValueExplanation;
-  narrative: string[];
-}) {
-  const { analytics, lostSets, effectiveness } = props;
-  const humanOp = analytics.op[HUMAN];
-  const aiOp = analytics.op[AI];
-  const humanDp = analytics.dp[HUMAN];
-  const aiDp = analytics.dp[AI];
-  return (
-    <div className="postmatch-body">
-      <section className="report-hero">
-        <span className="replay-pill">Set {analytics.setWins[0]}:{analytics.setWins[1]}</span>
-        <b>{analytics.matchWinner === HUMAN ? "這場可以回看哪些選擇拉開勝負。" : "先看資源與決策分布，再回放關鍵步。"}</b>
-        <small>{analytics.totalDecisions} 個決策點・玩家 {analytics.playerDecisions}・AI {analytics.aiDecisions}</small>
-      </section>
-
-      <NarrativeSection narrative={props.narrative} />
-
-      <section className="report-section">
-        <b>局面估值</b>
-        <ValueExplanationSummary explanation={props.valueExplanation} />
-      </section>
-
-      <section className="report-section">
-        <b>攻防平均</b>
-        <div className="report-compare">
-          <span><small>你 平均 OP</small><b>{statAverage(humanOp)}</b><em>{humanOp.count ? `${humanOp.min}–${humanOp.max}` : "-"}</em></span>
-          <span><small>AI 平均 OP</small><b>{statAverage(aiOp)}</b><em>{aiOp.count ? `${aiOp.min}–${aiOp.max}` : "-"}</em></span>
-          <span><small>你 平均 DP</small><b>{statAverage(humanDp)}</b><em>{humanDp.count ? `${humanDp.min}–${humanDp.max}・${humanDp.count} 次` : "-"}</em></span>
-          <span><small>AI 平均 DP</small><b>{statAverage(aiDp)}</b><em>{aiDp.count ? `${aiDp.min}–${aiDp.max}・${aiDp.count} 次` : "-"}</em></span>
-        </div>
-        <div className="replay-source-row">
-          <span>你 OP≥6 收割 {humanOp.highCount} 手</span>
-          <span>AI OP≥6 收割 {aiOp.highCount} 手</span>
-          <span>得分來源 發 {analytics.opSources.serve}／攔 {analytics.opSources.block}／攻 {analytics.opSources.attack}</span>
-        </div>
-      </section>
-
-      <SkillUsageSection human={props.skillUsage[HUMAN]} ai={props.skillUsage[AI]} />
-
-      <section className="report-section">
-        <b>Guts 使用</b>
-        <div className="report-compare">
-          <span><small>你 總支付</small><b>{analytics.payGuts[HUMAN]}</b><em>每場</em></span>
-          <span><small>AI 總支付</small><b>{analytics.payGuts[AI]}</b><em>每場</em></span>
-        </div>
-        <div className="replay-source-row">
-          <span>你：發球 {analytics.payGutsBySource[HUMAN].serve}</span>
-          <span>接球 {analytics.payGutsBySource[HUMAN].receive}</span>
-          <span>托球 {analytics.payGutsBySource[HUMAN].toss}</span>
-          <span>攻擊 {analytics.payGutsBySource[HUMAN].attack}</span>
-          <span>攔網 {analytics.payGutsBySource[HUMAN].blockCenter}</span>
-        </div>
-      </section>
-
-      <LostSetSection lostSets={lostSets} />
-
-      <ActionEffectivenessSection effectiveness={effectiveness} cardDetails={props.cardDetails} />
-    </div>
-  );
-}
-
-function PostMatchReport(props: {
-  analytics: ReplayAnalytics;
-  skillUsage: [SkillUsage, SkillUsage];
-  lostSets: LostSetSummary;
-  effectiveness: ReplayActionEffectiveness;
-  cardDetails: ActionCardDetail[];
-  valueExplanation: ValueExplanation;
-  narrative: string[];
-  onReplay: () => void;
-}) {
-  return (
-    <div className="postmatch-report">
-      <div className="panel-heading">
-        <div>
-          <b>賽後戰報</b>
-          <span>{props.analytics.matchWinner === HUMAN ? "你贏了這場比賽" : props.analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}</span>
-        </div>
-      </div>
-      <PostMatchReportBody
-        analytics={props.analytics}
-        skillUsage={props.skillUsage}
-        lostSets={props.lostSets}
-        effectiveness={props.effectiveness}
-        cardDetails={props.cardDetails}
-        valueExplanation={props.valueExplanation}
-        narrative={props.narrative}
-      />
-      <div className="report-actions" style={{ padding: "0 var(--sp-4) var(--sp-4)" }}>
-        <button data-primary="true" disabled={props.analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
-      </div>
-    </div>
-  );
-}
-
-function PostMatchModal(props: {
-  analytics: ReplayAnalytics;
-  skillUsage: [SkillUsage, SkillUsage];
-  lostSets: LostSetSummary;
-  effectiveness: ReplayActionEffectiveness;
-  cardDetails: ActionCardDetail[];
-  valueExplanation: ValueExplanation;
-  narrative: string[];
-  winner: PlayerId | null;
-  replayMode: boolean;
-  opponentHand: { uid: number; card: Card }[];
-  onReplay: () => void;
-  onClose: () => void;
-}) {
-  const won = props.winner === HUMAN;
-  return (
-    <div className="postmatch-modal-overlay" role="dialog" aria-modal="true" aria-label="賽後戰報">
-      <div className="postmatch-modal">
-        <div className="postmatch-modal-header">
-          <div className="postmatch-modal-result">
-            <span className={`postmatch-result-badge ${won ? "is-win" : "is-lose"}`}>
-              {won ? "MATCH WIN" : "MATCH LOST"}
-            </span>
-            <b className="postmatch-modal-title">賽後戰報</b>
-            <span className="postmatch-modal-sub">
-              {props.analytics.matchWinner === HUMAN ? "你贏了這場比賽" : props.analytics.matchWinner === AI ? "電腦獲勝" : "比賽結束"}
-            </span>
-          </div>
-        </div>
-        <div className="postmatch-modal-body">
-          {props.opponentHand.length > 0 && (
-            <section className="postmatch-opponent-hand" aria-label={`電腦剩餘手牌 ${props.opponentHand.length} 張`}>
-              <div className="postmatch-opponent-hand-cards">
-                {props.opponentHand.map(({ uid, card }) => (
-                  <CardView key={uid} card={card} uid={uid} width={72} />
-                ))}
-              </div>
-            </section>
-          )}
-          <PostMatchReportBody
-            analytics={props.analytics}
-            skillUsage={props.skillUsage}
-            lostSets={props.lostSets}
-            effectiveness={props.effectiveness}
-            cardDetails={props.cardDetails}
-            valueExplanation={props.valueExplanation}
-            narrative={props.narrative}
-          />
-        </div>
-        <div className="postmatch-modal-footer">
-          {props.replayMode ? (
-            <button data-primary="true" onClick={props.onClose}>返回覆盤</button>
-          ) : (
-            <>
-              <button className="btn-secondary" onClick={props.onClose}>先看看</button>
-              <button data-primary="true" disabled={props.analytics.totalDecisions === 0} onClick={props.onReplay}>逐步覆盤</button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /* [Claude 2026-07-03] wireframe V3：Game meta 移入右欄頂部（頂部狀態列廢除）。 */
@@ -529,6 +248,8 @@ export function Game(props: {
   decks: [string[], string[]];
   deckMeta: [DeckMeta, DeckMeta];
   loadedReplay?: ReplaySession;
+  /** [Claude 2026-07-25] 賽後戰報的「再來一場（同牌組）」；由 App 以新 key 重掛（同 UiLabGame 手法）。 */
+  onRematch?: () => void;
   onExit: () => void;
 }) {
   const { db } = props;
@@ -592,8 +313,6 @@ export function Game(props: {
   const viewState = replayMode ? stateAtReplayStep(replay, replayStep) : state;
   const replayEntry = replayStep > 0 ? replay.entries[replayStep - 1] ?? null : null;
   const replayAnalytics = useMemo(() => summarizeReplaySession(replay), [replay]);
-  const matchSkillUsage = useMemo(() => buildMatchSummary(db, replay).skillUsage, [db, replay]);
-  const replayReview = useMemo(() => createReplayReviewReport(db, replay, { player: HUMAN }), [db, replay]);
   const replayKeyEntries = useMemo(() => keyReplayEntries(replay), [replay]);
   const isMyDecision = pd?.player === HUMAN && state.phase !== "gameOver";
   const deployArea = pd && pd.type in DEPLOY_AREA ? DEPLOY_AREA[pd.type]! : null;
@@ -1323,16 +1042,7 @@ export function Game(props: {
                 onExit={props.onExit}
               />
             ) : state.phase === "gameOver" && !visibleInspection ? (
-              <PostMatchReport
-                analytics={replayAnalytics}
-                skillUsage={matchSkillUsage}
-                lostSets={replayReview.lostSets}
-                effectiveness={replayReview.actionEffectiveness}
-                cardDetails={replayReview.actionCardDetails}
-                valueExplanation={replayReview.valueExplanation}
-                narrative={replayReview.narrative}
-                onReplay={enterReplayMode}
-              />
+              <PostMatchReport db={db} replay={replay} onReplay={enterReplayMode} />
             ) : visibleInspection ? (
               <CardDetails db={db} state={state} inspected={visibleInspection} />
             ) : (
@@ -1368,18 +1078,15 @@ export function Game(props: {
     )}
     {showPostMatchModal && (
       <PostMatchModal
-        analytics={replayAnalytics}
-        skillUsage={matchSkillUsage}
-        lostSets={replayReview.lostSets}
-        effectiveness={replayReview.actionEffectiveness}
-        cardDetails={replayReview.actionCardDetails}
-        valueExplanation={replayReview.valueExplanation}
-        narrative={replayReview.narrative}
+        db={db}
+        replay={replay}
         winner={state.winner ?? null}
         replayMode={replayMode}
         opponentHand={state.players[AI].hand.map((uid) => ({ uid, card: db.get(state.cards[uid]!)! }))}
         onReplay={enterReplayMode}
         onClose={() => setShowPostMatchModal(false)}
+        onRematch={props.onRematch}
+        onExit={props.onExit}
       />
     )}
     {!replayMode && dragging && (

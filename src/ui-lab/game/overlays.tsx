@@ -8,7 +8,8 @@ import type { Card } from "../../data/types";
 import type { CardDb, GameState, PlayerId } from "../../engine/types";
 import { effParam } from "../../engine/engine";
 import type { ReplaySetFeedbackTag, ReplaySetResult } from "../../shared/replayHistory";
-import type { MatchSummary } from "../../shared/matchSummary";
+import { PostMatchModal } from "../../shared/PostMatchReport";
+import type { ReplaySession } from "../../shared/replayHistory";
 import { REPLAY_SET_FEEDBACK_OPTIONS } from "../../shared/replaySetFeedbackOptions";
 import { cardFrontUrl } from "../assets";
 import type { ZoneId } from "../presentation/events";
@@ -328,63 +329,22 @@ export function SetFeedbackModal(props: {
 
 export function SettlementModal(props: {
   winner: PlayerId | null;
-  schools: [string, string];
-  setCards: [number, number];
   db: CardDb;
   state: GameState;
-  summary: MatchSummary;
-  printingByUid?: ReadonlyMap<number, string>;
+  replay: ReplaySession;
   onRematch: () => void;
   onExit: () => void;
 }): React.JSX.Element {
-  const win = props.winner;
-  const a = props.summary.analytics;
-  const skill = props.summary.skillUsage;
-  const opLine = (p: PlayerId) => {
-    const op = a.op[p];
-    return op.count ? `平均 ${op.average.toFixed(1)}（${op.min}–${op.max}）· 收割 ${op.highCount}` : "—";
-  };
+  // [Claude 2026-07-25] 與經典 2D 共用同一個賽後戰報元件（[使用者 2026-07-25] 要求樣式與內容完全一致）。
+  // 3D 無覆盤模式，故不傳 onReplay／onClose——那兩顆按鈕會自動不顯示。
   return (
-    <div className={styles.modalMask}>
-      <div className={`${styles.modal} ${styles.settlement}`}>
-        <div className={styles.settlementTitle}>{win !== null ? `${props.schools[win]} 獲勝！` : "比賽結束"}</div>
-        <div className={styles.settlementScore}>
-          {win === HUMAN ? "🏆 你贏下了這場比賽" : win !== null ? "對手拿下了這場比賽" : ""}
-          <br />
-          剩餘 Set 卡：{props.schools[0]} {props.setCards[0]}－{props.setCards[1]} {props.schools[1]}
-        </div>
-        {props.state.players[1].hand.length > 0 && (
-          <section className={styles.settlementHand} aria-label={`電腦剩餘手牌 ${props.state.players[1].hand.length} 張`}>
-            <div className={styles.settlementHandCards}>
-              {props.state.players[1].hand.map((uid) => (
-                <CardThumb
-                  key={uid}
-                  uid={uid}
-                  card={props.db.get(props.state.cards[uid] ?? "")}
-                  printing={props.printingByUid?.get(uid)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-        <div className={styles.settlementScore} style={{ textAlign: "left", fontSize: "0.85em", lineHeight: 1.7 }}>
-          <div>火力 OP　你：{opLine(HUMAN)}</div>
-          <div>　　　　電腦：{opLine(1)}</div>
-          <div>得分來源　發 {a.opSources.serve}／攔 {a.opSources.block}／攻 {a.opSources.attack}</div>
-          <div>Guts 支付　你 {a.payGuts[HUMAN]}｜電腦 {a.payGuts[1]}</div>
-          <div>
-            開技能　你 {skill[HUMAN].total}｜電腦 {skill[1].total}
-            {skill[HUMAN].byCard.length > 0 ? `（你：${skill[HUMAN].byCard.slice(0, 3).map((c) => `${c.name}×${c.count}`).join("、")}）` : ""}
-          </div>
-          <div>決策數　你 {a.playerDecisions}｜AI {a.aiDecisions}</div>
-        </div>
-        <button className={styles.btn} onClick={props.onRematch}>
-          再來一場（同牌組）
-        </button>
-        <button className={styles.btnGhost} onClick={props.onExit}>
-          換牌組
-        </button>
-      </div>
-    </div>
+    <PostMatchModal
+      db={props.db}
+      replay={props.replay}
+      winner={props.winner}
+      opponentHand={props.state.players[1].hand.map((uid) => ({ uid, card: props.db.get(props.state.cards[uid] ?? "")! })).filter((entry) => !!entry.card)}
+      onRematch={props.onRematch}
+      onExit={props.onExit}
+    />
   );
 }

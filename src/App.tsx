@@ -70,6 +70,8 @@ export function App() {
   const [mode, setMode] = useState<"menu" | "classic-game" | "lab-game" | "editor" | "optimizer">("menu");
   const [engine, setEngine] = useState<GameEngine>(() => readGameEngine());
   const [loadedReplay, setLoadedReplay] = useState<ReplaySession | null>(null);
+  // [Claude 2026-07-25] 經典 2D 的「再來一場（同牌組）」：bump 後以新 key 重掛 Game（同 UiLabGame 手法）。
+  const [classicRound, setClassicRound] = useState(0);
   const [replays, setReplays] = useState<any[]>([]);
   const [loadingReplays, setLoadingReplays] = useState(false);
   const [deckStartWarning, setDeckStartWarning] = useState<string[] | null>(null);
@@ -238,9 +240,14 @@ export function App() {
       return (
         <Suspense fallback={<div className="game-loading" role="status">載入經典 2D 對局…</div>}>
           <Game
+            key={classicRound}
             db={db}
             decks={[expand(selectedDecks[0]), expand(selectedDecks[1])]}
             deckMeta={[deckMeta(db, selectedDecks[0]), deckMeta(db, selectedDecks[1])]}
+            onRematch={() => {
+              setClassicRound((round) => round + 1);
+              void refreshReplays();
+            }}
             onExit={() => {
               setMode("menu");
               void refreshReplays();

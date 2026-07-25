@@ -16,7 +16,6 @@ import { blockDeployMax, canChooseBlock, deployLegality, deployNames, deployable
 import type { CardDb, Decision, GameState, LogEntry } from "../engine/types";
 import type { DeckMeta } from "../shared/deckMeta";
 import { pendingReplaySetFeedback, type ReplaySetFeedbackChoice } from "../shared/replayHistory";
-import { buildMatchSummary } from "../shared/matchSummary";
 import { cardBackUrl, cardFrontUrl } from "./assets";
 import { HUMAN, LabGameController } from "./game/controller";
 import { CardInfoPanel } from "./game/CardInfoPanel";
@@ -1120,12 +1119,9 @@ function LabGame(props: { db: CardDb; decks: [LabDeck, LabDeck]; seed: number; o
         {gameOver && !pendingSetFeedback && (
         <SettlementModal
           winner={engine.winner}
-          schools={schools}
-          setCards={[engine.players[0].setArea.length, engine.players[1].setArea.length]}
           db={db}
           state={engine}
-          summary={buildMatchSummary(db, controller.replay)}
-          printingByUid={printingByUid}
+          replay={controller.replay}
           onRematch={props.onRematch}
           onExit={props.onExit}
         />
