@@ -38,7 +38,7 @@ describe("card skill presentation", () => {
   it("覆蓋卡池全部官方註釋，且時機與特殊效果不再露出日文標記", () => {
     const cards = cardsJson as unknown as Card[];
     const withAnnotations = cards.filter((item) => item.annotationJa);
-    expect(withAnnotations).toHaveLength(64);
+    expect(withAnnotations).toHaveLength(93);
     for (const item of withAnnotations) {
       const result = buildCardSkillPresentation(item);
       expect(result.annotationZh.length, item.id).toBeGreaterThan(0);

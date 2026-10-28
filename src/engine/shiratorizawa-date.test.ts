@@ -4,7 +4,7 @@ import { applyDecision, createGame, deployableUids, effParam } from "./engine";
 import { db, deckWith, drainCp, feed, grab, placeDeckTop, placeInDrop, placeOnStack, seedStack, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
 describe("混合（音駒 P01）", () => {
-  it("P01-082＋Q311：+1 後滿足「5以上」→ 設為 7（修正層 set 依解決順序）", () => {
+  it("P01-082＋Q1228：+1 後滿足「5以上」→ 設為 7（修正層 set 依解決順序）", () => {
     let s = setup(deckWith("HV-P01-082", "HV-D01-011", "HV-D02-007"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -14,14 +14,14 @@ describe("混合（音駒 P01）", () => {
     // 先 D01-011：+1 → 5（≤4 不成立 → 不再加）
     s = feed(s, { type: "free", action: "event", uid: grab(s, 0, "HV-D01-011") });
     expect(effParam(db, s, fukunaga, "receive")).toBe(5);
-    // 再 P01-082 ▶2：5以上 → 設為 7（Q311）
+    // 再 P01-082 ▶2：5以上 → 設為 7（Q1228）
     s = feed(s, { type: "free", action: "event", uid: grab(s, 0, "HV-P01-082") });
     expect(s.pendingDecision?.type).toBe("effect-option");
     s = feed(s, { type: "effect-option", index: 1 });
     expect(effParam(db, s, fukunaga, "receive")).toBe(7);
   });
 
-  it("P01-021＋Q224：攻擊+3＋同一區「名異なる音駒のガッツ2枚」回收（單張區不成立）", () => {
+  it("P01-021＋Q1141：攻擊+3＋同一區「名異なる音駒のガッツ2枚」回收（單張區不成立）", () => {
     let s = setup(deckWith("HV-P01-021", "HV-D02-005", "HV-D02-006", "HV-D02-007"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D02-005"); // 海 r5（音駒）
@@ -50,7 +50,7 @@ describe("混合（音駒 P01）", () => {
     expect(s.players[0].hand).toEqual(expect.arrayContaining(pair));
   });
 
-  it("P01-023＋Q228：レシーブキャラ被音駒キャラ蓋上→棄自身（ガッツ）→新キャラ+2", () => {
+  it("P01-023＋Q1145：レシーブキャラ被音駒キャラ蓋上→棄自身（ガッツ）→新キャラ+2", () => {
     let s = setup(deckWith("HV-P01-023", "HV-D02-005"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -64,7 +64,7 @@ describe("混合（音駒 P01）", () => {
     expect(effParam(db, s, kai, "receive")).toBe(7); // 5+2
   });
 
-  it("P01-084＋Q314：トス孤爪→次の相手ターン、手札から MB のアタックキャラ登場不可", () => {
+  it("P01-084＋Q1231：トス孤爪→次の相手ターン、手札から MB のアタックキャラ登場不可", () => {
     let s = setup(deckWith("HV-P01-084", "HV-P01-017", "HV-D02-005"), deckWith("HV-D01-001", "HV-D01-006", "HV-P01-011", "HV-D01-009", "HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D02-005");
@@ -87,13 +87,13 @@ describe("混合（音駒 P01）", () => {
     grab(s, 1, "HV-D01-001"); // MB
     grab(s, 1, "HV-D01-006"); // WS
     const legal = deployableUids(db, s, 1, "attack");
-    expect(legal.some((u) => s.cards[u] === "HV-D01-001")).toBe(false); // Q314：MB 禁止
+    expect(legal.some((u) => s.cards[u] === "HV-D01-001")).toBe(false); // Q1231：MB 禁止
     expect(legal.some((u) => s.cards[u] === "HV-D01-006")).toBe(true);
   });
 });
 
 describe("伊達工業", () => {
-  it("P02-039＋Q393：トス伊達S→次の相手ターン、DP≤6 でブロック失敗（追加失敗條件 †5-15-3）", () => {
+  it("P02-039＋Q1310：トス伊達S→次の相手ターン、DP≤6 でブロック失敗（追加失敗條件 †5-15-3）", () => {
     let s = setup(deckWith("HV-P02-039", "HV-P02-040", "HV-D02-005"), deckWith("HV-D01-004", "HV-D01-008"), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D02-005");
@@ -103,7 +103,7 @@ describe("伊達工業", () => {
     const futakuchi = grab(s, 0, "HV-P02-039"); // a1
     s = feed(s, { type: "deploy-attack", uid: futakuchi }); // 強制被動（無 gate）→ 限制成立
     s = feed(s, { type: "free", action: "pass" }); // OP = 1+1 = 2
-    // P1 攔網：山口 b3＋澤村 b1 → DP4 ≥ OP2 但 ≤6 → 失敗（Q393 判定時點）
+    // P1 攔網：山口 b3＋澤村 b1 → DP4 ≥ OP2 但 ≤6 → 失敗（Q1310 判定時點）
     s = feed(s, { type: "defense-choice", choice: "block" });
     const c1 = grab(s, 1, "HV-D01-004");
     const c2 = grab(s, 1, "HV-D01-008");
@@ -112,7 +112,7 @@ describe("伊達工業", () => {
     expect(s.lostBy).toBe(1);
   });
 
-  it("P02-041＋Q396/Q397：棄自身→デッキ頂3全伊達→棄牌區のスキルなし伊達をサイドブロッカー登場", () => {
+  it("P02-041＋Q1313/Q1314：棄自身→デッキ頂3全伊達→棄牌區のスキルなし伊達をサイドブロッカー登場", () => {
     let s = setup(deckWith("HV-P02-041", "HV-P02-044", "HV-P02-045", "HV-P02-040", "HV-P02-043"), deckWith("HV-D01-009", "HV-D01-006", "HV-D01-002"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-006"); // P1 接球
@@ -130,7 +130,7 @@ describe("伊達工業", () => {
     const sakunami = grab(s, 0, "HV-P02-041");
     s = feed(s, { type: "free", action: "skill", uid: sakunami, skillIndex: 0 });
     expect(s.players[0].drop).toContain(sakunami); // cost：自身
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // 棄的 3 張全伊達 → 選スキルなし伊達（Q397 含剛棄的）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // 棄的 3 張全伊達 → 選スキルなし伊達（Q1314 含剛棄的）
     expect(s.pendingDecision!.candidates!).toContain(sasaya);
     s = feed(s, { type: "effect-cards", uids: [sasaya] });
     expect(s.players[0].blockSides).toContain(sasaya);
@@ -160,7 +160,7 @@ describe("伊達工業", () => {
 });
 
 describe("白鳥沢", () => {
-  it("P02-050＋Q404/Q405：全員白鳥沢＋2ガッツ全S→トス+2＋任意區の白鳥沢ガッツ1枚をアタックエリアのガッツに", () => {
+  it("P02-050＋Q1321/Q1322：全員白鳥沢＋2ガッツ全S→トス+2＋任意區の白鳥沢ガッツ1枚をアタックエリアのガッツに", () => {
     let s = setup(deckWith("HV-P02-050", "HV-P02-052", "HV-P02-052", "HV-P01-017", "HV-P01-017"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002"); // P1 發球 serve1
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -183,13 +183,13 @@ describe("白鳥沢", () => {
     expect(s.pendingDecision?.type).toBe("effect-confirm"); // allCharas 白鳥沢 ✓（接球大平＋托球白布）
     s = feed(s, { type: "effect-confirm", accept: true }); // 2ガッツ（恰好2＝孤爪×2 自動付、全 S）
     expect(effParam(db, s, shirabu, "toss")).toBe(3); // 1+2
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // paidGutsAll S ✓ → 移動白鳥沢ガッツ（Q405 任意區）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // paidGutsAll S ✓ → 移動白鳥沢ガッツ（Q1322 任意區）
     expect(s.pendingDecision!.candidates!).toContain(ohira2);
     s = feed(s, { type: "effect-cards", uids: [ohira2] });
     expect(s.players[0].attack[0]).toBe(ohira2); // 進攻擊區底＝ガッツ
   });
 
-  it("P02-048：擲硬幣→正面 block+4／反面 自分のデッキ3枚ドロップ（Q401 可能な限り）", () => {
+  it("P02-048：擲硬幣→正面 block+4／反面 自分のデッキ3枚ドロップ（Q1318 可能な限り）", () => {
     let s = setup(deckWith("HV-P02-048", "HV-D02-005"), deckWith("HV-D01-008", "HV-D01-009", "HV-D01-006", "HV-D01-002"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-008");

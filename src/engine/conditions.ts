@@ -19,11 +19,21 @@ export function matchFilter(db: CardDb, state: GameState, uid: number, f: CharaF
     const b = baseParam(db, state, uid, f.baseParamMax.param);
     if (b === null || b > f.baseParamMax.value) return false;
   }
+  if (f.baseParamMin) {
+    const b = baseParam(db, state, uid, f.baseParamMin.param);
+    if (b === null || b < f.baseParamMin.value) return false;
+  }
   if (f.baseParamEq) {
     const b = baseParam(db, state, uid, f.baseParamEq.param);
     if (b !== f.baseParamEq.value) return false;
   }
   if (f.notNames && f.notNames.map(normName).includes(nameOf(db, state, uid))) return false;
+  if (f.excludeTossName) {
+    const p0 = state.players[0];
+    const owner = p0.serve.includes(uid) || p0.receive.includes(uid) || p0.toss.includes(uid) || p0.attack.includes(uid) || p0.blockCenter.includes(uid) || p0.blockSides.includes(uid) || p0.hand.includes(uid) || p0.drop.includes(uid) ? 0 : 1;
+    const t = topChara(state.players[owner].toss);
+    if (t !== null && nameOf(db, state, uid) === nameOf(db, state, t)) return false;
+  }
   if (f.effParamMin) {
     const v = paramForFilter(db, state, uid, f.effParamMin.param);
     if (v === null || v < f.effParamMin.value) return false;
@@ -73,8 +83,12 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
       return state.players[0].setArea.length + state.players[1].setArea.length <= cond.count;
     case "deployedFromHand":
       return ctx.origin === "hand";
-    case "deployedBySkill":
-      return ctx.origin === "other"; // 效果登場（手札からの通常登場以外）
+    case "deployedBySkill": {
+      if (cond.target === "target") {
+        return ctx.lastTarget !== null && state.modifiers.some((m) => m.kind === "skillDeployed" && m.target === ctx.lastTarget);
+      }
+      return ctx.origin === "other" || state.modifiers.some((m) => m.kind === "skillDeployed" && m.target === ctx.source);
+    }
     case "deployedByCard":
       return (ctx as { byCard?: string }).byCard === normName(cond.name);
     case "dropDistinctNames": {
@@ -100,10 +114,34 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
     }
     case "selfIsSideBlocker":
       return state.players[p].blockSides.includes(ctx.source);
+    case "noSideBlockers":
+      return state.players[p].blockSides.length === 0;
+    case "setLessThanOpponent":
+      return state.players[p].setArea.length < state.players[other(p)].setArea.length;
     case "paidGutsAll": {
       const paid = (ctx as { paidGuts?: number[] }).paidGuts;
       if (!paid?.length) return false;
+      if (cond.distinctNames && new Set(paid.map((u) => nameOf(db, state, u))).size !== paid.length) return false;
       return paid.every((u) => matchFilter(db, state, u, cond.filter));
+    }
+    case "milledCount": {
+      const milled = (ctx as { milled?: number[] }).milled;
+      if (!milled?.length) return cond.min <= 0;
+      const n = milled.filter((u) => {
+        const c = cardOf(db, state, u);
+        if (cond.cardType && c.type !== cond.cardType) return false;
+        if (cond.affiliation && !c.affiliations.includes(cond.affiliation)) return false;
+        return true;
+      }).length;
+      if (n < cond.min) return false;
+      if (cond.max !== undefined && n > cond.max) return false;
+      return true;
+    }
+    case "droppedEventCount": {
+      const n = (ctx as { droppedEventCount?: number }).droppedEventCount ?? 0;
+      if (cond.min !== undefined && n < cond.min) return false;
+      if (cond.max !== undefined && n > cond.max) return false;
+      return true;
     }
     case "chara": {
       const who = cond.player === "opponent" ? other(p) : p;
@@ -153,7 +191,10 @@ export function evalCond(db: CardDb, state: GameState, ctx: { player: PlayerId; 
 export function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid: number, costs: Cost[]): boolean {
   for (const c of costs) {
     if (c.type === "guts" && gutsFor(state, p, sourceUid).length < c.count) return false;
-    if (c.type === "gutsAny" && allGutsOf(state, p).length < c.count) return false;
+    if (c.type === "gutsAny") {
+      const cands = c.filter ? allGutsOf(state, p).filter((u) => matchFilter(db, state, u, c.filter!)) : allGutsOf(state, p);
+      if (cands.length < c.count) return false;
+    }
     if (c.type === "dropFromHand") {
       const cands = c.filter ? state.players[p].hand.filter((u) => matchFilter(db, state, u, c.filter!)) : state.players[p].hand;
       if (cands.length < c.count) return false;
@@ -175,7 +216,10 @@ export function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid
     if (c.type === "handToDeckBottom" && state.players[p].hand.length < c.count) return false;
     if (c.type === "placeEventFromHand" && !state.players[p].hand.some((u) => {
       const card = cardOf(db, state, u);
-      return card.type === "EVENT" && (!c.filter?.affiliation || card.affiliations.includes(c.filter.affiliation));
+      const wantType = c.filter?.cardType ?? "EVENT";
+      return card.type === wantType
+        && (!c.filter?.affiliation || card.affiliations.includes(c.filter.affiliation))
+        && (!c.filter?.position || card.positions.includes(c.filter.position));
     })) return false;
     if (c.type === "gutsFrom") {
       if (c.perArea) {
@@ -193,7 +237,7 @@ export function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid
         if (n < c.count) return false;
       }
     }
-    if (c.type === "millDeck" && state.players[p].deck.length < c.count) return false;
+    if (c.type === "millDeck" && !c.upTo && state.players[p].deck.length < c.count) return false;
     if (c.type === "dropChara" && !charasOf(state, p).some((x) => x.area === c.area && (!c.filter || matchFilter(db, state, x.uid, c.filter, x.area)))) return false;
     if (c.type === "dropSelfFromCourt") {
       const ps = state.players[p];
@@ -216,16 +260,16 @@ export function costPayable(db: CardDb, state: GameState, p: PlayerId, sourceUid
 export function costOps(costs: Cost[]): RtAction[] {
   const out: RtAction[] = [];
   for (const c of costs) {
-    if (c.type === "guts") out.push({ op: "_payGuts", count: c.count });
-    else if (c.type === "gutsAny") out.push({ op: "_payGutsAny", count: c.count });
+    if (c.type === "guts") out.push({ op: "_payGuts", count: c.count, maxCount: c.maxCount });
+    else if (c.type === "gutsAny") out.push({ op: "_payGutsAny", count: c.count, maxCount: c.maxCount, filter: c.filter });
     else if (c.type === "dropFromHand") out.push({ op: "_dropHandCost", count: c.count, filter: c.filter });
-    else if (c.type === "dropFromEventArea") out.push({ op: "_dropEventAreaCost", count: c.count, filter: c.filter });
+    else if (c.type === "dropFromEventArea") out.push({ op: "_dropEventAreaCost", count: c.count, maxCount: c.maxCount, filter: c.filter });
     else if (c.type === "placeSelfOnDeckBottom") out.push({ op: "_placeSelfOnDeckBottomCost" });
     else if (c.type === "placeGutsOnSelf") out.push({ op: "_placeGutsOnSelfCost", filter: c.filter });
     else if (c.type === "handToDeckBottom") out.push({ op: "handToDeckBottom", count: c.count });
     else if (c.type === "placeEventFromHand") out.push({ op: "_placeEventCost", filter: c.filter });
     else if (c.type === "gutsFrom") out.push({ op: "_payGutsFrom", areas: c.areas, count: c.count, perArea: c.perArea });
-    else if (c.type === "millDeck") out.push({ op: "_millCost", count: c.count });
+    else if (c.type === "millDeck") out.push({ op: "_millCost", count: c.count, upTo: c.upTo });
     else if (c.type === "dropChara") out.push({ op: "_dropCharaCost", area: c.area, filter: c.filter });
     else if (c.type === "dropSelfFromCourt") out.push({ op: "_dropSelfCourt" });
     else if (c.type === "selfToDeckBottom") out.push({ op: "_selfToDeckBottom" });
@@ -240,6 +284,10 @@ export function costOps(costs: Cost[]): RtAction[] {
 export function isSkillInvalid(db: CardDb, state: GameState, p: PlayerId, uid: number): boolean {
   const n = nameOf(db, state, uid);
   if (state.turn1.some((t) => t.player === p && t.name === n && t.setNo === state.setNo && t.turnNo === state.turnNo)) return true;
+  // [Codex 2026-10-27] Q1814：技能無效與禁止play分開，雙時機事件亦須匹配。
+  if (cardOf(db, state, uid).type === "EVENT" && state.restrictions.some((r) =>
+    r.player === p && r.setNo === state.setNo && r.activeTurn === state.turnNo
+    && r.negateEventTimings?.some((timing) => eventTimingsOf(db, state, uid).includes(timing)))) return true;
   const area = charaAreaOf(state, p, uid);
   return state.restrictions.some((r) =>
     r.player === p && r.disableSkills && r.setNo === state.setNo && r.activeTurn === state.turnNo

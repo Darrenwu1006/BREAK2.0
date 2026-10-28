@@ -4,14 +4,14 @@ import { applyDecision, createGame, effParam } from "./engine";
 import { db, deckWith, feed, grab, placeDeckTop, placeOnStack, seedStack, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
 describe("梟谷：登場被動", () => {
-  it("P01-043＋Q249/Q250：手札登場＋全員梟谷＋攻擊區ガッツ奇數→アタック+5", () => {
+  it("P01-043＋Q1166/Q1167：手札登場＋全員梟谷＋攻擊區ガッツ奇數→アタック+5", () => {
     let s = setup(deckWith("HV-P01-043", "HV-P01-050", "HV-P01-046"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-P01-050"); // 小見 r6（梟谷）
     const akaashi = grab(s, 0, "HV-P01-046"); // vanilla 赤葦 t2（梟谷）
     s = feed(s, { type: "deploy-toss", uid: akaashi });
     s = feed(s, { type: "free", action: "pass" });
-    seedStack(s, 0, "attack", 1); // ガッツ 1＝奇數（Q250：使用時點）
+    seedStack(s, 0, "attack", 1); // ガッツ 1＝奇數（Q1167：使用時點）
     const bokuto = grab(s, 0, "HV-P01-043"); // a0
     s = feed(s, { type: "deploy-attack", uid: bokuto });
     expect(s.pendingDecision?.type).toBe("effect-confirm");
@@ -21,7 +21,7 @@ describe("梟谷：登場被動", () => {
     expect(s.op).toMatchObject({ value: 7, owner: 0 }); // 2+5
   });
 
-  it("P01-045＋Q251/Q252：トス＋アタック合計4ガッツ（任意組合）；剛付的木兎可回收", () => {
+  it("P01-045＋Q1168/Q1169：トス＋アタック合計4ガッツ（任意組合）；剛付的木兎可回收", () => {
     let s = setup(deckWith("HV-P01-045", "HV-P01-044", "HV-P01-050"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-P01-050");
@@ -33,18 +33,18 @@ describe("梟谷：登場被動", () => {
     const akaashi = grab(s, 0, "HV-P01-045"); // t1
     s = feed(s, { type: "deploy-toss", uid: akaashi });
     s = feed(s, { type: "effect-confirm", accept: true });
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // 5 選 4（Q251 任意組合）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // 5 選 4（Q1168 任意組合）
     expect(s.pendingDecision!.candidates!.length).toBe(5);
     const pay = [bokutoGuts, ...s.pendingDecision!.candidates!.filter((u) => u !== bokutoGuts).slice(0, 3)];
     s = feed(s, { type: "effect-cards", uids: pay });
     expect(effParam(db, s, akaashi, "toss")).toBe(3); // 1+2
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // 回收木兎（Q252：剛付的）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // 回收木兎（Q1169：剛付的）
     expect(s.pendingDecision!.candidates!).toContain(bokutoGuts);
     s = feed(s, { type: "effect-cards", uids: [bokutoGuts] });
     expect(s.players[0].hand).toContain(bokutoGuts);
   });
 
-  it("P01-047＋Q253：被梟谷キャラ蓋上（ガッツ狀態觸發 †1-2-15-2-1）→棄1→そのキャラ+1；與新卡技能任選順序", () => {
+  it("P01-047＋Q1170：被梟谷キャラ蓋上（ガッツ狀態觸發 †1-2-15-2-1）→棄1→そのキャラ+1；與新卡技能任選順序", () => {
     let s = setup(deckWith("HV-P01-047", "HV-P01-043", "HV-P01-050", "HV-P01-046"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-P01-050");
@@ -53,7 +53,7 @@ describe("梟谷：登場被動", () => {
     s = feed(s, { type: "free", action: "pass" });
     placeOnStack(s, 0, "attack", "HV-P01-047"); // 既存アタックキャラ＝木葉
     const bokuto = grab(s, 0, "HV-P01-043");
-    s = feed(s, { type: "deploy-attack", uid: bokuto }); // 蓋上 → 兩個待機（Q253 任選順序）
+    s = feed(s, { type: "deploy-attack", uid: bokuto }); // 蓋上 → 兩個待機（Q1170 任選順序）
     expect(s.pendingDecision?.type).toBe("resolve-pending");
     expect(s.pendingDecision!.candidates!.length).toBe(2);
     // 先解決木葉（被蓋觸發）
@@ -76,7 +76,7 @@ describe("梟谷：登場被動", () => {
     expect(s.pendingDecision?.type).toBe("free"); // 沒有 effect-confirm 待機，直接回到自由階段
   });
 
-  it("P01-051＋Q255/Q257：OP≥4＋デッキ頂棄1（梟谷）→ワンタッチ(3)；跳過後未解決技能消滅", () => {
+  it("P01-051＋Q1172/Q1174：OP≥4＋デッキ頂棄1（梟谷）→ワンタッチ(3)；跳過後未解決技能消滅", () => {
     let s = setup(deckWith("HV-P01-051", "HV-D01-003", "HV-P01-044", "HV-P01-050"), deckWith("HV-D01-008", "HV-D01-009", "HV-D01-006"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-008");
@@ -89,18 +89,18 @@ describe("梟谷：登場被動", () => {
     s = feed(s, { type: "defense-choice", choice: "block" });
     placeDeckTop(s, 0, "HV-P01-044"); // 頂＝木兎（梟谷）→ ワンタッチ成立
     const washio = grab(s, 0, "HV-P01-051");
-    const tsukki = grab(s, 0, "HV-D01-003"); // 第二攔網者（有技能、待機後將被跳過消滅 Q257）
+    const tsukki = grab(s, 0, "HV-D01-003"); // 第二攔網者（有技能、待機後將被跳過消滅 Q1174）
     s = feed(s, { type: "deploy-block", uids: [washio, tsukki], center: washio });
     // 兩個待機 → 先解決鷲尾
     expect(s.pendingDecision?.type).toBe("resolve-pending");
     const washioItem = s.pendingQueue.find((it) => it.source === washio)!;
     s = feed(s, { type: "resolve-pending", id: washioItem.id });
     s = feed(s, { type: "effect-confirm", accept: true });
-    // ワンタッチ(3)：OP 5−3=2、跳過攔網→自分のドローフェイズ（Q255 有抽牌）；月島的待機消滅（Q257）
+    // ワンタッチ(3)：OP 5−3=2、跳過攔網→自分のドローフェイズ（Q1172 有抽牌）；月島的待機消滅（Q1174）
     expect(s.phase).toBe("draw");
     expect(s.turnPlayer).toBe(0);
     expect(s.op).toMatchObject({ value: 2, owner: 1, source: "attack" });
-    expect(s.pendingQueue.length).toBe(0); // Q257
+    expect(s.pendingQueue.length).toBe(0); // Q1174
     s = feed(s, { type: "free", action: "pass" });
     const rcv = grab(s, 0, "HV-P01-050"); // r6 ≥ 2
     s = feed(s, { type: "deploy-receive", uid: rcv });
@@ -110,7 +110,7 @@ describe("梟谷：登場被動", () => {
 });
 
 describe("梟谷：事件卡", () => {
-  it("P01-089＋Q323：看頂3→梟谷1枚まで（可選不加→全部置底）", () => {
+  it("P01-089＋Q1240：看頂3→梟谷1枚まで（可選不加→全部置底）", () => {
     let s = setup(deckWith("HV-P01-089", "HV-P01-044"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -120,13 +120,17 @@ describe("梟谷：事件卡", () => {
     s = feed(s, { type: "free", action: "event", uid: ev }); // [=ドロー]
     expect(s.pendingDecision?.type).toBe("effect-cards");
     expect(s.pendingDecision!.candidates!).toContain(bokuto);
-    s = feed(s, { type: "effect-cards", uids: [] }); // Q323：選擇不加
+    s = feed(s, { type: "effect-cards", uids: [] }); // Q1240：選擇不加
+    // [Codex 2026-10-28] 先完成看過卡片的任意置底順序。
+    while (s.effectCtx?.awaiting?.kind === "cards" && s.effectCtx.awaiting.purpose === "tutorBottom") {
+      s = feed(s, { type: "effect-cards", uids: [s.effectCtx.awaiting.candidates[0]!] });
+    }
     expect(s.players[0].hand).not.toContain(bokuto);
     expect(s.players[0].deck.length).toBe(deckLen); // 全部回牌組（置底）
     expect(s.players[0].deck.slice(-3)).toContain(bokuto);
   });
 
-  it("P01-090＋Q324：全員梟谷→次の相手ターン、相手ロスト時→手牌補到7（Lost 時點不屬於任何回合）", () => {
+  it("P01-090＋Q1241：全員梟谷→次の相手ターン、相手ロスト時→手牌補到7（Lost 時點不屬於任何回合）", () => {
     let s = setup(deckWith("HV-P01-090", "HV-P01-050", "HV-P01-046", "HV-P01-044"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-P01-050");
@@ -145,11 +149,11 @@ describe("梟谷：事件卡", () => {
     s = feed(s, { type: "free", action: "pass" });
     s = feed(s, { type: "deploy-receive", uid: null });
     expect(s.lostBy).toBe(1);
-    expect(s.players[0].hand.length).toBe(7); // Q324：lostSet 步驟②解決
+    expect(s.players[0].hand.length).toBe(7); // Q1241：lostSet 步驟②解決
     expect(s.pendingDecision).toMatchObject({ player: 1, type: "pick-set-card" });
   });
 
-  it("P01-091＋Q325：接球回合棄殘留的梟谷ブロックキャラ→相手アタックOP−1（0→−1）", () => {
+  it("P01-091＋Q1242：接球回合棄殘留的梟谷ブロックキャラ→相手アタックOP−1（0→−1）", () => {
     let s = setup(deckWith("HV-P01-091", "HV-P01-044", "HV-P01-050"), deckWith("HV-D01-008", "HV-D01-010", "HV-D01-005"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-008");
@@ -172,7 +176,7 @@ describe("梟谷：事件卡", () => {
     expect(s.pendingDecision?.type).toBe("effect-confirm"); // 棄攔網者使える？
     s = feed(s, { type: "effect-confirm", accept: true });
     expect(s.players[0].drop).toContain(bokuto); // cost：木兎進棄牌
-    expect(s.op).toMatchObject({ value: -1, owner: 1 }); // Q325：0−1＝−1
+    expect(s.op).toMatchObject({ value: -1, owner: 1 }); // Q1242：0−1＝−1
     s = feed(s, { type: "free", action: "pass" });
     expect(s.phase).toBe("toss"); // DP 7 ≥ −1 → 接球成功
   });

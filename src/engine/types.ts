@@ -63,11 +63,14 @@ export interface PointValue {
 /** 數值修正層（†6-10-1 第 3 層；期限＝クリンナップ或對象非キャラ化 †6-10-3）。
  *  kind "set"＝固定值（後續 add 依解決順序再疊加 †0-2-12） */
 export interface Modifier {
-  target: number; // uid
+  target: number; // uid（target === -1 && affiliation 時代表指定所屬全體キャラ守衛）
   param: ParamName;
   amount: number;
-  /** "set"＝固定值；"noDecrease"＝守衛（amount 無意義，effParam 遇此忽略該 param 的負向修正 †「－されない」P03-064/041/057） */
-  kind?: "set" | "noDecrease";
+  /** "set"＝固定值；"noDecrease"＝守衛；"skillDeployed"＝本回合以技能登場標記（PR-084） */
+  kind?: "set" | "noDecrease" | "skillDeployed";
+  /** [Gemini 2026-10-28] P04-070「このターン中、自分の稲荷崎のキャラのパラメータは－されない」所屬守衛 */
+  player?: PlayerId;
+  affiliation?: string;
   source: number; // 發生源 uid
 }
 
@@ -98,6 +101,10 @@ export interface Restriction {
   banBaseParamMin?: { param: ParamName; value: number };
   /** 「スキルでカードを手札に加えられない」（P01-035；Q239~241） */
   banHandAdd?: true;
+  /** 「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933） */
+  banDrawPhaseHandAdd?: true;
+  /** 禁止指定カード名のキャラ登場（P04-037） */
+  banNames?: string[];
   /** maxCount 只計手札からの登場（P02-020） */
   fromHandOnly?: true;
   /** センターブロッカーのブロックP無視（Q372；P02-027） */
@@ -112,6 +119,7 @@ export interface Restriction {
   banPositions?: string[];
   disableSkills?: import("./dsl").CharaFilter;
   banEventTimings?: import("./dsl").PhaseIcon[];
+  negateEventTimings?: import("./dsl").PhaseIcon[];
   preventOpDecrease?: true;
   /** 「DPがN以下→ブロック失敗」追加判定失敗條件（†5-15-3；P02-039） */
   blockFailIfDpMax?: number;
@@ -148,7 +156,7 @@ export interface Turn1Entry {
 }
 
 /** 引擎內部 action（cost 支付）；與 DSL Action 共用執行管線 */
-export type RtAction = Action | { op: "_payGuts"; count: number } | { op: "_payGutsAny"; count: number } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number; perArea?: true } | { op: "_dropEventAreaCost"; count: number; filter?: { affiliation?: string; playTimingAny?: import("./dsl").PhaseIcon[] } } | { op: "_placeSelfOnDeckBottomCost" } | { op: "_placeGutsOnSelfCost"; filter: { names?: string[] } } | { op: "_placeEventCost"; filter?: { affiliation?: string } } | { op: "_millCost"; count: number } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: import("./dsl").CharaFilter } | { op: "_moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
+export type RtAction = Action | { op: "_payGuts"; count: number; maxCount?: number } | { op: "_payGutsAny"; count: number; maxCount?: number; filter?: import("./dsl").CharaFilter } | { op: "_payGutsFrom"; areas: CourtArea[]; count: number; perArea?: true } | { op: "_dropEventAreaCost"; count: number; maxCount?: number; filter?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT"; playTimingAny?: import("./dsl").PhaseIcon[] } } | { op: "_placeSelfOnDeckBottomCost" } | { op: "_placeGutsOnSelfCost"; filter: { names?: string[] } } | { op: "_placeEventCost"; filter?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT"; position?: string } } | { op: "_millCost"; count: number; upTo?: true } | { op: "_dropCharaCost"; area: CourtArea; filter?: import("./dsl").CharaFilter } | { op: "_dropSelfCourt" } | { op: "_selfToDeckBottom" } | { op: "_dropHandCost"; count: number; filter?: import("./dsl").CharaFilter } | { op: "_moveOpponentEventCost"; filter?: { names?: string[]; affiliation?: string }; destination: "deckBottom" };
 
 export interface EffectFrame {
   actions: RtAction[];
@@ -157,10 +165,10 @@ export interface EffectFrame {
 
 /** 效果解決中的待輸入點 */
 export type Awaiting =
-  | { kind: "confirm"; what: "gate" | "mill" | "draw"; costs?: Cost[]; then: Action[]; else?: Action[]; count?: number; prompt: string }
+  | { kind: "confirm"; what: "gate" | "mill" | "draw" | "shuffle"; chooser?: PlayerId; costs?: Cost[]; then: Action[]; else?: Action[]; count?: number; prompt: string }
   | {
       kind: "cards";
-      purpose: "guts" | "dropHand" | "dropEventArea" | "target" | "tutor" | "twoPick1" | "twoPick2" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "dropToHand" | "dropToDeckBottom" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost" | "swapGutsA" | "swapGutsB";
+      purpose: "guts" | "dropHand" | "dropEventArea" | "target" | "tutor" | "twoPick1" | "twoPick2" | "moveToHand" | "gutsToHand" | "gutsToHandAny" | "deployFromDrop" | "deployFromHand" | "dropToHand" | "dropToEventArea" | "dropToGuts" | "dropToDeckBottom" | "forceDrop" | "eventToHand" | "handToBottom" | "handToTop" | "deployFromGuts" | "placeEvent" | "placeEventOpponent" | "dropChara" | "dropOppGuts" | "moveGuts" | "handToGuts" | "moveOpponentEvent" | "moveOpponentEventCost" | "swapGutsA" | "swapGutsB" | "tutorBottom";
       /** 決策者（預設＝效果 master；forceDrop＝對手）†6-11-2 */
       chooser?: PlayerId;
       candidates: number[];
@@ -171,6 +179,8 @@ export type Awaiting =
       amount?: number;
       /** deployFromDrop 用 */
       area?: CourtArea;
+      /** swapGuts 用：第一個互換區域が "hand" の場合 true（P04-064） */
+      swapFromHand?: true;
       /** swapGuts 用：第二個互換區域（area＝第一區） */
       areaB?: CourtArea;
       destination?: "drop" | "deckBottom";
@@ -183,6 +193,8 @@ export type Awaiting =
       pick2?: import("./dsl").CharaFilter;
       prompt: string;
     }
+  // [Codex 2026-10-28] 只暴露張數，不提供未公開的牌組 UID。
+  | { kind: "option"; purpose: "millCost"; labels: string[]; prompt: string }
   | { kind: "option"; purpose: "param"; targetUid: number; amount: number; options: ParamName[]; prompt: string }
   /** 「以下から1つを選んで使える」：labels 與 branches 對應；optional 時尾端附「不使用」 */
   | { kind: "option"; purpose: "chooseOne"; labels: string[]; branches: Action[][]; prompt: string };
@@ -207,6 +219,8 @@ export interface EffectCtx {
   milled?: number[];
   /** 本技能付出的ガッツ（paidGutsAll 條件；P02-050） */
   paidGuts?: number[];
+  /** cost dropFromEventArea 棄掉的張數（droppedEventCount 條件；PR-081） */
+  droppedEventCount?: number;
   /** 解決完且有任一部分執行 → 套用ターン1（†9-6-3） */
   turn1: boolean;
   anyExecuted: boolean;

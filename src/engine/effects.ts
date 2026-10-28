@@ -96,6 +96,11 @@ export function deployCard(
     log(state, p, `${cardOf(db, state, uid).nameJa} 以「${opts.nameChoice}」之名登場`);
   }
   const ps = state.players[p];
+  if (opts.origin !== "hand") {
+    state.modifiers.push({ target: uid, param: "attack", amount: 0, kind: "skillDeployed", source: uid });
+  } else {
+    state.modifiers = state.modifiers.filter((m) => !(m.kind === "skillDeployed" && m.target === uid));
+  }
   if (area === "block") {
     state.blockDeployedThisTurn[p]++;
     if (opts.origin === "hand") state.blockHandDeploysThisTurn[p]++;
@@ -133,6 +138,10 @@ export function deployCard(
         if (coveredUid === null) return;
         if (!s.trigger.overNames.map(normName).includes(nameOf(db, state, coveredUid))) return;
       }
+      if (s.trigger.overFilter) {
+        if (coveredUid === null) return;
+        if (!matchFilter(db, state, coveredUid, s.trigger.overFilter, area)) return;
+      }
       enqueue(state, { player: p, source: uid, kind: "passive", skillIndex: i, origin: opts.origin === "hand" ? "hand" : "other", byCard: opts.byCard, desc: `${nameOf(db, state, uid)} 的登場技能` });
     });
   }
@@ -143,7 +152,10 @@ export function deployCard(
     if (!d2) continue;
     d2.skills.forEach((s, i) => {
       if (s.kind !== "passive" || s.trigger.on !== "allyDeploy") return;
+      if (s.areaIcons && !s.areaIcons.includes(c.area) && !s.areaIcons.includes("court")) return;
       if (s.trigger.area && !s.trigger.area.includes(area)) return;
+      const firstAct = s.actions[0];
+      if ((firstAct?.op === "gate" || firstAct?.op === "if") && firstAct.cond?.some((cond) => cond.type === "deployedFromHand") && opts.origin !== "hand") return;
       enqueue(state, { player: p, source: c.uid, kind: "passive", skillIndex: i, triggerUid: uid, origin: opts.origin === "hand" ? "hand" : "other", desc: `${nameOf(db, state, c.uid)} 的技能` });
     });
   }
@@ -459,7 +471,7 @@ export function playEvent(db: CardDb, state: GameState, uid: number): void {
   state.players[p].eventArea.push(uid);
   log(state, p, `打出事件卡 ${nameOf(db, state, uid)}`, { kind: "event-card", player: p, uid });
   if (isSkillInvalid(db, state, p, uid)) {
-    log(state, p, `${nameOf(db, state, uid)} 的技能已被ターン1無效化，不發生效果`);
+    log(state, p, `${nameOf(db, state, uid)} 的技能已無效化，不發生效果`);
     enqueueEventPlayed(db, state, p, uid);
     return; // Q300
   }
@@ -604,7 +616,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         log(state, p, "「手札に加えられない」生效中，無法回收");
         break;
       }
-      const cands = ps.drop.filter((u) => {
+      const pool = a.fromMilled
+        ? (ctx.milled ?? []).filter((u) => ps.drop.includes(u))
+        : a.includeEventArea
+          ? [...ps.eventArea, ...ps.drop]
+          : ps.drop;
+      const cands = pool.filter((u) => {
         const c = cardOf(db, state, u);
         if (a.cardType && c.type !== a.cardType) return false;
         return matchFilter(db, state, u, a.filter);
@@ -616,7 +633,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         if (distinct < a.count) break;
       }
       const min = a.upTo ? 0 : Math.min(a.count, cands.length);
-      ctx.awaiting = { kind: "cards", purpose: "dropToHand", candidates: cands, min, max: a.count, distinctNames: a.distinctNames, prompt: `從棄牌區選擇要加入手牌的卡${a.distinctNames ? "（卡名須相異）" : ""}${a.upTo ? "（可選 0 張）" : ""}` };
+      ctx.awaiting = { kind: "cards", purpose: "dropToHand", candidates: cands, min, max: a.count, distinctNames: a.distinctNames, prompt: `從${a.includeEventArea ? "事件區或棄牌區" : "棄牌區"}選擇要加入手牌的卡${a.distinctNames ? "（卡名須相異）" : ""}${a.upTo ? "（可選 0 張）" : ""}` };
       break;
     }
     case "forceDrop": {
@@ -694,7 +711,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       ctx.anyExecuted = true;
       log(state, p, `公開牌組頂：${nameOf(db, state, uid)}`);
       if (!banHandAddActive(state, p) && a.names.map(normName).includes(nameOf(db, state, uid))) {
-        ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: [uid], min: 0, max: a.upTo, looked: [uid], prompt: `要把 ${nameOf(db, state, uid)} 加入手牌嗎？（不加則置於牌組底）` };
+        ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: [uid], min: a.mandatory ? 1 : 0, max: a.upTo, looked: [uid], prompt: a.mandatory ? `將 ${nameOf(db, state, uid)} 加入手牌` : `要把 ${nameOf(db, state, uid)} 加入手牌嗎？（不加則置於牌組底）` };
       } else {
         ps.deck.push(ps.deck.shift()!); // 不符 → 牌組底（Q280：以目前卡名比對）
         log(state, p, "公開的卡置於牌組底");
@@ -717,24 +734,17 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
             return true;
           });
       if (cands.length === 0) {
-        for (const uid of looked) {
-          ps.deck.splice(ps.deck.indexOf(uid), 1);
-          ps.deck.push(uid);
-        }
-        log(state, p, "查看的卡置於牌組底");
+        queueTutorBottom(state, ctx, looked);
       } else if (a.addAll) {
-        // 「その中の○○すべてを手札に加える」（P03-014）：符合者全收、其餘置底（無選擇）
-        for (const uid of looked) {
+        // [Codex 2026-10-28] 符合者全收後，剩餘卡仍由技能使用者排序。
+        for (const uid of cands) {
           ps.deck.splice(ps.deck.indexOf(uid), 1);
-          if (cands.includes(uid)) {
-            ps.hand.push(uid);
-            log(state, p, `${nameOf(db, state, uid)} 加入手牌`);
-          } else {
-            ps.deck.push(uid);
-          }
+          ps.hand.push(uid);
+          log(state, p, `${nameOf(db, state, uid)} 加入手牌`);
         }
         ctx.addedToHand = (ctx.addedToHand ?? 0) + cands.length;
         fireHandAdds(state, p, cands.length);
+        queueTutorBottom(state, ctx, looked.filter((uid) => !cands.includes(uid)));
       } else {
         ctx.awaiting = { kind: "cards", purpose: "tutor", candidates: cands, min: 0, max: a.upTo, looked, prompt: "選擇要公開加入手牌的卡（其餘置於牌組底）" };
       }
@@ -770,15 +780,19 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     case "backAttack": {
       // 後排攻擊：發生源を現在の區域からアタックエリアに移して登場（原攻擊手の上に疊む＝原攻擊手はガッツ化），
       // アタックポイントを N に固定（set；Q1477）。OP は攻擊區頂端（＝this）のみ算入。
+      // [Gemini 2026-10-28] 支援手牌發動（HV-PR-082 山本 猛虎 Q1958：手牌公開＋付 Guts 後從手牌登場至攻擊區）。
       const area = charaAreaOf(state, p, ctx.source);
-      if (area === null) break; // 不是キャラ → 不執行
+      const inHand = ps.hand.includes(ctx.source);
+      if (area === null && !inHand) break;
       // 「登場させ」＝登場：登場禁止事項（アタック≠トス同名 †1-4-5-4-1 等）は技能でも不可（†0-2-2；Q1499/Q1500 類推）
       if (deployLegality(db, state, p, ctx.source, "attack", nameOf(db, state, ctx.source), "effect") !== null) {
         log(state, p, `${nameOf(db, state, ctx.source)} 因登場限制無法バックアタック登場`); // Q196 型：cost 已付仍不移動
         break;
       }
-      if (area !== "attack") {
-        const stack = area === "block" ? ps.blockCenter : ps[area];
+      if (inHand) {
+        removeFromHand(state, p, ctx.source);
+      } else if (area !== "attack") {
+        const stack = area === "block" ? ps.blockCenter : ps[area!];
         stack.splice(stack.indexOf(ctx.source), 1); // ガッツ留在原區
       }
       deployCard(db, state, p, ctx.source, "attack", { origin: "backAttack" }); // 登場通知（P03-028 監看用）
@@ -825,14 +839,65 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       if (a.side && (ps.blockSides.length >= 2 || blockDeployMax(state, p, "effect") < 1)) break; // Q398：側邊已滿不解決
       const cands = ps.drop.filter((uid) => {
         const c = cardOf(db, state, uid);
+        if (c.type !== "CHARACTER" || !matchFilter(db, state, uid, a.filter) || !canDeployTo(db, state, p, uid, a.area, undefined, "effect")) return false;
+        if (a.side && charasOf(state, p).some((x) => x.area === "block" && nameOf(db, state, x.uid) === nameOf(db, state, uid))) return false;
+        return true;
+      });
+      if (cands.length === 0) break;
+      if (cands.length === 1 && !a.upTo) {
+        completeDeployFromDrop(db, state, ctx, cands[0]!, a.area, a.then ?? [], a.side);
+      } else {
+        const min = a.upTo ? 0 : 1;
+        ctx.awaiting = { kind: "cards", purpose: "deployFromDrop", candidates: cands, min, max: 1, area: a.area, then: [...(a.then ?? []), ...(a.side ? [{ op: "__side" } as unknown as Action] : [])], prompt: `選擇從棄牌區登場的卡${a.upTo ? "（可選 0 張）" : ""}` }; // Q303：強制（upTo 時可 0）
+      }
+      break;
+    }
+    case "deployFromHand": {
+      const cands = ps.hand.filter((uid) => {
+        const c = cardOf(db, state, uid);
         return c.type === "CHARACTER" && matchFilter(db, state, uid, a.filter) && canDeployTo(db, state, p, uid, a.area, undefined, "effect");
       });
       if (cands.length === 0) break;
-      if (cands.length === 1) {
-        completeDeployFromDrop(db, state, ctx, cands[0]!, a.area, a.then ?? [], a.side);
-      } else {
-        ctx.awaiting = { kind: "cards", purpose: "deployFromDrop", candidates: cands, min: 1, max: 1, area: a.area, then: [...(a.then ?? []), ...(a.side ? [{ op: "__side" } as unknown as Action] : [])], prompt: "選擇從棄牌區登場的卡" }; // Q303：強制
+      ctx.awaiting = { kind: "cards", purpose: "deployFromHand", candidates: cands, min: 0, max: Math.min(a.upTo, cands.length), area: a.area, then: a.then, prompt: `選擇從手牌登場到${areaLabelZh(a.area)}的卡（可選 0 張）` };
+      break;
+    }
+    case "deploySelfToArea": {
+      const area = charaAreaOf(state, p, ctx.source);
+      if (area === null) break;
+      if (!canDeployTo(db, state, p, ctx.source, a.area, nameOf(db, state, ctx.source), "effect")) {
+        log(state, p, `${nameOf(db, state, ctx.source)} 因登場限制無法移動到${areaLabelZh(a.area)}`);
+        break;
       }
+      if (area !== a.area) {
+        if (ps.blockSides.includes(ctx.source)) {
+          ps.blockSides.splice(ps.blockSides.indexOf(ctx.source), 1);
+        } else {
+          const stack = area === "block" ? ps.blockCenter : ps[area];
+          stack.splice(stack.indexOf(ctx.source), 1);
+        }
+      }
+      deployCard(db, state, p, ctx.source, a.area, { origin: "other", byCard: nameOf(db, state, ctx.source) });
+      ctx.anyExecuted = true;
+      log(state, p, `${nameOf(db, state, ctx.source)} 移動登場 → ${areaLabelZh(a.area)}`);
+      break;
+    }
+    case "dropToEventArea": {
+      const cands = ps.drop.filter((u) => {
+        const c = cardOf(db, state, u);
+        if (a.filter.cardType && c.type !== a.filter.cardType) return false;
+        if (a.filter.affiliation && !c.affiliations.includes(a.filter.affiliation)) return false;
+        return true;
+      });
+      if (cands.length === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "dropToEventArea", candidates: cands, min: 0, max: Math.min(a.upTo, cands.length), prompt: "從棄牌區選擇要置入事件區的卡（可選 0 張）" };
+      break;
+    }
+    case "dropToGuts": {
+      const dest = a.area === "block" ? ps.blockCenter : ps[a.area];
+      if (topChara(dest) === null) break;
+      const cands = ps.drop.filter((u) => cardOf(db, state, u).type === "CHARACTER" && matchFilter(db, state, u, a.filter));
+      if (cands.length === 0) break;
+      ctx.awaiting = { kind: "cards", purpose: "dropToGuts", candidates: cands, min: 0, max: Math.min(a.upTo, cands.length), area: a.area, prompt: `從棄牌區選擇要放到${areaLabelZh(a.area)}當 Guts 的卡（可選 0 張）` };
       break;
     }
     case "moveCharaToHand": {
@@ -847,7 +912,24 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
             return top !== null && matchFilter(db, state, top, a.filter, a.from) ? [top] : [];
           })();
       if (cands.length === 0) break;
-      ctx.awaiting = { kind: "cards", purpose: "moveToHand", candidates: cands, min: 0, max: a.upTo, prompt: `要把 ${nameOf(db, state, cands[0]!)} 加入手牌嗎？（可選 0 張）` }; // Q306：まで可選 0
+      const min = Math.min(a.min ?? 0, cands.length);
+      if (min === 1 && a.upTo === 1 && cands.length === 1) {
+        const uid = cands[0]!;
+        for (const key of ["serve", "receive", "toss", "attack", "blockCenter"] as const) {
+          const i = ps[key].indexOf(uid);
+          if (i >= 0) { ps[key].splice(i, 1); break; }
+        }
+        const side = ps.blockSides.indexOf(uid);
+        if (side >= 0) ps.blockSides.splice(side, 1);
+        purgeModifiers(state, uid);
+        ps.hand.push(uid);
+        ctx.anyExecuted = true;
+        ctx.addedToHand = (ctx.addedToHand ?? 0) + 1;
+        fireHandAdds(state, p, 1);
+        log(state, p, `${nameOf(db, state, uid)} 回到手牌`);
+      } else {
+        ctx.awaiting = { kind: "cards", purpose: "moveToHand", candidates: cands, min, max: Math.min(a.upTo, cands.length), prompt: `要把 ${nameOf(db, state, cands[0]!)} 加入手牌嗎？${min ? "" : "（可選 0 張）"}` }; // Q306：まで可選 0
+      }
       break;
     }
     case "gutsToHand": {
@@ -969,7 +1051,18 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     case "preventParamDecrease": {
       // 推 noDecrease 守衛 modifier（effParam 會據此忽略該 param 負向修正；クリンナップ/離場時清除）。
       // param "all"＝全 5 パラメータに守衛（P03-041）。
+      // [Gemini 2026-10-28] affiliation＝自分の指定所属キャラ全体守衛（P04-070 北 信介）。
       const params: ParamName[] = a.param === "all" ? ["serve", "block", "receive", "toss", "attack"] : [a.param];
+      if (a.affiliation) {
+        for (const pr of params) {
+          if (state.modifiers.some((m) => m.kind === "noDecrease" && m.player === p && m.affiliation === a.affiliation && m.param === pr)) continue;
+          state.modifiers.push({ target: -1, player: p, affiliation: a.affiliation, param: pr, amount: 0, kind: "noDecrease", source: ctx.source });
+        }
+        ctx.anyExecuted = true;
+        log(state, p, `自己的${a.affiliation}角色的${a.param === "all" ? "パラメータ" : paramLabel(a.param)}本回合不會被降低`);
+        break;
+      }
+      if (!a.target) break;
       const guard = (uid: number) => {
         for (const pr of params) {
           if (state.modifiers.some((m) => m.kind === "noDecrease" && m.target === uid && m.param === pr)) continue;
@@ -997,6 +1090,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         ps.drop.push(uid);
         milled.push(uid);
       }
+      ctx.milled = [...(ctx.milled ?? []), ...milled];
       if (n > 0) {
         ctx.anyExecuted = true;
         log(state, p, `牌組頂 ${n} 張置入棄牌區`);
@@ -1012,10 +1106,12 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     }
     case "dropOpponentGuts": {
       const opp = other(p);
-      const stack = a.area === "block" ? state.players[opp].blockCenter : state.players[opp][a.area];
-      const guts = stack.slice(0, -1);
+      const rawGuts = a.area
+        ? (a.area === "block" ? state.players[opp].blockCenter : state.players[opp][a.area]).slice(0, -1)
+        : allGutsOf(state, opp);
+      const guts = a.filter ? rawGuts.filter((u) => matchFilter(db, state, u, a.filter!)) : rawGuts;
       if (guts.length === 0) break;
-      ctx.awaiting = { kind: "cards", purpose: "dropOppGuts", candidates: guts, min: 0, max: a.upTo, prompt: `選擇要棄掉的對手 ${a.area} 區 Guts（最多 ${a.upTo} 張；Q400 由你選）` };
+      ctx.awaiting = { kind: "cards", purpose: "dropOppGuts", candidates: guts, min: 0, max: Math.min(a.upTo, guts.length), prompt: `選擇要棄掉的對手${a.area ? ` ${a.area} 區` : ""} Guts（最多 ${a.upTo} 張；Q400 由你選）` };
       break;
     }
     case "coinFlip": {
@@ -1056,6 +1152,8 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         maxCount: a.restriction.maxCount,
         banBaseParamMin: a.restriction.banBaseParamMin,
         banHandAdd: a.restriction.banHandAdd,
+        banDrawPhaseHandAdd: a.restriction.banDrawPhaseHandAdd,
+        banNames: a.restriction.banNames,
         fromHandOnly: a.restriction.fromHandOnly,
         negateCenterBlock: a.restriction.negateCenterBlock,
         banOneTouch: a.restriction.banOneTouch,
@@ -1064,6 +1162,7 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
         banPositions: a.restriction.banPositions,
         disableSkills: a.restriction.disableSkills,
         banEventTimings: a.restriction.banEventTimings,
+        negateEventTimings: a.restriction.negateEventTimings,
         preventOpDecrease: a.restriction.preventOpDecrease,
         blockFailIfDpMax: a.restriction.blockFailIfDpMax,
         setNo: state.setNo,
@@ -1076,9 +1175,9 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "keyword": {
-      log(state, p, `［${a.name}${a.n !== undefined ? `(${a.n})` : ""}］`);
+      log(state, p, `［${a.name}${a.affiliation ? `〈${a.affiliation}〉` : ""}${a.n !== undefined ? `(${a.n})` : ""}］`);
       ctx.anyExecuted = true;
-      pushFrame(ctx, keywordActions(state, a.name, a.n ?? 0));
+      pushFrame(ctx, keywordActions(state, a.name, a.n ?? 0, a.affiliation));
       break;
     }
     case "setOwnOp": {
@@ -1187,28 +1286,55 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "drawOpponent": {
+      if (banHandAddActive(state, other(p))) {
+        log(state, other(p), "「手札に加えられない」生效中，無法抽牌");
+        break;
+      }
+      if (a.upTo) {
+        ctx.awaiting = { kind: "confirm", what: "draw", chooser: other(p), then: [], count: a.count, prompt: `要抽 ${a.count} 張卡嗎？（可選擇抽 ${a.count} 張或不抽）` };
+        break;
+      }
       const n = drawCards(state, other(p), a.count);
       if (n > 0) { ctx.anyExecuted = true; log(state, p, `相手がカードを ${n} 張引く`); }
       break;
     }
     case "swapGuts": {
-      // 2 エリアの filter 一致ガッツを 1 枚ずつ入れ替える。
-      // Q1526：入れ替えるには両エリアとも対象ガッツを選べる必要がある（片方なければ不可）。
-      // Q1527：“1枚ずつまで”＝0〜1 枚、入れ替えないことも選べる → 両エリアに候補がある時は
-      //         「どのガッツを換えるか／換えないか」をプレイヤーに選ばせる（swapGutsA→swapGutsB の2段）。
+      // 2 エリア（または hand と CourtArea P04-064）の filter 一致ガッツ／キャラカードを 1 枚ずつ入れ替える。
+      // Q1526/Q1906：入れ替えるには両エリアとも対象カードを選べる必要がある（片方なければ不可）。
+      // Q1908：areaA === "hand" の場合、ガッツを手札に加えるため banHandAddActive 中は不可。
+      if (a.areaA === "hand" && banHandAddActive(state, p)) {
+        log(state, p, "「手札に加えられない」生效中，無法將 Guts 換入手牌");
+        break;
+      }
       const gutsOf = (area: CourtArea) => {
         const stack = area === "block" ? ps.blockCenter : ps[area];
         return stack.slice(0, -1).filter((u) => !a.filter || matchFilter(db, state, u, a.filter, area));
       };
-      const ga = gutsOf(a.areaA);
+      const ga = a.areaA === "hand"
+        ? ps.hand.filter((u) => cardOf(db, state, u).type === "CHARACTER" && (!a.filter || matchFilter(db, state, u, a.filter)))
+        : gutsOf(a.areaA);
       const gb = gutsOf(a.areaB);
-      if (ga.length === 0 || gb.length === 0) break; // 両方選べない → 入れ替えない（Q1526）
-      // looked に areaB 側候補を載せて第2段へ引き継ぐ（state はまだ動かさない）
+      if (ga.length === 0 || gb.length === 0) break; // 両方選べない → 入れ替えない（Q1526/Q1906）
       ctx.awaiting = {
         kind: "cards", purpose: "swapGutsA", candidates: ga, min: 0, max: 1,
-        area: a.areaA, areaB: a.areaB, looked: gb,
-        prompt: `選擇要從「${areaLabelZh(a.areaA)}」互換的 Guts（可選 0 張＝不互換）`,
+        ...(a.areaA === "hand" ? { swapFromHand: true } : { area: a.areaA }),
+        areaB: a.areaB, looked: gb,
+        prompt: `選擇要從「${a.areaA === "hand" ? "手牌" : areaLabelZh(a.areaA)}」互換的卡（可選 0 張＝不互換）`,
       };
+      break;
+    }
+    case "shuffleDeck": {
+      if (a.optional) {
+        ctx.awaiting = {
+          kind: "confirm",
+          what: "shuffle",
+          then: [],
+          prompt: a.returnFromZones ? "要將指定卡片洗回牌組嗎？" : "要將牌組洗牌嗎？",
+        };
+        ctx.frames[ctx.frames.length - 1]!.pc--;
+        break;
+      }
+      execShuffleDeck(db, state, ctx, a);
       break;
     }
     case "lookTopTwoPick": {
@@ -1230,27 +1356,29 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       // 安全網 2：特例腳本逃生口。script 讀 state 後回傳 Action[] 塞回解釋器（不直接改 state）。
       const fn = SCRIPTS[a.id];
       if (!fn) throw new Error(`未知 script id "${a.id}"`);
-      const produced = fn({ db, state, player: p, source: ctx.source, lastTarget: ctx.lastTarget, triggerUid: ctx.triggerUid });
+      const produced = fn({ db, state, player: p, source: ctx.source, lastTarget: ctx.lastTarget, triggerUid: ctx.triggerUid, paidGuts: ctx.paidGuts });
       pushFrame(ctx, produced); // 產生的 actions 執行時自然設 anyExecuted
       break;
     }
     case "_payGuts": {
       const guts = gutsFor(state, p, ctx.source);
       if (guts.length < a.count) throw new Error("Guts 不足（宣言驗證應已擋下）");
-      if (guts.length === a.count) {
+      const max = Math.min(a.maxCount ?? a.count, guts.length);
+      if (guts.length === a.count && max === a.count) {
         payGuts(db, state, ctx, guts);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max: a.count, prompt: `選擇要支付的 ${a.count} 張 Guts` };
+        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max, prompt: `選擇要支付的 ${a.count === max ? a.count : `${a.count}~${max}`} 張 Guts` };
       }
       break;
     }
     case "_payGutsAny": {
-      const guts = allGutsOf(state, p);
+      const guts = a.filter ? allGutsOf(state, p).filter((u) => matchFilter(db, state, u, a.filter!)) : allGutsOf(state, p);
       if (guts.length < a.count) throw new Error("Guts 不足（宣言驗證應已擋下）");
-      if (guts.length === a.count) {
+      const max = Math.min(a.maxCount ?? a.count, guts.length);
+      if (guts.length === a.count && max === a.count && a.maxCount === undefined) {
         payGuts(db, state, ctx, guts);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max: a.count, prompt: `從自己的場上選擇要支付的 ${a.count} 張 Guts` };
+        ctx.awaiting = { kind: "cards", purpose: "guts", candidates: guts, min: a.count, max, prompt: `從自己的場上選擇要支付的 ${a.count === max ? a.count : `${a.count}~${max}`} 張 Guts` };
       }
       break;
     }
@@ -1279,6 +1407,16 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       break;
     }
     case "_millCost": {
+      if (a.upTo) {
+        const max = Math.min(a.count, ps.deck.length);
+        if (max === 0) {
+          ctx.milled = [...(ctx.milled ?? [])];
+          break;
+        }
+        // [Codex 2026-10-28] 卡文沒有查看權限；選張數後才公開棄掉的頂牌。
+        ctx.awaiting = { kind: "option", purpose: "millCost", labels: Array.from({ length: max + 1 }, (_, n) => `棄 ${n} 張`), prompt: `從牌組頂棄幾張？（0～${max}）` };
+        break;
+      }
       const milled: number[] = [];
       for (let k = 0; k < a.count && ps.deck.length > 0; k++) {
         const uid = ps.deck.shift()!;
@@ -1303,16 +1441,19 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     case "_placeEventCost": {
       const cands = ps.hand.filter((u) => {
         const card = cardOf(db, state, u);
-        return card.type === "EVENT" && (!a.filter?.affiliation || card.affiliations.includes(a.filter.affiliation));
+        const wantType = a.filter?.cardType ?? "EVENT";
+        return card.type === wantType
+          && (!a.filter?.affiliation || card.affiliations.includes(a.filter.affiliation))
+          && (!a.filter?.position || card.positions.includes(a.filter.position));
       });
-      if (cands.length === 0) throw new Error("手牌無事件卡（宣言驗證應已擋下）");
+      if (cands.length === 0) throw new Error("手牌無符合條件的卡（宣言驗證應已擋下）");
       if (cands.length === 1) {
         removeFromHand(state, p, cands[0]!);
         ps.eventArea.push(cands[0]!);
         ctx.anyExecuted = true;
         log(state, p, `${nameOf(db, state, cands[0]!)} 置於事件區（cost；技能不發動 Q337）`);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "placeEvent", candidates: cands, min: 1, max: 1, prompt: "選擇 1 張事件卡置於事件區（技能不發動）" };
+        ctx.awaiting = { kind: "cards", purpose: "placeEvent", candidates: cands, min: 1, max: 1, prompt: "選擇 1 張卡置於事件區（技能不發動）" };
       }
       break;
     }
@@ -1368,16 +1509,18 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
     case "_dropEventAreaCost": {
       const cands = ps.eventArea.filter((u) => matchEventAreaFilter(db, state, u, a.filter));
       if (cands.length < a.count) throw new Error("事件區卡片不足（宣言驗證應已擋下）");
-      if (cands.length === a.count) {
+      const max = Math.min(a.maxCount ?? a.count, cands.length);
+      if (cands.length === a.count && max === a.count) {
         for (const uid of cands) {
           ps.eventArea.splice(ps.eventArea.indexOf(uid), 1);
           ps.drop.push(uid);
           fireSelfDroppedFromEvent(state, p, uid); // P03-091
         }
+        ctx.droppedEventCount = (ctx.droppedEventCount ?? 0) + cands.length;
         ctx.anyExecuted = true;
         log(state, p, `從事件區棄 ${a.count} 張（cost）`);
       } else {
-        ctx.awaiting = { kind: "cards", purpose: "dropEventArea", candidates: cands, min: a.count, max: a.count, prompt: `從事件區選擇要棄掉的 ${a.count} 張（cost）` };
+        ctx.awaiting = { kind: "cards", purpose: "dropEventArea", candidates: cands, min: a.count, max, prompt: `從事件區選擇要棄掉的 ${a.count === max ? a.count : `${a.count}~${max}`} 張（cost）` };
       }
       break;
     }
@@ -1493,11 +1636,52 @@ function completeDeployFromDrop(db: CardDb, state: GameState, ctx: EffectCtx, ui
   const i = ps.drop.indexOf(uid);
   if (i < 0) throw new Error("卡片不在棄牌區");
   ps.drop.splice(i, 1);
-  deployCard(db, state, ctx.player, uid, area, { origin: "other", blockSide: side });
+  deployCard(db, state, ctx.player, uid, area, { origin: "other", blockSide: side, byCard: nameOf(db, state, ctx.source) });
   log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區登場 → ${area}`);
   ctx.lastTarget = uid;
   ctx.anyExecuted = true;
   pushFrame(ctx, [...then]);
+}
+
+function execShuffleDeck(db: CardDb, state: GameState, ctx: EffectCtx, a: Extract<Action, { op: "shuffleDeck" }>): void {
+  const ps = state.players[ctx.player];
+  if (a.returnFromZones) {
+    let returned = 0;
+    for (const z of a.returnFromZones) {
+      const zoneArr = ps[z];
+      const keep: number[] = [];
+      for (const uid of zoneArr) {
+        if (!a.affiliation || cardOf(db, state, uid).affiliations.includes(a.affiliation)) {
+          ps.deck.push(uid);
+          returned++;
+        } else {
+          keep.push(uid);
+        }
+      }
+      ps[z] = keep;
+    }
+    if (returned > 0) log(state, ctx.player, `將 ${returned} 張卡放回牌組`);
+  }
+  for (let i = ps.deck.length - 1; i > 0; i--) {
+    const j = Math.floor(nextRandom(state) * (i + 1));
+    [ps.deck[i], ps.deck[j]] = [ps.deck[j]!, ps.deck[i]!];
+  }
+  ctx.anyExecuted = true;
+  log(state, ctx.player, "洗牌組");
+}
+
+// [Codex 2026-10-28] 任意置底順序：逐張選擇，沿用私有 effect-cards 決策。
+// 卡在決策期間仍留在牌組區域，避免守恆／序列化出現暫存區遺失。
+function queueTutorBottom(state: GameState, ctx: EffectCtx, remaining: number[]): void {
+  if (remaining.length > 1) {
+    ctx.awaiting = { kind: "cards", purpose: "tutorBottom", candidates: remaining, min: 1, max: 1, prompt: "選擇下一張置於牌組底的卡（依序置底）" };
+  } else if (remaining.length === 1) {
+    const ps = state.players[ctx.player];
+    const uid = remaining[0]!;
+    ps.deck.splice(ps.deck.indexOf(uid), 1);
+    ps.deck.push(uid);
+    log(state, ctx.player, "查看的卡已依選定順序置於牌組底");
+  }
 }
 
 // ---------- 效果決策套用 ----------
@@ -1507,7 +1691,7 @@ export function pendingDecisionForAwaiting(state: GameState): void {
   if (!ctx?.awaiting) return;
   const aw = ctx.awaiting;
   if (aw.kind === "confirm") {
-    state.pendingDecision = { player: ctx.player, type: "effect-confirm", prompt: aw.prompt };
+    state.pendingDecision = { player: aw.chooser ?? ctx.player, type: "effect-confirm", prompt: aw.prompt };
   } else if (aw.kind === "cards") {
     state.pendingDecision = { player: aw.chooser ?? ctx.player, type: "effect-cards", prompt: aw.prompt, candidates: aw.candidates, min: aw.min, max: aw.max };
   } else if (aw.purpose === "param") {
@@ -1533,12 +1717,22 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         if (aw.else) pushFrame(ctx, [...aw.else]);
       }
     } else if (aw.what === "draw") {
+      const drawer = aw.chooser ?? ctx.player;
       if (accept) {
-        const n = drawCards(state, ctx.player, aw.count ?? 1);
+        const n = drawCards(state, drawer, aw.count ?? 1);
         if (n > 0) ctx.anyExecuted = true;
-        log(state, ctx.player, n ? `抽 ${n} 張卡` : "牌組已空，無法抽牌");
+        log(state, drawer, n ? `抽 ${n} 張卡` : "牌組已空，無法抽牌");
       } else {
-        log(state, ctx.player, "選擇不抽牌");
+        log(state, drawer, "選擇不抽牌");
+      }
+    } else if (aw.what === "shuffle") {
+      const frame = ctx.frames[ctx.frames.length - 1]!;
+      const act = frame.actions[frame.pc]! as Extract<Action, { op: "shuffleDeck" }>;
+      frame.pc++;
+      if (accept) {
+        execShuffleDeck(db, state, ctx, act);
+      } else {
+        log(state, ctx.player, "選擇不洗牌組");
       }
     } else {
       // mill：pc 已回退停在 millTop action，這裡直接完成它
@@ -1604,11 +1798,19 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
           ps.drop.push(uid);
           fireSelfDroppedFromEvent(state, ctx.player, uid); // P03-091
         }
+        ctx.droppedEventCount = (ctx.droppedEventCount ?? 0) + uids.length;
         if (uids.length) {
           ctx.anyExecuted = true;
           log(state, ctx.player, `從事件區棄 ${uids.length} 張（cost）`);
         }
         break;
+      case "tutorBottom": {
+        const uid = uids[0]!;
+        ps.deck.splice(ps.deck.indexOf(uid), 1);
+        ps.deck.push(uid);
+        queueTutorBottom(state, ctx, aw.candidates.filter((u) => u !== uid));
+        break;
+      }
       case "dropToDeckBottom":
         for (const uid of uids) {
           ps.drop.splice(ps.drop.indexOf(uid), 1);
@@ -1620,21 +1822,15 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         }
         break;
       case "tutor": {
-        for (const uid of aw.looked ?? aw.candidates) {
-          const i = ps.deck.indexOf(uid);
-          if (i < 0) continue;
-          ps.deck.splice(i, 1);
-          if (uids.includes(uid)) {
-            ps.hand.push(uid);
-            ctx.anyExecuted = true;
-            log(state, ctx.player, `${nameOf(db, state, uid)} 加入手牌`);
-          } else {
-            ps.deck.push(uid);
-            log(state, ctx.player, "看過的卡置於牌組底");
-          }
+        for (const uid of uids) {
+          ps.deck.splice(ps.deck.indexOf(uid), 1);
+          ps.hand.push(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 加入手牌`);
         }
         ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
-        fireHandAdds(state, ctx.player, uids.length); // 非抽牌入手（Q321）
+        fireHandAdds(state, ctx.player, uids.length);
+        queueTutorBottom(state, ctx, (aw.looked ?? aw.candidates).filter((uid) => !uids.includes(uid)));
         break;
       }
       case "twoPick1": {
@@ -1684,22 +1880,33 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
         const gb = aw.looked ?? [];
         ctx.awaiting = {
           kind: "cards", purpose: "swapGutsB", candidates: gb, min: 1, max: 1,
-          area: aw.area, areaB: aw.areaB, looked: [uids[0]!], // looked＝第1段で選んだ areaA 側 uid
+          area: aw.area, swapFromHand: aw.swapFromHand, areaB: aw.areaB, looked: [uids[0]!], // looked＝第1段で選んだ areaA 側 uid
           prompt: `選擇要從「${areaLabelZh(aw.areaB!)}」互換的 Guts`,
         };
         break;
       }
       case "swapGutsB": {
-        // 第2段：areaB 側を選び、第1段の areaA 側と入れ替える（ガッツ層＝底へ）。
+        // 第2段：areaB 側を選び、第1段の areaA 側と入れ替える（ガッツ層＝底へ；swapFromHand 時は手札と入れ替え P04-064 Q1909）。
         const ua = (aw.looked ?? [])[0]!; // areaA 側
         const ub = uids[0]!;              // areaB 側
-        const areaA = aw.area!, areaB = aw.areaB!;
-        const sa = areaA === "block" ? ps.blockCenter : ps[areaA];
+        const areaB = aw.areaB!;
         const sb = areaB === "block" ? ps.blockCenter : ps[areaB];
-        sa.splice(sa.indexOf(ua), 1); sb.splice(sb.indexOf(ub), 1);
-        sa.unshift(ub); sb.unshift(ua);
+        sb.splice(sb.indexOf(ub), 1);
+        sb.unshift(ua);
+        if (aw.swapFromHand) {
+          removeFromHand(state, ctx.player, ua);
+          ps.hand.push(ub);
+          ctx.addedToHand = (ctx.addedToHand ?? 0) + 1;
+          fireHandAdds(state, ctx.player, 1);
+          log(state, ctx.player, `手牌與 ${areaLabelZh(areaB)} 的 Guts 互換`);
+        } else {
+          const areaA = aw.area!;
+          const sa = areaA === "block" ? ps.blockCenter : ps[areaA];
+          sa.splice(sa.indexOf(ua), 1);
+          sa.unshift(ub);
+          log(state, ctx.player, `${areaLabelZh(areaA)} と ${areaLabelZh(areaB)} の Guts を入れ替え`);
+        }
         ctx.anyExecuted = true;
-        log(state, ctx.player, `${areaLabelZh(areaA)} と ${areaLabelZh(areaB)} の Guts を入れ替え`);
         break;
       }
       case "moveToHand": {
@@ -1755,15 +1962,55 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
       }
       case "dropToHand": {
         for (const uid of uids) {
-          const i = ps.drop.indexOf(uid);
-          if (i < 0) throw new Error("卡片不在棄牌區");
-          ps.drop.splice(i, 1);
+          const iDrop = ps.drop.indexOf(uid);
+          const iEvent = ps.eventArea.indexOf(uid);
+          if (iDrop >= 0) {
+            ps.drop.splice(iDrop, 1);
+          } else if (iEvent >= 0) {
+            ps.eventArea.splice(iEvent, 1);
+          } else {
+            throw new Error("卡片不在棄牌區或事件區");
+          }
           ps.hand.push(uid);
           ctx.anyExecuted = true;
-          log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區加入手牌`);
+          log(state, ctx.player, `${nameOf(db, state, uid)} 加入手牌`);
         }
         ctx.addedToHand = (ctx.addedToHand ?? 0) + uids.length;
         fireHandAdds(state, ctx.player, uids.length);
+        break;
+      }
+      case "dropToEventArea": {
+        for (const uid of uids) {
+          const i = ps.drop.indexOf(uid);
+          if (i < 0) throw new Error("卡片不在棄牌區");
+          ps.drop.splice(i, 1);
+          ps.eventArea.push(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區置於事件區（技能不發動 Q1916）`);
+        }
+        break;
+      }
+      case "dropToGuts": {
+        const dest = aw.area === "block" ? ps.blockCenter : ps[aw.area!];
+        for (const uid of uids) {
+          const i = ps.drop.indexOf(uid);
+          if (i < 0) throw new Error("卡片不在棄牌區");
+          ps.drop.splice(i, 1);
+          dest.unshift(uid);
+          ctx.anyExecuted = true;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從棄牌區放到 ${areaLabelZh(aw.area!)} 當 Guts`);
+        }
+        break;
+      }
+      case "deployFromHand": {
+        for (const uid of uids) {
+          removeFromHand(state, ctx.player, uid);
+          deployCard(db, state, ctx.player, uid, aw.area!, { origin: "other", byCard: nameOf(db, state, ctx.source) });
+          ctx.anyExecuted = true;
+          ctx.lastTarget = uid;
+          log(state, ctx.player, `${nameOf(db, state, uid)} 從手牌登場 → ${aw.area}`);
+        }
+        if (uids.length && aw.then) pushFrame(ctx, [...aw.then]);
         break;
       }
       case "eventToHand": {
@@ -1935,11 +2182,15 @@ export function applyEffectDecision(db: CardDb, state: GameState, decision: { ty
     if (aw.kind !== "option") throw new Error("決策型別不符");
     const idx = decision["index"] as number;
     if (aw.purpose === "param") {
-      if (idx < 0 || idx >= aw.options.length) throw new Error("無效的選項");
+      if (!Number.isInteger(idx) || idx < 0 || idx >= aw.options.length) throw new Error("無效的選項");
       ctx.awaiting = null;
       applyMod(db, state, ctx, aw.targetUid, aw.options[idx]!, aw.amount);
+    } else if (aw.purpose === "millCost") {
+      if (!Number.isInteger(idx) || idx < 0 || idx >= aw.labels.length) throw new Error("無效的選項");
+      ctx.awaiting = null;
+      pushFrame(ctx, [{ op: "_millCost", count: idx }]);
     } else {
-      if (idx < 0 || idx >= aw.labels.length) throw new Error("無效的選項");
+      if (!Number.isInteger(idx) || idx < 0 || idx >= aw.labels.length) throw new Error("無效的選項");
       ctx.awaiting = null;
       log(state, ctx.player, `選擇：${aw.labels[idx]}`);
       pushFrame(ctx, [...aw.branches[idx]!]);
@@ -1968,6 +2219,6 @@ export function autoPickCards(db: CardDb, state: GameState): number[] {
     }
     return [];
   }
-  if (aw.purpose === "tutor" || aw.purpose === "twoPick1" || aw.purpose === "twoPick2" || aw.purpose === "moveToHand" || aw.purpose === "dropToHand" || aw.purpose === "eventToHand" || aw.purpose === "deployFromGuts") return aw.candidates.slice(0, aw.max);
+  if (aw.purpose === "tutor" || aw.purpose === "twoPick1" || aw.purpose === "twoPick2" || aw.purpose === "moveToHand" || aw.purpose === "dropToHand" || aw.purpose === "dropToEventArea" || aw.purpose === "dropToGuts" || aw.purpose === "eventToHand" || aw.purpose === "deployFromGuts" || aw.purpose === "deployFromDrop" || aw.purpose === "deployFromHand" || aw.purpose === "dropOppGuts") return aw.candidates.slice(0, aw.max);
   return aw.candidates.slice(0, aw.min);
 }

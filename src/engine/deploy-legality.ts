@@ -10,9 +10,13 @@ function restrictionsFor(state: GameState, p: PlayerId, area: CourtArea) {
   return state.restrictions.filter((r) => r.player === p && r.area === area && r.setNo === state.setNo && r.activeTurn === state.turnNo);
 }
 
-/** 「スキルでカードを手札に加えられない」生效中（P01-035；Q239~241 含技能/事件抽牌） */
+/** 「スキルでカードを手札に加えられない」（P01-035；Q239~241 含技能/事件抽牌）或「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933）生效中 */
 export function banHandAddActive(state: GameState, p: PlayerId): boolean {
-  return state.restrictions.some((r) => r.player === p && r.banHandAdd && r.setNo === state.setNo && r.activeTurn === state.turnNo);
+  return state.restrictions.some((r) =>
+    r.player === p && r.setNo === state.setNo && r.activeTurn === state.turnNo && (
+      r.banHandAdd || (r.banDrawPhaseHandAdd && state.phase === "draw")
+    ),
+  );
 }
 
 /** センターブロッカーのブロックP無視中？（Q372~374；P02-027） */
@@ -47,6 +51,7 @@ export type DeployLegalityCode =
   | "area-restricted"
   | "base-param-restricted"
   | "position-restricted"
+  | "name-restricted"
   | "same-name";
 
 /** null＝合法；code 供 UI／測試說明原因，判斷本身仍只有這一份規則真相。 */
@@ -70,6 +75,17 @@ export function deployLegality(
       if (b !== null && b >= r.banBaseParamMin.value) return "base-param-restricted";
     }
     if (r.banPositions && r.banPositions.some((x) => c.positions.includes(x))) return "position-restricted";
+    if (r.banNames) {
+      const bannedSet = new Set(r.banNames.map(normName));
+      const names = deployNames(db, state, uid);
+      if (chosenName !== undefined) {
+        if (bannedSet.has(normName(chosenName))) return "name-restricted";
+      } else if (names) {
+        if (names.every((n) => bannedSet.has(normName(n)))) return "name-restricted";
+      } else if (bannedSet.has(normName(c.nameJa))) {
+        return "name-restricted";
+      }
+    }
   }
   // 同名禁止：トス≠レシーブ、アタック≠トス（攔網同名於 deploy-block 整批驗證）
   let banned: string | null = null;

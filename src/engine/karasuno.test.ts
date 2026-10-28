@@ -4,7 +4,7 @@ import { blockDeployMax, canChooseBlock, deployableUids, effParam } from "./engi
 import type { GameState, PlayerId } from "./types";
 import { db, deckWith, drainCp, feed, grab, placeDeckTop, placeInDrop, placeOnStack, seedStack, setHandSize, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
-/** 把卡直接放進事件區（構造 Q294 計數情境） */
+/** 把卡直接放進事件區（構造 Q1211 計數情境） */
 function placeInEventArea(s: GameState, p: PlayerId, cardId: string, exclude: number[] = []): number {
   const uid = grab(s, p, cardId, exclude);
   const ps = s.players[p];
@@ -61,7 +61,7 @@ describe("烏野：登場被動（gate 自身強化系）", () => {
     expect(s.phase).toBe("toss"); // DP5 ≥ OP5 成功
   });
 
-  it("Q214：HV-P01-015 牌組 0 張抽不到牌，トス+1 仍執行（可能な限り †0-2-5-5）", () => {
+  it("Q1131：HV-P01-015 牌組 0 張抽不到牌，トス+1 仍執行（可能な限り †0-2-5-5）", () => {
     let s = setup(deckWith("HV-P01-015", "HV-D01-008"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -78,7 +78,7 @@ describe("烏野：登場被動（gate 自身強化系）", () => {
 });
 
 describe("烏野：P01-002／P01-003（登場限制系）", () => {
-  it("Q199/Q200：HV-P01-002 アタック+4＋禁止「元々のレシーブP≥6」登場（元々の＝卡面值）", () => {
+  it("Q1116/Q1117：HV-P01-002 アタック+4＋禁止「元々のレシーブP≥6」登場（元々の＝卡面值）", () => {
     let s = setup(deckWith("HV-P01-002", "HV-D01-008", "HV-D01-009"), deckWith("HV-P01-011", "HV-D01-008"), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-008");
@@ -91,7 +91,7 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
     s = feed(s, { type: "effect-confirm", accept: true });
     expect(effParam(db, s, hinata, "attack")).toBe(5); // 1+4
     s = feed(s, { type: "free", action: "pass" });
-    // P1 接球：西谷 P01-011（元々r6）被禁，澤村（r5）可登場（Q200：之後再強化不受限）
+    // P1 接球：西谷 P01-011（元々r6）被禁，澤村（r5）可登場（Q1117：之後再強化不受限）
     s = feed(s, { type: "defense-choice", choice: "receive" });
     s = feed(s, { type: "free", action: "pass" });
     grab(s, 1, "HV-P01-011"); // 確保兩張都在手牌再驗證
@@ -101,7 +101,7 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
     expect(legal.some((u) => s.cards[u] === "HV-D01-008")).toBe(true);
   });
 
-  it("Q201/Q203/Q204：HV-P01-003 登場後手牌≤3 才可用；次の相手ターン攔網最多 2 人", () => {
+  it("Q1118/Q1120/Q1121：HV-P01-003 登場後手牌≤3 才可用；次の相手ターン攔網最多 2 人", () => {
     let s = setup(deckWith("HV-P01-003", "HV-D01-002", "HV-D01-008"), deckWith("HV-D01-008", "HV-D01-002", "HV-D01-004", "HV-D01-009"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -110,13 +110,13 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
     while (s.pendingDecision?.type === "effect-confirm") s = feed(s, { type: "effect-confirm", accept: false });
     s = feed(s, { type: "free", action: "pass" });
     const hinata = grab(s, 0, "HV-P01-003");
-    setHandSize(s, 0, 4, [hinata]); // 登場後手牌 3 枚（Q203：登場後計算）
+    setHandSize(s, 0, 4, [hinata]); // 登場後手牌 3 枚（Q1120：登場後計算）
     s = feed(s, { type: "deploy-attack", uid: hinata });
     expect(s.pendingDecision?.type).toBe("effect-confirm"); // 条件成立 → 可使用
     s = feed(s, { type: "effect-confirm", accept: true });
     expect(effParam(db, s, hinata, "attack")).toBe(4); // 2+2
     s = feed(s, { type: "free", action: "pass" });
-    // Q204：P1 攔網最多 2 人
+    // Q1121：P1 攔網最多 2 人
     s = feed(s, { type: "defense-choice", choice: "block" });
     expect(blockDeployMax(s, 1)).toBe(2);
     const b1 = grab(s, 1, "HV-D01-008");
@@ -127,7 +127,7 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
     expect(s.players[1].blockSides.length).toBe(1);
   });
 
-  it("Q202：HV-P01-003 由「オープン攻撃」從棄牌區登場 → 非手牌登場，技能不可用", () => {
+  it("Q1119：HV-P01-003 由「オープン攻撃」從棄牌區登場 → 非手牌登場，技能不可用", () => {
     let s = setup(deckWith("HV-P01-078", "HV-P01-003", "HV-D01-002", "HV-D01-008", "HV-D01-010"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -142,7 +142,7 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
     setHandSize(s, 0, 3, [open]); // 手牌條件即使滿足……
     s = feed(s, { type: "free", action: "event", uid: open }); // 抽2→棄1→登場日向
     if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: s.pendingDecision.candidates!.slice(0, 1) });
-    // ……Q202：deployedFromHand 不成立 → 沒有 gate 確認，直接回到自由步驟
+    // ……Q1119：deployedFromHand 不成立 → 沒有 gate 確認，直接回到自由步驟
     expect(s.pendingDecision?.type).toBe("free");
     s = feed(s, { type: "free", action: "pass" });
     s = feed(s, { type: "defense-choice", choice: "block" });
@@ -151,7 +151,7 @@ describe("烏野：P01-002／P01-003（登場限制系）", () => {
 });
 
 describe("烏野：P01-006／P01-008／P01-010（檢索與監看系）", () => {
-  it("Q205/Q207/Q302/Q303：HV-P01-006 檢索＋本回合日向登場每次+2；蓋牌失去修正；オープン攻撃連動", () => {
+  it("Q1122/Q1124/Q1219/Q1220：HV-P01-006 檢索＋本回合日向登場每次+2；蓋牌失去修正；オープン攻撃連動", () => {
     let s = setup(deckWith("HV-P01-006", "HV-D01-001", "HV-D01-001", "HV-P01-078", "HV-D01-008"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -172,16 +172,16 @@ describe("烏野：P01-006／P01-008／P01-010（檢索與監看系）", () => {
     const hinataDrop = placeInDrop(s, 0, "HV-D01-001");
     const open = grab(s, 0, "HV-P01-078");
     s = feed(s, { type: "free", action: "event", uid: open });
-    if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: s.pendingDecision.candidates!.slice(0, 1) }); // 棄 1（Q301 強制）
+    if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: s.pendingDecision.candidates!.slice(0, 1) }); // 棄 1（Q1218 強制）
     s = drainCp(s); // 監看遲發＋落下日向自身被動（gate ガッツ不足自動跳過）
-    expect(s.players[0].attack[s.players[0].attack.length - 1]).toBe(hinataDrop); // Q303：強制登場
-    expect(s.modifiers.filter((m) => m.target === hinataTop)).toEqual([]); // Q207：被蓋者失去 +2
-    expect(effParam(db, s, hinataDrop, "attack")).toBe(5); // 2 +2(監看 Q205) +1(オープン攻撃)
+    expect(s.players[0].attack[s.players[0].attack.length - 1]).toBe(hinataDrop); // Q1220：強制登場
+    expect(s.modifiers.filter((m) => m.target === hinataTop)).toEqual([]); // Q1124：被蓋者失去 +2
+    expect(effParam(db, s, hinataDrop, "attack")).toBe(5); // 2 +2(監看 Q1122) +1(オープン攻撃)
     s = feed(s, { type: "free", action: "pass" });
     expect(s.op).toMatchObject({ value: 6, owner: 0 }); // トス1＋アタック5
   });
 
-  it("Q208：HV-P01-008 山口在場 →「以下の2つ」全部執行（ブロック+2＋ドシャット監看）", () => {
+  it("Q1125：HV-P01-008 山口在場 →「以下の2つ」全部執行（ブロック+2＋ドシャット監看）", () => {
     let s = setup(deckWith("HV-P01-008", "HV-D01-004", "HV-D01-002"), deckWith("HV-D01-008", "HV-D01-010", "HV-D01-002"), 0);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -202,19 +202,19 @@ describe("烏野：P01-006／P01-008／P01-010（檢索與監看系）", () => {
     expect(s.op).toMatchObject({ value: 6, owner: 0 }); // ▶2：攔網成功→ドシャット(6)
   });
 
-  it("Q210/Q211：HV-P01-010 強制公開；對手トスキャラ登場→トス−2（可為負 †2-7-3）", () => {
+  it("Q1127/Q1128：HV-P01-010 強制公開；對手トスキャラ登場→トス−2（可為負 †2-7-3）", () => {
     let s = setup(deckWith("HV-P01-010"), deckWith("HV-D01-008", "HV-D01-010", "HV-D01-006"), 0);
     const revealed = placeDeckTop(s, 0, FILLER); // 牌組頂＝田中（烏野）→ 監看註冊
     const yamaguchi = grab(s, 0, "HV-P01-010");
     s = feed(s, { type: "deploy-serve", uid: yamaguchi });
-    // 被動無 gate：強制公開（Q210），不需任何決策
+    // 被動無 gate：強制公開（Q1127），不需任何決策
     expect(s.pendingDecision).toMatchObject({ player: 0, type: "free" });
     expect(s.players[0].deck[s.players[0].deck.length - 1]).toBe(revealed); // 公開後置底
     s = feed(s, { type: "free", action: "pass" }); // OP=2
     s = receiveTrack(s, "HV-D01-008");
     const asahi = grab(s, 1, "HV-D01-010"); // 東峰 t0
     s = feed(s, { type: "deploy-toss", uid: asahi });
-    expect(effParam(db, s, asahi, "toss")).toBe(-2); // Q211：0−2＝−2
+    expect(effParam(db, s, asahi, "toss")).toBe(-2); // Q1128：0−2＝−2
     s = feed(s, { type: "free", action: "pass" });
     const atk = grab(s, 1, FILLER); // 田中 a3
     s = feed(s, { type: "deploy-attack", uid: atk });
@@ -224,7 +224,7 @@ describe("烏野：P01-006／P01-008／P01-010（檢索與監看系）", () => {
 });
 
 describe("烏野：P01-013（アクティブ型）／PR 系", () => {
-  it("Q212/Q213：HV-P01-013 接球階段自由步驟、〔手札からドロップ〕為 cost", () => {
+  it("Q1129/Q1130：HV-P01-013 接球階段自由步驟、〔手札からドロップ〕為 cost", () => {
     let s = setup(deckWith("HV-P01-013", "HV-D01-006"), deckWith("HV-D01-008"), 1);
     s = serveWith(s, "HV-D01-008"); // 澤村 serve3
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -277,7 +277,7 @@ describe("烏野：P01-013（アクティブ型）／PR 系", () => {
 });
 
 describe("烏野：072／073 置換（登場改名）", () => {
-  it("Q285：兩張 072 選不同卡名可一起攔網登場", () => {
+  it("Q1202：兩張 072 選不同卡名可一起攔網登場", () => {
     let s = setup(deckWith("HV-P01-072", "HV-P01-072"), deckWith("HV-D01-008", "HV-D01-010", "HV-D01-002"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D01-008");
@@ -298,17 +298,17 @@ describe("烏野：072／073 置換（登場改名）", () => {
     expect(s.nameOverrides[b]).toBe("孤爪 研磨");
   });
 
-  it("Q279/Q215：トスキャラ同名禁止以選定名判定；072 當トス＝烏野のS（P01-016 条件成立）", () => {
+  it("Q1196/Q1132：トスキャラ同名禁止以選定名判定；072 當トス＝烏野のS（P01-016 条件成立）", () => {
     let s = setup(deckWith("HV-P01-072", "HV-P01-016", "HV-D01-008", "HV-P01-017"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
     placeOnStack(s, 0, "receive", "HV-P01-017"); // 接球キャラ＝孤爪 研磨（蓋住澤村構造同名情境）
     const dual = grab(s, 0, "HV-P01-072");
-    // Q279 類推：接球=孤爪 → トス不能以「孤爪 研磨」登場
+    // Q1196 類推：接球=孤爪 → トス不能以「孤爪 研磨」登場
     expect(() => feed(s, { type: "deploy-toss", uid: dual, nameChoice: "孤爪 研磨" })).toThrow(/登場/);
     s = feed(s, { type: "deploy-toss", uid: dual, nameChoice: "日向 翔陽" });
     s = feed(s, { type: "free", action: "pass" });
-    // Q215：トス＝072（烏野・S）→ P01-016 条件成立（gate 出現）
+    // Q1132：トス＝072（烏野・S）→ P01-016 条件成立（gate 出現）
     seedStack(s, 0, "attack", 4);
     const asahi = grab(s, 0, "HV-P01-016");
     s = feed(s, { type: "deploy-attack", uid: asahi });
@@ -317,7 +317,7 @@ describe("烏野：072／073 置換（登場改名）", () => {
     expect(effParam(db, s, asahi, "attack")).toBe(5); // 3+2
   });
 
-  it("Q280：HV-P01-006 公開到「日向・孤爪」→ 卡名不同，不能加入手牌", () => {
+  it("Q1197：HV-P01-006 公開到「日向・孤爪」→ 卡名不同，不能加入手牌", () => {
     let s = setup(deckWith("HV-P01-006", "HV-P01-072", "HV-D01-008"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -333,7 +333,7 @@ describe("烏野：072／073 置換（登場改名）", () => {
 });
 
 describe("烏野：事件卡", () => {
-  it("Q190：D01-011 先+1 再判定「4以下」→ 東峰 r4+1=5 不再加", () => {
+  it("Q1107：D01-011 先+1 再判定「4以下」→ 東峰 r4+1=5 不再加", () => {
     let s = setup(deckWith("HV-D01-011", "HV-D01-010"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -342,7 +342,7 @@ describe("烏野：事件卡", () => {
     const ev = grab(s, 0, "HV-D01-011");
     s = feed(s, { type: "deploy-receive", uid: asahi });
     s = feed(s, { type: "free", action: "event", uid: ev });
-    expect(effParam(db, s, asahi, "receive")).toBe(5); // 4+1 → 5 > 4 → 不再 +1（Q190）
+    expect(effParam(db, s, asahi, "receive")).toBe(5); // 4+1 → 5 > 4 → 不再 +1（Q1107）
   });
 
   it("D01-012：トス影山＋アタック日向 → 次の相手ターン攔網最多 1 人", () => {
@@ -365,7 +365,7 @@ describe("烏野：事件卡", () => {
     expect(blockDeployMax(s, 1)).toBe(1);
   });
 
-  it("Q294：P01-074 對手事件區 [=ドロー]/[=レシーブ] 可打出的卡 ≥5 張 → 追加+2", () => {
+  it("Q1211：P01-074 對手事件區 [=ドロー]/[=レシーブ] 可打出的卡 ≥5 張 → 追加+2", () => {
     let s = setup(deckWith("HV-P01-074", "HV-D01-002", "HV-D01-008", "HV-D01-009"), deckWith("HV-P01-076", "HV-P01-077", "HV-P01-077", "HV-D01-011", "HV-D01-011"), 1);
     s = serveWith(s, FILLER);
     // 構造對手事件區 5 張（抽牌×1＋接球×4）
@@ -387,7 +387,7 @@ describe("烏野：事件卡", () => {
     expect(effParam(db, s, atk, "attack")).toBe(6); // 3+1+2
   });
 
-  it("Q295：P01-075 攻擊階段為トスキャラ+1 → OP 反映；非接球階段不抽牌", () => {
+  it("Q1212：P01-075 攻擊階段為トスキャラ+1 → OP 反映；非接球階段不抽牌", () => {
     let s = setup(deckWith("HV-P01-075", "HV-D01-008", "HV-D01-009"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -407,10 +407,10 @@ describe("烏野：事件卡", () => {
     expect(effParam(db, s, suga, "toss")).toBe(3);
     expect(s.players[0].hand.length).toBe(h0 - 1); // 只少打出的那張，沒抽牌
     s = feed(s, { type: "free", action: "pass" });
-    expect(s.op).toMatchObject({ value: 6, owner: 0 }); // (2+1)+3（Q295）
+    expect(s.op).toMatchObject({ value: 6, owner: 0 }); // (2+1)+3（Q1212）
   });
 
-  it("Q297/Q298：P01-076 play 後手牌≤4 即可用；同一區同所属ガッツ2枚→手牌", () => {
+  it("Q1214/Q1215：P01-076 play 後手牌≤4 即可用；同一區同所属ガッツ2枚→手牌", () => {
     let s = setup(deckWith("HV-P01-076", "HV-D01-004"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -418,7 +418,7 @@ describe("烏野：事件卡", () => {
     seedStack(s, 0, "serve", 2);
     placeOnStack(s, 0, "serve", "HV-D01-004");
     const ev = grab(s, 0, "HV-P01-076");
-    setHandSize(s, 0, 5, [ev]); // play 後 4 枚 → 條件成立（Q298）
+    setHandSize(s, 0, 5, [ev]); // play 後 4 枚 → 條件成立（Q1215）
     s = feed(s, { type: "free", action: "event", uid: ev }); // draw phase（[=ドロー]）
     expect(s.pendingDecision?.type).toBe("effect-cards");
     const guts = s.players[0].serve.slice(0, 2);
@@ -427,7 +427,7 @@ describe("烏野：事件卡", () => {
     expect(s.players[0].serve.length).toBe(1); // 只剩山口
   });
 
-  it("Q305/Q306：P01-079 月島對象→山口回手＋次ターン接球−2；DP −1 < OP 0 → 接球失敗", () => {
+  it("Q1222/Q1223：P01-079 月島對象→山口回手＋次ターン接球−2；DP −1 < OP 0 → 接球失敗", () => {
     let s = setup(deckWith("HV-P01-079", "HV-D01-003", "HV-D01-004", "HV-D01-002"), deckWith("HV-D01-008", "HV-D01-010", "HV-D01-002", "HV-P01-002"), 0);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -446,12 +446,12 @@ describe("烏野：事件卡", () => {
     const ev = grab(s, 0, "HV-P01-079");
     s = feed(s, { type: "free", action: "event", uid: ev });
     expect(effParam(db, s, tsukki, "block")).toBe(4); // 3+1
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // 山口を手札に（まで→可 0；Q306）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // 山口を手札に（まで→可 0；Q1223）
     const yamaguchi = s.pendingDecision!.candidates![0]!;
     s = feed(s, { type: "effect-cards", uids: [yamaguchi] });
     expect(s.players[0].hand).toContain(yamaguchi);
     s = feed(s, { type: "free", action: "pass" });
-    // 攔網成功（DP4 ≥ OP1）→ P0 攔網 OP=0；P1 接球：r1 日向 −2 → −1 < 0 → 失敗（Q305）
+    // 攔網成功（DP4 ≥ OP1）→ P0 攔網 OP=0；P1 接球：r1 日向 −2 → −1 < 0 → 失敗（Q1222）
     expect(s.pendingDecision).toMatchObject({ player: 1, type: "defense-choice" });
     expect(canChooseBlock(s)).toBe(false);
     s = feed(s, { type: "defense-choice", choice: "receive" });

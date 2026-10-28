@@ -66,13 +66,15 @@ const EXPANSION_LABELS: Record<string, string> = {
   D01: "起始牌組①（D01）",
   D02: "起始牌組②（D02）",
   D03: "起始牌組③（D03）",
+  D04: "起始牌組④（D04）",
   P01: "第一彈（P01）",
   P02: "第二彈（P02）",
   P03: "第三彈（P03）",
+  P04: "第四彈（P04）",
   PR: "促銷卡（PR）",
   HVBP: "特別卡（HVBP）",
 };
-const EXPANSION_ORDER = ["D01", "D02", "D03", "P01", "P02", "P03", "PR", "HVBP"];
+const EXPANSION_ORDER = ["D01", "D02", "D03", "D04", "P01", "P02", "P03", "P04", "PR", "HVBP"];
 const expansionRank = (code: string) => {
   const i = EXPANSION_ORDER.indexOf(code);
   return i === -1 ? EXPANSION_ORDER.length : i;

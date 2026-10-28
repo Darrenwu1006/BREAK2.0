@@ -4,7 +4,7 @@ import { applyDecision, createGame, effParam } from "./engine";
 import { db, deckWith, feed, grab, placeDeckTop, placeInDrop, placeOnStack, seedStack, setHandSize, setup, serveWith, receiveTrack, FILLER } from "./testkit";
 
 describe("青葉城西：登場被動", () => {
-  it("P01-033＋Q238：棄青葉城西手牌→任一參數+1；對手手牌≥4→對手棄1（對手自選）", () => {
+  it("P01-033＋Q1155：棄青葉城西手牌→任一參數+1；對手手牌≥4→對手棄1（對手自選）", () => {
     let s = setup(deckWith("HV-P01-033", "HV-P01-038", "HV-P01-040"), deckWith("HV-D01-002"), 0);
     const oikawa = grab(s, 0, "HV-P01-033");
     grab(s, 0, "HV-P01-038"); // 確保手上有青葉城西卡可棄
@@ -16,7 +16,7 @@ describe("青葉城西：登場被動", () => {
       for (const u of s.pendingDecision.candidates!) expect(db.get(s.cards[u]!)!.affiliations).toContain("青葉城西");
       s = feed(s, { type: "effect-cards", uids: [s.pendingDecision.candidates![0]!] });
     }
-    expect(s.pendingDecision?.type).toBe("effect-option"); // Q238：選任一參數
+    expect(s.pendingDecision?.type).toBe("effect-option"); // Q1155：選任一參數
     const idx = s.pendingDecision!.options!.findIndex((o) => o.includes("發球"));
     s = feed(s, { type: "effect-option", index: idx });
     expect(effParam(db, s, oikawa, "serve")).toBe(6); // 5+1
@@ -27,7 +27,7 @@ describe("青葉城西：登場被動", () => {
     expect(s.players[1].hand.length).toBe(h1 - 1);
   });
 
-  it("P01-035＋Q240/Q241：對手手牌≤4→次回合「手札に加えられない」（檢索置底、事件抽牌無效）", () => {
+  it("P01-035＋Q1157/Q1158：對手手牌≤4→次回合「手札に加えられない」（檢索置底、事件抽牌無效）", () => {
     let s = setup(deckWith("HV-P01-035", "HV-P01-038", "HV-P01-040", "HV-D01-008"), deckWith("HV-P01-006", "HV-D01-001", "HV-D01-012", "HV-P01-011", "HV-D01-009", "HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -47,7 +47,7 @@ describe("青葉城西：登場被動", () => {
     s = feed(s, { type: "free", action: "pass" }); // ドローステップ＝規則處理，不受禁（正常抽）
     s = feed(s, { type: "deploy-receive", uid: grab(s, 1, "HV-P01-011") }); // 西谷 r6 ≥ OP6
     s = feed(s, { type: "free", action: "pass" });
-    // Q240：P01-006 檢索 → 公開的日向不能加入手牌、直接置底
+    // Q1157：P01-006 檢索 → 公開的日向不能加入手牌、直接置底
     const hinataTop = placeDeckTop(s, 1, "HV-D01-001");
     seedStack(s, 1, "toss", 2);
     const kageyama = grab(s, 1, "HV-P01-006");
@@ -55,19 +55,19 @@ describe("青葉城西：登場被動", () => {
     s = feed(s, { type: "effect-confirm", accept: true });
     expect(s.pendingDecision?.type).not.toBe("effect-cards"); // 無 tutor 決策（被禁）
     expect(s.players[1].hand).not.toContain(hinataTop);
-    expect(s.players[1].deck[s.players[1].deck.length - 1]).toBe(hinataTop); // 置底（Q240）
+    expect(s.players[1].deck[s.players[1].deck.length - 1]).toBe(hinataTop); // 置底（Q1157）
     s = feed(s, { type: "free", action: "pass" });
-    // Q241：事件卡抽牌也被禁
+    // Q1158：事件卡抽牌也被禁
     const atk = grab(s, 1, "HV-D01-009"); // 菅原 a3（≠影山名）
     s = feed(s, { type: "deploy-attack", uid: atk });
     const ev = grab(s, 1, "HV-D01-012"); // ブロード攻撃：抽1＋烏野+1
     const h1 = s.players[1].hand.length;
     s = feed(s, { type: "free", action: "event", uid: ev });
     if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: [s.pendingDecision.candidates![0]!] });
-    expect(s.players[1].hand.length).toBe(h1 - 1); // 只少 play 的那張，抽不到（Q241）
+    expect(s.players[1].hand.length).toBe(h1 - 1); // 只少 play 的那張，抽不到（Q1158）
   });
 
-  it("P01-039＋Q246：相手OP≥6→棄青→接球+1；自分のキャラ全員青葉城西（單人也成立）→抽1", () => {
+  it("P01-039＋Q1163：相手OP≥6→棄青→接球+1；自分のキャラ全員青葉城西（單人也成立）→抽1", () => {
     let s = setup(deckWith("HV-P01-039", "HV-P01-038"), deckWith("HV-D01-004"), 1);
     s = serveWith(s, "HV-D01-004"); // 山口 serve5
     s.op!.value = 6; // 構造：相手 OP=6（cond min6）
@@ -81,18 +81,18 @@ describe("青葉城西：登場被動", () => {
     s = feed(s, { type: "effect-confirm", accept: true });
     if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: [s.pendingDecision.candidates![0]!] });
     expect(effParam(db, s, watari, "receive")).toBe(6); // 5+1
-    expect(s.players[0].hand.length).toBe(h0 - 1 + 1); // 棄1（cost）＋抽1（Q246：單人也算全員青葉城西）
+    expect(s.players[0].hand.length).toBe(h0 - 1 + 1); // 棄1（cost）＋抽1（Q1163：單人也算全員青葉城西）
     s = feed(s, { type: "free", action: "pass" });
     expect(s.phase).toBe("toss"); // DP6 ≥ OP6 成功
   });
 
-  it("P02-057＋Q410／P02-058：對手手牌≤3→接球+7；手牌補到3張", () => {
+  it("P02-057＋Q1327／P02-058：對手手牌≤3→接球+7；手牌補到3張", () => {
     let s = setup(deckWith("HV-P02-057"), deckWith("HV-D01-004"), 1);
     s = serveWith(s, "HV-D01-004"); // serve5
     s = feed(s, { type: "defense-choice", choice: "receive" });
     s = feed(s, { type: "free", action: "pass" });
     seedStack(s, 0, "receive", 3);
-    setHandSize(s, 1, 3); // Q410：使用技能時點判定
+    setHandSize(s, 1, 3); // Q1327：使用技能時點判定
     const iwa = grab(s, 0, "HV-P02-057"); // r1
     s = feed(s, { type: "deploy-receive", uid: iwa });
     s = feed(s, { type: "effect-confirm", accept: true });
@@ -113,7 +113,7 @@ describe("青葉城西：登場被動", () => {
     expect(t.players[0].hand.length).toBe(3); // 補到 3
   });
 
-  it("P02-056＋Q409：3ガッツ→トス+2＋剛付掉的岩泉可從棄牌區回收；PR-025：トス及川→攻擊+2＋對手棄1", () => {
+  it("P02-056＋Q1326：3ガッツ→トス+2＋剛付掉的岩泉可從棄牌區回收；PR-025：トス及川→攻擊+2＋對手棄1", () => {
     let s = setup(deckWith("HV-P02-056", "HV-PR-008", "HV-PR-025", "HV-PR-007", "HV-D01-008"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = receiveTrack(s, "HV-D01-008");
@@ -124,7 +124,7 @@ describe("青葉城西：登場被動", () => {
     s = feed(s, { type: "deploy-toss", uid: oikawa });
     s = feed(s, { type: "effect-confirm", accept: true }); // 3ガッツ（恰好 3 → 自動支付，岩泉進棄牌）
     expect(effParam(db, s, oikawa, "toss")).toBe(3); // 1+2
-    expect(s.pendingDecision?.type).toBe("effect-cards"); // 回收岩泉（まで→可 0；Q409 含剛付的）
+    expect(s.pendingDecision?.type).toBe("effect-cards"); // 回收岩泉（まで→可 0；Q1326 含剛付的）
     const iwaUid = s.pendingDecision!.candidates![0]!;
     expect(s.cards[iwaUid]).toBe("HV-PR-008");
     s = feed(s, { type: "effect-cards", uids: [iwaUid] });
@@ -144,11 +144,11 @@ describe("青葉城西：登場被動", () => {
 });
 
 describe("青葉城西：事件卡", () => {
-  it("P01-085＋Q315：合計8ガッツ（跨區任選）→此回合青葉城西登場每次任一參數+1", () => {
+  it("P01-085＋Q1232：合計8ガッツ（跨區任選）→此回合青葉城西登場每次任一參數+1", () => {
     let s = setup(deckWith("HV-P01-085", "HV-P01-038"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
-    // 構造跨區 9 ガッツ（各區 3 ガッツ＋1 頂牌）→ 選 8（Q315 任意組合）
+    // 構造跨區 9 ガッツ（各區 3 ガッツ＋1 頂牌）→ 選 8（Q1232 任意組合）
     for (const area of ["serve", "receive", "toss"] as const) {
       seedStack(s, 0, area, 3);
       placeOnStack(s, 0, area, FILLER); // 頂牌＝キャラ，下面 3 張才是ガッツ
@@ -182,7 +182,7 @@ describe("青葉城西：事件卡", () => {
     expect(s.players[0].hand).toContain(target);
   });
 
-  it("P01-087＋Q317/Q319：及川在サーブ→監看「引く以外の入手」每張觸發對手棄1；無及川→可 play 無效果", () => {
+  it("P01-087＋Q1234/Q1236：及川在サーブ→監看「引く以外の入手」每張觸發對手棄1；無及川→可 play 無效果", () => {
     let s = setup(deckWith("HV-P01-033", "HV-P01-087", "HV-P01-087"), deckWith("HV-P01-006", "HV-D01-001", "HV-D01-008", "HV-D01-002"), 0);
     const oikawa = grab(s, 0, "HV-P01-033");
     s = feed(s, { type: "deploy-serve", uid: oikawa });
@@ -203,11 +203,11 @@ describe("青葉城西：事件卡", () => {
     s = feed(s, { type: "effect-confirm", accept: true });
     const h1 = s.players[1].hand.length;
     s = feed(s, { type: "effect-cards", uids: [hinataTop] }); // 加入手牌 → 監看觸發
-    expect(s.pendingDecision).toMatchObject({ player: 1, type: "effect-cards" }); // 對手（P1）自選棄 1（Q317 每張一次）
+    expect(s.pendingDecision).toMatchObject({ player: 1, type: "effect-cards" }); // 對手（P1）自選棄 1（Q1234 每張一次）
     s = feed(s, { type: "effect-cards", uids: [s.pendingDecision!.candidates![0]!] });
     expect(s.players[1].hand.length).toBe(h1 + 1 - 1);
 
-    // Q319：及川不在 → 仍可 play、無效果
+    // Q1236：及川不在 → 仍可 play、無效果
     let t = setup(deckWith("HV-P01-087", "HV-D01-008"), deckWith("HV-D01-002"), 0);
     const server = grab(t, 0, "HV-D01-008"); // 澤村（非及川）
     t = feed(t, { type: "deploy-serve", uid: server });

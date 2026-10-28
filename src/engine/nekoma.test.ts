@@ -5,7 +5,7 @@ import { drawCards, fireHandAdds } from "./effects";
 import { db, deckWith, drainCp, feed, grab, placeDeckTop, placeOnStack, seedStack, setup, serveWith, receiveTrack } from "./testkit";
 
 describe("音駒：登場被動（gate 系）", () => {
-  it("D02-001＋Q192：孤爪 2ガッツ→トス+1＋次の相手ターン、アタック登場毎に−2（可為負）", () => {
+  it("D02-001＋Q1109：孤爪 2ガッツ→トス+1＋次の相手ターン、アタック登場毎に−2（可為負）", () => {
     let s = setup(deckWith("HV-D02-001", "HV-D02-005", "HV-D02-006"), deckWith("HV-D02-005", "HV-D02-005", "HV-D02-010", "HV-D01-002"), 1);
     s = serveWith(s, "HV-D02-005"); // P1 海 serve1
     s = receiveTrack(s, "HV-D02-005"); // P0 海 r5
@@ -30,7 +30,7 @@ describe("音駒：登場被動（gate 系）", () => {
     s = feed(s, { type: "free", action: "pass" });
     const kage = grab(s, 1, "HV-D01-002"); // 影山 a1
     s = feed(s, { type: "deploy-attack", uid: kage });
-    expect(effParam(db, s, kage, "attack")).toBe(-1); // Q192：1−2＝−1
+    expect(effParam(db, s, kage, "attack")).toBe(-1); // Q1109：1−2＝−1
     s = feed(s, { type: "free", action: "pass" });
     expect(s.op).toMatchObject({ value: 0, owner: 1 }); // 1＋(−1)
   });
@@ -81,14 +81,14 @@ describe("音駒：D02-004 灰羽リエーフ（攻擊區→サイドブロッ�
     return { s, lev };
   }
 
-  it("Q195：我方攔網登場觸發→付攻擊區 2ガッツ→灰羽移動為サイドブロッカー（DP 合計）", () => {
+  it("Q1112：我方攔網登場觸發→付攻擊區 2ガッツ→灰羽移動為サイドブロッカー（DP 合計）", () => {
     let { s, lev } = toLevBlockTurn();
     const kuroo = grab(s, 0, "HV-D02-002"); // 黒尾 b3 當中央
     expect(s.players[0].attack.length).toBe(3); // ガッツ2＋灰羽
     s = feed(s, { type: "deploy-block", uids: [kuroo], center: kuroo });
     // CP：黒尾自身被動＋灰羽 allyDeploy 兩個待機 → 任選順序解決；黒尾 gate 無ガッツ自動跳過、灰羽 gate 接受
     s = drainCp(s, true);
-    expect(s.players[0].attack.length).toBe(0); // 2ガッツ→棄牌（Q195 從攻擊區付）＋灰羽移走 → 攻擊區清空
+    expect(s.players[0].attack.length).toBe(0); // 2ガッツ→棄牌（Q1112 從攻擊區付）＋灰羽移走 → 攻擊區清空
     expect(s.players[0].blockSides).toContain(lev);
     s = feed(s, { type: "free", action: "pass" });
     // DP＝黒尾3＋灰羽2＝5 ≥ OP2 → 攔網成功（自分のブロック OP=0、輪到對手）；側邊灰羽於攔網終了進棄牌 †5-7-2⑦
@@ -97,14 +97,14 @@ describe("音駒：D02-004 灰羽リエーフ（攻擊區→サイドブロッ�
     expect(s.players[0].drop).toContain(lev);
   });
 
-  it("Q196：登場限制（上限1）下 cost 照付但灰羽不移動", () => {
+  it("Q1113：登場限制（上限1）下 cost 照付但灰羽不移動", () => {
     let { s, lev } = toLevBlockTurn();
     s.restrictions.push({ player: 0, area: "block", maxCount: 1, setNo: s.setNo, activeTurn: s.turnNo, desc: "測試限制（ブロード攻撃）" });
     const kuroo = grab(s, 0, "HV-D02-002");
     const gutsBefore = s.players[0].attack.length; // ガッツ2＋灰羽=3
     s = feed(s, { type: "deploy-block", uids: [kuroo], center: kuroo }); // 用掉唯一額度
     s = drainCp(s, true);
-    expect(s.players[0].attack.length).toBe(gutsBefore - 2); // ガッツ照付（Q196）
+    expect(s.players[0].attack.length).toBe(gutsBefore - 2); // ガッツ照付（Q1113）
     expect(s.players[0].attack[s.players[0].attack.length - 1]).toBe(lev); // 但灰羽留在攻擊區
     expect(s.players[0].blockSides).toEqual([]);
   });
@@ -139,7 +139,7 @@ describe("音駒：事件卡", () => {
     expect(s.pendingDecision).toMatchObject({ player: 1, type: "defense-choice" });
   });
 
-  it("D02-012＋Q197/Q198：抽1→看頂3（不足看到沒有為止）→灰羽/犬岡擇一加入手牌、其餘置底", () => {
+  it("D02-012＋Q1114/Q1115：抽1→看頂3（不足看到沒有為止）→灰羽/犬岡擇一加入手牌、其餘置底", () => {
     let s = setup(deckWith("HV-D02-012", "HV-D02-004", "HV-D02-008", "HV-D02-005"), deckWith("HV-D01-002"), 1);
     s = serveWith(s, "HV-D01-002");
     s = feed(s, { type: "defense-choice", choice: "receive" });
@@ -156,16 +156,20 @@ describe("音駒：事件卡", () => {
     expect(cands).toContain(inuoka); // 犬岡在看的 3 張中
     expect(cands).not.toContain(lev); // 灰羽被先抽走進手牌（draw 1 在看牌之前）
     expect(s.players[0].hand).toContain(lev);
-    // Q198：upTo 1 → 選 2 張要拒絕（此情境只有犬岡 1 張候選，驗 max=1）
+    // Q1115：upTo 1 → 選 2 張要拒絕（此情境只有犬岡 1 張候選，驗 max=1）
     expect(s.pendingDecision!.max).toBe(1);
     s = feed(s, { type: "effect-cards", uids: [inuoka] });
+    // [Codex 2026-10-28] 先完成看過卡片的任意置底順序。
+    while (s.effectCtx?.awaiting?.kind === "cards" && s.effectCtx.awaiting.purpose === "tutorBottom") {
+      s = feed(s, { type: "effect-cards", uids: [s.effectCtx.awaiting.candidates[0]!] });
+    }
     expect(s.players[0].hand).toContain(inuoka);
     expect(s.players[0].deck.length).toBe(deckLen - 2); // 抽1＋取1；看過未取的回到牌組
     // 看過未取的 2 張置底
     const bottom2 = s.players[0].deck.slice(-2);
     expect(bottom2.every((u) => !s.players[0].hand.includes(u))).toBe(true);
 
-    // Q197：牌組只剩 3 → 抽 1 後看 2
+    // Q1114：牌組只剩 3 → 抽 1 後看 2
     let t = setup(deckWith("HV-D02-012", "HV-D02-004", "HV-D02-008"), deckWith("HV-D01-002"), 1);
     t = serveWith(t, "HV-D01-002");
     t = feed(t, { type: "defense-choice", choice: "receive" });
@@ -176,16 +180,20 @@ describe("音駒：事件卡", () => {
       while (ps.deck.length > 3) ps.drop.push(ps.deck.splice(1, 1)[0]!);
     }
     t = feed(t, { type: "free", action: "event", uid: ev2 });
-    // 抽 1（lev2 進手牌）→ 剩 2 → 看 2（Q197）
+    // 抽 1（lev2 進手牌）→ 剩 2 → 看 2（Q1114）
     expect(t.players[0].hand).toContain(lev2);
-    if (t.pendingDecision?.type === "effect-cards") {
-      expect(t.pendingDecision.candidates!.length).toBeLessThanOrEqual(2);
+    if (t.effectCtx?.awaiting?.kind === "cards" && t.effectCtx.awaiting.purpose === "tutor") {
+      expect(t.effectCtx.awaiting.candidates.length).toBeLessThanOrEqual(2);
       t = feed(t, { type: "effect-cards", uids: [] });
+    }
+    // [Codex 2026-10-28] 先完成看過卡片的任意置底順序。
+    while (t.effectCtx?.awaiting?.kind === "cards" && t.effectCtx.awaiting.purpose === "tutorBottom") {
+      t = feed(t, { type: "effect-cards", uids: [t.effectCtx.awaiting.candidates[0]!] });
     }
     expect(t.players[0].deck.length).toBe(2);
   });
 
-  it("HV-PR-027＋Q262：二口PR效果「非抽牌加入手牌」觸發與防免測試", () => {
+  it("HV-PR-027＋Q1179：二口PR效果「非抽牌加入手牌」觸發與防免測試", () => {
     // 設置對局：P0 手手有二口PR，登場攔網註冊下一回合監看
     let s = setup(deckWith("HV-PR-027", "HV-D02-005", "HV-D02-005"), deckWith("HV-D02-001", "HV-D02-006"), 0);
     s = serveWith(s, "HV-D02-005");

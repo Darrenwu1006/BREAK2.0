@@ -12,7 +12,10 @@ const clean = (s) => (s ?? "").trim();
 const dash = (s) => { const v = clean(s); return v === "" || v === "-" || v === "－" ? null : v; };
 
 // 官網所属欄 typo 修正表
-const AFF_FIX = { "梟谷·3年/梟谷2·年": "梟谷·3年/梟谷·2年" };
+const AFF_FIX = {
+  "梟谷·3年/梟谷2·年": "梟谷·3年/梟谷·2年",
+  "烏野·2年/3年": "烏野·2年/烏野·3年",
+};
 
 /** "烏野·1年,音駒·2年" → { affiliations:["烏野","音駒"], grades:["1年","2年"] }（分隔符 ·・･ 混用） */
 function parseAffiliation(raw) {
@@ -20,12 +23,15 @@ function parseAffiliation(raw) {
   const affiliations = [], grades = [];
   if (!dash(v)) return { affiliations, grades };
   for (const entry of v.split(/[,，/]/)) {
-    const m = entry.trim().match(/^(.+?)[·・･](\d年)$/);
+    const trimmed = entry.trim();
+    const m = trimmed.match(/^(.+?)[·・･](\d年)$/);
     if (m) {
       if (!affiliations.includes(m[1])) affiliations.push(m[1]);
       if (!grades.includes(m[2])) grades.push(m[2]);
-    } else if (entry.trim()) {
-      if (!affiliations.includes(entry.trim())) affiliations.push(entry.trim());
+    } else if (/^\d年$/.test(trimmed)) {
+      if (!grades.includes(trimmed)) grades.push(trimmed);
+    } else if (trimmed) {
+      if (!affiliations.includes(trimmed)) affiliations.push(trimmed);
     }
   }
   return { affiliations, grades };

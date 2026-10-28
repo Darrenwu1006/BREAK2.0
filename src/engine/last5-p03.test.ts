@@ -24,7 +24,7 @@ function cardAwaiting(s: GameState): Extract<Awaiting, { kind: "cards" }> {
 }
 
 describe("P03 最後5張", () => {
-  it("PR-063 ジャンバル：ピース→自分2まで＋相手2引く（drawOpponent）", () => {
+  it("PR-063 ジャンバル：双方が各自2枚引くか選択（Q1953/Q1954）", () => {
     let s = setup(deckWith("HV-PR-063", FILLER, FILLER, FILLER, FILLER), deckWith(FILLER, FILLER, FILLER, FILLER), 1);
     s = serveWith(s, FILLER);
     s = feed(s, { type: "defense-choice", choice: "receive" }); // ドローフェイズ
@@ -33,6 +33,8 @@ describe("P03 最後5張", () => {
     s = feed(s, { type: "free", action: "event", uid: ev });
     s = feed(s, { type: "effect-confirm", accept: true }); // gate（tilt）
     if (s.pendingDecision?.type === "effect-confirm") s = feed(s, { type: "effect-confirm", accept: true }); // 自分 draw upTo
+    expect(s.pendingDecision).toMatchObject({ type: "effect-confirm", player: 1 });
+    s = feed(s, { type: "effect-confirm", accept: true }); // 相手自身の選択
     expect(s.players[1].hand.length).toBe(oh0 + 2); // 相手2引く
   });
 
@@ -124,7 +126,7 @@ describe("P03 最後5張", () => {
     expect(effParam(db, s, miya, "receive")).toBe(base + 1);
   });
 
-  // Q1526/Q1527：ガッツ入替はプレイヤーが「どれを換えるか／換えないか」を選ぶ。
+  // Q1828/Q1829：ガッツ入替はプレイヤーが「どれを換えるか／換えないか」を選ぶ。
   // 受け・攻撃の両エリアにユースガッツがある状態を直接構築して 083 をプレイ。
   function setup083WithGuts(): { s: GameState; recvChara: number; recvGuts: number; atkChara: number; atkGuts: number } {
     let s = setup(deckWith("HV-P03-083", "HV-P03-022", "HV-P03-022", "HV-P03-022", "HV-P03-022"), deckWith(FILLER), 1);
@@ -146,7 +148,7 @@ describe("P03 最後5張", () => {
     return { s, recvChara, recvGuts, atkChara, atkGuts };
   }
 
-  it("P03-083 火焼：ガッツ入替は2段で選ぶ→受け⇔攻撃の底が入れ替わる（Q1526）", () => {
+  it("P03-083 火焼：ガッツ入替は2段で選ぶ→受け⇔攻撃の底が入れ替わる（Q1828）", () => {
     let { s, recvGuts, atkGuts } = setup083WithGuts();
     // swapGutsA＝受け側のユースガッツ候補
     expect(cardAwaiting(s).purpose).toBe("swapGutsA");
@@ -161,7 +163,7 @@ describe("P03 最後5張", () => {
     expect(s.players[0].attack[0]).toBe(recvGuts);
   });
 
-  it("P03-083 火焼：第1段で0枚＝入れ替えない（Q1527）", () => {
+  it("P03-083 火焼：第1段で0枚＝入れ替えない（Q1829）", () => {
     let { s, recvGuts, atkGuts } = setup083WithGuts();
     expect(cardAwaiting(s).purpose).toBe("swapGutsA");
     s = feed(s, { type: "effect-cards", uids: [] }); // 換えない

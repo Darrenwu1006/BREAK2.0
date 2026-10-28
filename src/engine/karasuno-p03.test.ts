@@ -67,7 +67,7 @@ describe("烏野 P03：登場 gate", () => {
 });
 
 describe("烏野 P03：active／watch", () => {
-  it("P03-056 田代：dropSelf→ドロップから烏野3年キャラ回収", () => {
+  it("Q1806 P03-056 田代：dropSelf→ドロップから烏野3年キャラ回収", () => {
     let s = setup(deckWith("HV-P03-056", "HV-P03-053", "HV-D01-002"), deckWith(FILLER), 1);
     s = karasunoAttack(s); // → deploy-attack 待ち
     s = deploy(s, "attack", grab(s, 0, FILLER)); // 攻擊登場 → アタック自由步驟

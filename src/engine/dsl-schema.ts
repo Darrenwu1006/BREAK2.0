@@ -9,11 +9,11 @@
 export const KNOWN_ACTION_OPS = [
   "draw", "drawToHandSize", "dropToHand", "forceDrop", "addParam", "if", "gate",
   "revealTopTutor", "lookTopTutor", "chooseOne", "moveSelfToBlockSide", "revealTopCheck",
-  "millTop", "dropFromHand", "deployFromDrop", "moveCharaToHand", "gutsToHand",
+  "millTop", "dropFromHand", "deployFromDrop", "deployFromHand", "deploySelfToArea", "dropToEventArea", "dropToGuts", "moveCharaToHand", "gutsToHand",
   "eventAreaToHand", "handToDeckBottom", "deployFromGuts", "setParam", "millTopAll",
   "dropOpponentGuts", "coinFlip", "moveGutsToArea", "watch", "restrict", "keyword",
   "setOwnOp", "addOpponentOp", "skipToPhase", "calcAttackOpAs", "lostOpponent", "backAttack",
-  "drawOpponent", "swapGuts", "lookTopTwoPick",
+  "drawOpponent", "swapGuts", "shuffleDeck", "lookTopTwoPick",
   "handToDeckTop", "setParamToBase", "preventParamDecrease", "dropToDeckBottom", "shuffleHandIntoDeck", "moveOpponentEvent",
   "handToGuts", "gutsToHandAny", "dropTarget", "opponentMayPlaceEvent",
   "script", // 安全網 2：特例腳本逃生口
@@ -24,7 +24,7 @@ export const KNOWN_CONDITION_TYPES = [
   "opponentOp", "selfArea", "handMax", "handMin", "setTotalMax", "deployedFromHand", "deployedBySkill", "chara",
   "allCharas", "distinctAffiliationCharas", "eventAreaCount", "phaseIs", "targetIs",
   "triggerIs", "targetParam", "deployedByCard", "dropDistinctNames", "addedThisSkill", "gutsParity",
-  "milledIs", "selfIsSideBlocker", "paidGutsAll",
+  "milledIs", "selfIsSideBlocker", "noSideBlockers", "setLessThanOpponent", "paidGutsAll", "milledCount", "droppedEventCount",
 ] as const;
 
 /** Cost 的 type（對應 dsl.ts Cost union；effects.ts costPayable/costOps 處理） */
@@ -66,6 +66,10 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   millTop: ["upTo"],
   dropFromHand: ["count"],
   deployFromDrop: ["filter", "area"],
+  deployFromHand: ["filter", "area", "upTo"],
+  deploySelfToArea: ["area"],
+  dropToEventArea: ["filter", "upTo"],
+  dropToGuts: ["filter", "area", "upTo"],
   moveCharaToHand: ["from", "filter", "upTo"],
   gutsToHand: ["count"],
   eventAreaToHand: ["count"],
@@ -74,13 +78,13 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   deployFromGuts: ["filter", "area", "upTo"],
   setParam: ["target", "param", "value"],
   setParamToBase: ["target", "param"],
-  preventParamDecrease: ["target", "param"],
+  preventParamDecrease: ["param"],
   dropToDeckBottom: ["filter", "count"],
   drawOpponent: ["count"],
   swapGuts: ["areaA", "areaB"],
   lookTopTwoPick: ["count", "pick1", "pick2"],
   millTopAll: ["count"],
-  dropOpponentGuts: ["area", "upTo"],
+  dropOpponentGuts: ["upTo"],
   coinFlip: ["heads", "tails"],
   moveGutsToArea: ["filter", "area", "upTo"],
   watch: ["trigger", "duration", "actions"],
@@ -111,6 +115,7 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   addedThisSkill: ["min"],
   gutsParity: ["area", "parity"],
   milledIs: ["affiliation"],
+  milledCount: ["min"],
   paidGutsAll: ["filter"],
   // allCharas：affiliation 與 affiliationsAny 二擇一（OR 句型），由型別把關，不列必填
   distinctAffiliationCharas: ["min"],
@@ -179,6 +184,15 @@ function walkActions(actions: unknown, cardId: string, path: string, errs: Valid
       continue;
     }
     checkRequired(node, op, cardId, p, errs);
+    // [Codex 2026-10-27] Q1814事件無效篩選必須使用合法phase icon。
+    if (op === "restrict") {
+      const restriction = node["restriction"] as Record<string, unknown> | undefined;
+      const timings = restriction?.["negateEventTimings"];
+      if (timings !== undefined && (!Array.isArray(timings) || timings.length === 0
+        || timings.some((timing) => !["serve", "block", "draw", "receive", "toss", "attack"].includes(timing)))) {
+        errs.push({ cardId, path: `${p}.restriction.negateEventTimings`, message: "事件技能無效時機必須為非空phase icon陣列" });
+      }
+    }
     // 巢狀
     walkActions(node["then"], cardId, `${p}.then`, errs);
     walkActions(node["actions"], cardId, `${p}.actions`, errs);

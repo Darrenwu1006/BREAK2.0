@@ -69,24 +69,42 @@ describe("稲荷崎 延後 P03", () => {
     expect(s.players[0].hand.length).toBeGreaterThan(h0); // ドロップ→抽1
   });
 
-  it("P03-039 宮侑：稲荷崎イベントplay時、[=サーブ]稲荷崎2枚ずつ棄→サーブ+（scaling）", () => {
-    let s = setup(deckWith("HV-P03-039", "HV-P02-086", "HV-P03-091", "HV-P03-091", "HV-P03-091"), deckWith(FILLER), 0);
-    const miya = grab(s, 0, "HV-P03-039"); // 宮侑（serve3）サーブキャラ
+  it("Q1799：宮侑每次觸發只能支付2枚/+1；兩次play可各付一次", () => {
+    let s = setup(deckWith("HV-P03-039", "HV-P02-086", "HV-P02-086", "HV-P03-091", "HV-P03-091", "HV-P03-091"), deckWith(FILLER), 0);
+    const miya = grab(s, 0, "HV-P03-039");
     s = feed(s, { type: "deploy-serve", uid: miya });
     s = drainCp(s, false);
-    // 事件區に [=サーブ]稲荷崎カードを3枚仕込む → play でもう1枚＝4枚＝2ペア
     for (let i = 0; i < 3; i++) pushTo(s, 0, "eventArea", "HV-P03-091");
-    const trigger = grab(s, 0, "HV-P02-086"); // 稲荷崎イベント（play で 039 誘発）
-    s = feed(s, { type: "free", action: "event", uid: trigger });
-    // P02-086 自身の決策＋039 の gate を順次処理（gate は受ける、其他は適当に進める）
-    for (let i = 0; i < 12; i++) {
-      const pd = s.pendingDecision;
-      if (pd?.type === "effect-confirm") s = feed(s, { type: "effect-confirm", accept: true });
-      else if (pd?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: pd.candidates!.slice(0, pd.min || (pd.candidates!.length >= 2 ? 2 : 1)) });
-      else if (pd?.type === "effect-option") s = feed(s, { type: "effect-option", index: 0 });
-      else break;
+    for (let play = 1; play <= 2; play++) {
+      s = feed(s, { type: "free", action: "event", uid: grab(s, 0, "HV-P02-086") });
+      expect(s.pendingDecision?.type).toBe("effect-confirm");
+      s = feed(s, { type: "effect-confirm", accept: true });
+      expect(s.pendingDecision?.type).toBe("effect-cards");
+      expect(s.pendingDecision?.min).toBe(2);
+      expect(s.pendingDecision?.max).toBe(2);
+      const paid = s.pendingDecision!.candidates!.slice(0, 2);
+      s = feed(s, { type: "effect-cards", uids: paid });
+      expect(s.pendingDecision?.type).toBe("free"); // 第一次仍有2張可支付，但不能再開第二個gate。
+      expect(effParam(db, s, miya, "serve")).toBe(3 + play);
+      expect(paid.every((uid) => s.players[0].drop.includes(uid))).toBe(true);
+      expect(s.players[0].eventArea).toHaveLength(3 - play);
     }
-    // 4枚ある→2ペア→サーブ+2（基礎3→5）。実装が拾えるペア数ぶん増えていることを確認
-    expect(effParam(db, s, miya, "serve")).toBeGreaterThanOrEqual(4); // 少なくとも1ペア＝+1
+  });
+
+  it("Q1799：宮侑可拒絕付款，且不足2張時不出現gate", () => {
+    for (const count of [0, 1]) {
+      let s = setup(deckWith("HV-P03-039", "HV-P02-086", "HV-P03-091"), deckWith(FILLER), 0);
+      const miya = grab(s, 0, "HV-P03-039");
+      s = feed(s, { type: "deploy-serve", uid: miya });
+      if (count) pushTo(s, 0, "eventArea", "HV-P03-091");
+      s = feed(s, { type: "free", action: "event", uid: grab(s, 0, "HV-P02-086") });
+      if (count) {
+        expect(s.pendingDecision?.type).toBe("effect-confirm");
+        s = feed(s, { type: "effect-confirm", accept: false });
+      }
+      expect(s.pendingDecision?.type).toBe("free");
+      expect(effParam(db, s, miya, "serve")).toBe(3);
+      expect(s.players[0].eventArea).toHaveLength(count + 1);
+    }
   });
 });

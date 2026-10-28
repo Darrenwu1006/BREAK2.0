@@ -1,0 +1,107 @@
+{
+ "name": "青葉城西-四彈新及岩控制",
+ "school": "青葉城西",
+ "source": "decks/青葉城西/四彈新及岩控制.csv",
+ "cards": [
+  {
+   "id": "HV-P04-016",
+   "count": 4,
+   "printing": "IP"
+  },
+  {
+   "id": "HV-P01-033",
+   "count": 3,
+   "printing": "IP"
+  },
+  {
+   "id": "HV-P04-017",
+   "count": 2,
+   "printing": "KP"
+  },
+  {
+   "id": "HV-P04-020",
+   "count": 4,
+   "printing": "IP"
+  },
+  {
+   "id": "HV-P01-035",
+   "count": 2,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P04-021",
+   "count": 3
+  },
+  {
+   "id": "HV-P04-029",
+   "count": 4,
+   "printing": "RA"
+  },
+  {
+   "id": "HV-P02-058",
+   "count": 1
+  },
+  {
+   "id": "HV-P04-023",
+   "count": 3,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P04-025",
+   "count": 2,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P04-027",
+   "count": 3,
+   "printing": "RP"
+  },
+  {
+   "id": "HV-P01-039",
+   "count": 1
+  },
+  {
+   "id": "HV-P04-087",
+   "count": 2,
+   "printing": "SP"
+  },
+  {
+   "id": "HV-P04-085",
+   "count": 2
+  },
+  {
+   "id": "HV-P01-088",
+   "count": 2
+  },
+  {
+   "id": "HV-P01-087",
+   "count": 1
+  },
+  {
+   "id": "HV-P04-088",
+   "count": 1
+  },
+  {
+   "id": "HV-D04-012",
+   "count": 0
+  },
+  {
+   "id": "HV-D04-013",
+   "count": 0
+  },
+  {
+   "id": "HV-P04-018",
+   "count": 0,
+   "printing": "NA"
+  },
+  {
+   "id": "HV-P04-089",
+   "count": 0,
+   "printing": "NP"
+  },
+  {
+   "id": "HV-PR-051",
+   "count": 0
+  }
+ ]
+}

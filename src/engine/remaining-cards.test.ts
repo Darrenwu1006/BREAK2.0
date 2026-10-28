@@ -29,7 +29,12 @@ describe("剩餘 94 張完成條件", () => {
   it("所有有技能文字的卡都已有 DSL，且不再留下 todo（P03 / 新 PR 除外）", () => {
     const cards = cardsJson as { id: string; skillJa: string | null; effectStatus: string }[];
     const NEW_PR = new Set(["HV-PR-057","HV-PR-058","HV-PR-059","HV-PR-060","HV-PR-061","HV-PR-062","HV-PR-063"]);
-    const isNewPool = (id: string) => id.startsWith("HV-P03") || NEW_PR.has(id);
+    const isNewPool = (id: string) =>
+      id.startsWith("HV-P03") ||
+      id.startsWith("HV-P04") ||
+      id.startsWith("HV-D04") ||
+      NEW_PR.has(id) ||
+      (id.startsWith("HV-PR-") && Number(id.slice(6)) >= 53);
     const skilled = cards.filter((card) => card.skillJa?.trim().length && !isNewPool(card.id));
     expect(cards.filter((card) => card.effectStatus === "todo" && !isNewPool(card.id))).toEqual([]);
     expect(skilled).toHaveLength(192);
@@ -163,7 +168,7 @@ describe("剩餘 94 張 Batch 1：HVBP 基礎技能", () => {
 });
 
 describe("剩餘 94 張 Batch 2A：HV-P01 現有 DSL", () => {
-  it("P01-018＋Q216~218：支付 3 Guts，托球 +1；全員音駒時可回收事件", () => {
+  it("P01-018＋Q1133~218：支付 3 Guts，托球 +1；全員音駒時可回收事件", () => {
     let s = setup(deckWith("HV-P01-018", "HV-D02-005", "HVBP-014"), deckWith(FILLER), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D02-005");
@@ -177,7 +182,7 @@ describe("剩餘 94 張 Batch 2A：HV-P01 現有 DSL", () => {
     expect(s.players[0].hand).toContain(event);
   });
 
-  it("P01-019／P01-028＋Q219~223/Q231~232：Guts 灰羽強制登場並觸發被蓋技能", () => {
+  it("P01-019／P01-028＋Q1136~223/Q1148~232：Guts 灰羽強制登場並觸發被蓋技能", () => {
     let s = setup(deckWith("HV-P01-019", "HV-P01-025", "HV-P01-028", "HV-D02-005", "HV-D02-006"), deckWith(FILLER), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D02-005");
@@ -207,7 +212,7 @@ describe("剩餘 94 張 Batch 2A：HV-P01 現有 DSL", () => {
     expect(effParam(db, s, lev, "attack")).toBe(5); // 2 + 2（研磨）+1（山本）
   });
 
-  it("P01-057＋Q262~265：攔網登場後註冊下回合非抽牌入手監看", () => {
+  it("P01-057＋Q1179~265：攔網登場後註冊下回合非抽牌入手監看", () => {
     let s = setup(deckWith("HV-P01-057"), deckWith("HV-D02-005", "HV-D02-001", "HV-D02-006"), 0);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-D02-005");
@@ -222,7 +227,7 @@ describe("剩餘 94 張 Batch 2A：HV-P01 現有 DSL", () => {
     expect(s.watchers.some((w) => w.source === uid && w.trigger.on === "handAddByEffect")).toBe(true);
   });
 
-  it("P01-080＋Q309：對手事件區 5 張具有托球／攻擊時機時，接球合計 +3", () => {
+  it("P01-080＋Q1226：對手事件區 5 張具有托球／攻擊時機時，接球合計 +3", () => {
     let s = setup(deckWith("HV-P01-080", "HV-D02-005"), deckWith("HVBP-013", "HV-P01-081", "HV-P01-083", "HV-D01-012", "HV-P02-088"), 1);
     s = serveWith(s, FILLER);
     for (const id of ["HVBP-013", "HV-P01-081", "HV-P01-083", "HV-D01-012", "HV-P02-088"]) placeInEventArea(s, 1, id);
@@ -254,7 +259,7 @@ describe("剩餘 94 張 Batch 2A：HV-P01 現有 DSL", () => {
     expect(effParam(db, s, attacker, "attack")).toBe(5);
   });
 
-  it("P01-083＋Q312：全員音駒，Court 合計支付 6 Guts 後攻擊 +3", () => {
+  it("P01-083＋Q1229：全員音駒，Court 合計支付 6 Guts 後攻擊 +3", () => {
     let s = setup(deckWith("HV-P01-083", "HV-D02-005", "HV-D02-001", "HV-D02-006"), deckWith(FILLER), 1);
     s = serveWith(s, FILLER);
     s = feed(s, { type: "defense-choice", choice: "receive" });

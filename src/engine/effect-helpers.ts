@@ -55,12 +55,18 @@ export function baseParam(db: CardDb, state: GameState, uid: number, p: ParamNam
 export function effParam(db: CardDb, state: GameState, uid: number, p: ParamName): number | null {
   const base = baseParam(db, state, uid, p);
   if (base === null) return null;
-  // 「－されない」守衛：存在 noDecrease modifier 時，忽略該 param 的負向（非 set）修正（†P03-064；Q1514 僅保護本人）
-  const guarded = state.modifiers.some((m) => m.kind === "noDecrease" && m.target === uid && m.param === p);
+  // 「－されない」守衛：存在 noDecrease modifier 時，忽略該 param 的負向（非 set）修正（†P03-064；Q1514 僅保護本人；P04-070 保護指定所屬全體キャラ）
+  const c = cardOf(db, state, uid);
+  const guarded = state.modifiers.some((m) =>
+    m.kind === "noDecrease" && m.param === p && (
+      m.target === uid ||
+      (m.affiliation !== undefined && m.player !== undefined && c.affiliations.includes(m.affiliation) && charaAreaOf(state, m.player, uid) !== null)
+    ),
+  );
   let v = base;
   for (const m of state.modifiers) {
     if (m.target !== uid || m.param !== p) continue;
-    if (m.kind === "noDecrease") continue; // 守衛本身不是數值修正
+    if (m.kind === "noDecrease" || m.kind === "skillDeployed") continue; // 守衛／標記本身不是數值修正
     if (m.kind === "set") v = m.amount; // 固定（後續修正依解決順序再疊加 †0-2-12）
     else if (!(guarded && m.amount < 0)) v += m.amount;
   }
@@ -125,10 +131,12 @@ export function eventTimingsOf(db: CardDb, state: GameState, uid: number): Phase
   return skill?.kind === "event" && skill.phaseIcons?.length ? skill.phaseIcons : playTimingsOf(card);
 }
 
-/** dropFromEventArea コストの候選判定（所属＋[=サーブ]等でプレイできる＝playTimingAny；P03-039） */
-export function matchEventAreaFilter(db: CardDb, state: GameState, uid: number, filter?: { affiliation?: string; playTimingAny?: PhaseIcon[] }): boolean {
+/** dropFromEventArea コストの候選判定（所属＋cardType＋[=サーブ]等でプレイできる＝playTimingAny；P03-039/PR-081） */
+export function matchEventAreaFilter(db: CardDb, state: GameState, uid: number, filter?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT"; playTimingAny?: PhaseIcon[] }): boolean {
   if (!filter) return true;
-  if (filter.affiliation && !cardOf(db, state, uid).affiliations.includes(filter.affiliation)) return false;
+  const c = cardOf(db, state, uid);
+  if (filter.affiliation && !c.affiliations.includes(filter.affiliation)) return false;
+  if (filter.cardType && c.type !== filter.cardType) return false;
   if (filter.playTimingAny && !eventTimingsOf(db, state, uid).some((t) => filter.playTimingAny!.includes(t))) return false;
   return true;
 }

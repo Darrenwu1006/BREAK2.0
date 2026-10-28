@@ -67,7 +67,7 @@ describe("バックアタック P03", () => {
     expect(s.players[0].serve).not.toContain(kuroo); // サーブから抜けた
   });
 
-  it("P03-020 影山：トスキャラが同名の場合、バックアタック登場不可（†0-2-2 登場禁止事項；Q1499/Q1500 類推、cost は Q196 型で不返還）", () => {
+  it("P03-020 影山：トスキャラが同名の場合、バックアタック登場不可（†0-2-2 登場禁止事項；Q1800/Q1801 類推、cost は Q196 型で不返還）", () => {
     let s = setup(deckWith("HV-P03-020", "HV-D02-010", "HV-D01-010", "HV-P03-085", "HV-D01-002"), deckWith(FILLER), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, "HV-P03-020"); // 影山(P03-020)で接球
@@ -75,7 +75,7 @@ describe("バックアタック P03", () => {
     const kageReceiver = s.players[0].receive[s.players[0].receive.length - 1]!;
     s = deploy(s, "toss", grab(s, 0, "HV-D02-010")); // 手白（影山以外）は正規登場
     while (s.pendingDecision?.type === "effect-confirm") s = feed(s, { type: "effect-confirm", accept: false });
-    // 效果製造的同名狀態（Q1471/Q1476 型）：もう1枚の「影山 飛雄」がトスキャラを覆う → トス＝影山
+    // 效果製造的同名狀態（Q1772/Q1777 型）：もう1枚の「影山 飛雄」がトスキャラを覆う → トス＝影山
     placeOnStack(s, 0, "toss", "HV-D01-002");
     s = feed(s, { type: "free", action: "pass" });
     const azumane = grab(s, 0, "HV-D01-010"); // 東峰（元々アタック3）→ 020 誘発
@@ -94,7 +94,7 @@ describe("バックアタック P03", () => {
     expect(s.restrictions.some((r) => r.preventOpDecrease && r.player === 0)).toBe(true);
   });
 
-  it("バックアタック(N) は set：登場前の + を上書き（Q1477）", () => {
+  it("バックアタック(N) は set：登場前の + を上書き（Q1778）", () => {
     let s = setup(deckWith("HV-P03-033", "HV-D01-002", "HV-D02-006"), deckWith(FILLER), 1);
     s = serveWith(s, FILLER);
     s = receiveTrack(s, FILLER);

@@ -58,6 +58,7 @@ const GLOSSARY_LIST: GlossaryItem[] = [
   { key: "Aパス", name: "A Pass", definition: "當我方的托球角色登場時，其托球點數增加該數值。" },
   { key: "ツーアタック", name: "二次進攻", definition: "將我方 OP 設為該數值，立即進入我方結束階段；下個對手回合中，對手不能登場攔網角色。" },
   { key: "バックアタック", name: "後排攻擊", definition: "將這張卡登場至我方攻擊區，並將該角色的攻擊點數設為該數值。" },
+  { key: "同時多発位置差攻撃", name: "同時多發位置差攻擊", definition: "我方場上角色全部屬於指定〈所屬〉時，可從我方場上支付合計至多 N 張卡名與托球角色不同（如「菅原 孝支」以外）的該〈所屬〉Guts 來使用。使我方 1 名攻擊角色的攻擊點數 +X（X 等於所支付卡片的卡名種類數）。" },
   { key: "ターン1", name: "一回合一次", definition: "這個回合中，使我方所有與這張卡同名的卡片技能無效。" },
 ];
 
@@ -70,7 +71,8 @@ export function translateSkillKeyword(keyword: string): string {
     .replace(/ツーアタック/g, "二次進攻")
     .replace(/Aパス/g, "A Pass")
     .replace(/ブロックアウト/g, "打手出界")
-    .replace(/バックアタック/g, "後排攻擊");
+    .replace(/バックアタック/g, "後排攻擊")
+    .replace(/同時多発位置差攻撃/g, "同時多發位置差攻擊");
 }
 
 export function extractLeadingSkillMarkers(text: string): { markers: string[]; body: string } {
@@ -104,6 +106,7 @@ export function getGlossaryItems(card: Card): GlossaryItem[] {
     if (item.key === "Aパス") return /Aパス|A\s*Pass/i.test(skillText);
     if (item.key === "ツーアタック") return /ツーアタック|二次進攻|二次攻擊/.test(skillText);
     if (item.key === "バックアタック") return /バックアタック|後排攻擊|後衛攻擊/.test(skillText);
+    if (item.key === "同時多発位置差攻撃") return /同時多発位置差攻撃|同時多發位置差攻擊/.test(skillText);
     return /ターン1|一回合一次/.test(skillText) || card.timing.includes("回合1");
   });
 }

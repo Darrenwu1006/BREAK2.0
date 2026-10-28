@@ -12,7 +12,7 @@ export { validateGameDeck } from "./deck-validation";
 export type { GameDeckValidationIssue } from "./deck-validation";
 import { nextRandom, shuffle } from "./rng";
 import { cardOf, charasOf, deployNames, effParam, log, nameOf, normName, other, removeFromHand, suppressLogsForState, topChara } from "./effect-helpers";
-import { blockDeployMax, canDeployTo, centerBlockNegated, deployLegality } from "./deploy-legality";
+import { banHandAddActive, blockDeployMax, canDeployTo, centerBlockNegated, deployLegality } from "./deploy-legality";
 import {
   applyEffectDecision,
   cleanupTurn,
@@ -450,7 +450,15 @@ function runUntilDecision(db: CardDb, state: GameState): void {
         break;
 
       case "draw": // †5-8
-        if (state.sub === 0) { const n = drawCards(state, tp, 1); log(state, tp, n ? "接球抽牌 +1" : "牌組已空，無法抽牌"); state.sub++; }
+        if (state.sub === 0) {
+          if (banHandAddActive(state, tp)) {
+            log(state, tp, "「手札に加えられない」生效中，無法進行接球抽牌"); // Q1933
+          } else {
+            const n = drawCards(state, tp, 1);
+            log(state, tp, n ? "接球抽牌 +1" : "牌組已空，無法抽牌");
+          }
+          state.sub++;
+        }
         else if (state.sub === 1) { state.pendingDecision = { player: tp, type: "free" }; return; }
         else enterPhase(state, "receive");
         break;

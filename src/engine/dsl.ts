@@ -27,10 +27,14 @@ export interface CharaFilter {
   area?: CourtArea[];
   /** 元々のパラメータ上限（ブロックアウト：元々のブロックポイントがN以下） */
   baseParamMax?: { param: ParamName; value: number };
+  /** 元々のパラメータ下限（P04-048「元々のブロックポイントが3以上」／P04-097「元々のレシーブポイントが5以上」） */
+  baseParamMin?: { param: ParamName; value: number };
   /** 元々のパラメータ＝N（P02-096「元々のアタックポイントが3」） */
   baseParamEq?: { param: ParamName; value: number };
   /** 排除卡名（P01-023「『夜久 衛輔』以外の」） */
   notNames?: string[];
+  /** カード名がトスキャラと異なる（P04-011 同時多発位置差攻撃 Q1863） */
+  excludeTossName?: true;
   /** 目前參數值下限／＝N（P01-082「レシーブポイントが5以上の」／P02-090「ブロックポイントが3の」Q457 用修正後值） */
   effParamMin?: { param: ParamName; value: number };
   effParamEq?: { param: ParamName; value: number };
@@ -53,8 +57,8 @@ export type Condition =
   | { type: "setTotalMax"; count: number }
   /** 發生源這回合由手牌登場（Q202：效果登場不算） */
   | { type: "deployedFromHand" }
-  /** 發生源這回合由スキルで登場（效果登場，origin≠hand；P03-041「このキャラがスキルで登場しており」） */
-  | { type: "deployedBySkill" }
+  /** 發生源（或 target: "target" 指定之そのキャラ）這回合由スキルで登場（效果登場，origin≠hand；P03-041／PR-084） */
+  | { type: "deployedBySkill"; target?: "self" | "target" }
   /** 存在符合條件的キャラ（player 預設 self；minCount＝N人以上 P02-093） */
   | { type: "chara"; player?: "self" | "opponent"; filter: CharaFilter; minCount?: number }
   /** 自分のキャラ全員符合所属（フェイント卡条件）。
@@ -84,20 +88,28 @@ export type Condition =
   | { type: "milledIs"; affiliation: string }
   /** 發生源是サイドブロッカー（P02-037/038） */
   | { type: "selfIsSideBlocker" }
-  /** 本技能付出的ガッツ全部具指定ポジション（P02-050「払ったガッツすべてがS」） */
-  | { type: "paidGutsAll"; filter: CharaFilter };
+  /** 自分のブロックエリアにサイドブロッカーがいない（P04-058 茂庭 要 Q1901） */
+  | { type: "noSideBlockers" }
+  /** 自分のセットカードが相手のセットカードより少ない（D04-002 岩泉 一） */
+  | { type: "setLessThanOpponent" }
+  /** 本技能付出的ガッツ全部具指定ポジション（P02-050「払ったガッツすべてがS」）；distinctNames＝それらのカード名が異なる（P04-007/063） */
+  | { type: "paidGutsAll"; filter: CharaFilter; distinctNames?: true }
+  /** cost millDeck 棄掉的卡中符合條件的張數範圍（P04-039/043/045/095「その中にあるイベントカードがN枚以上／1枚の場合」） */
+  | { type: "milledCount"; cardType?: "CHARACTER" | "EVENT"; affiliation?: string; min: number; max?: number }
+  /** cost dropFromEventArea 棄掉的張數範圍（PR-081「ドロップしたカードが2枚の場合」） */
+  | { type: "droppedEventCount"; min?: number; max?: number };
 
 export type Cost =
-  /** Nガッツ払う †1-4-8：來源在ブロックエリア時付センターブロッカー下（卡片注釈），其餘付來源卡下 */
-  | { type: "guts"; count: number }
-  /** 自分のコートから合計Nガッツ（任意組合 Q315；P01-085） */
-  | { type: "gutsAny"; count: number }
+  /** Nガッツ払う †1-4-8：來源在ブロックエリア時付センターブロッカー下（卡片注釈），其餘付來源卡下。maxCount＝「2ガッツか3ガッツ」（PR-080） */
+  | { type: "guts"; count: number; maxCount?: number }
+  /** 自分のコートから合計Nガッツ（任意組合 Q315；P01-085／P04-011 maxCount・filter） */
+  | { type: "gutsAny"; count: number; maxCount?: number; filter?: CharaFilter }
   /** 棄手牌 N 張；filter＝「青葉城西のカード」等限定 */
   | { type: "dropFromHand"; count: number; filter?: CharaFilter }
   /** 手札からこのカードをドロップする（P01-013 型） */
   | { type: "dropSelf" }
-  /** イベントエリアから filter 一致のカード count 枚をドロップ（P03-023/026「イベントエリアからユースのカード1枚をドロップ」；Q1482 所属完全一致） */
-  | { type: "dropFromEventArea"; count: number; filter?: { affiliation?: string; playTimingAny?: PhaseIcon[] } }
+  /** イベントエリアから filter 一致のカード count 枚をドロップ（P03-023/026「イベントエリアからユースのカード1枚をドロップ」；Q1482 所属完全一致；PR-081 maxCount/cardType） */
+  | { type: "dropFromEventArea"; count: number; maxCount?: number; filter?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT"; playTimingAny?: PhaseIcon[] } }
   /** このカード（イベント）を自分のデッキの下に置く（P03-086 的宣言コスト；プレイ後イベントエリアにある自身を牌組底へ） */
   | { type: "placeSelfOnDeckBottom" }
   /** 自分の發生源の所在エリアのガッツから filter 一致1枚を發生源の上に置く（P03-028「レシーブガッツの影山をこのキャラの上に」；置いた方が頂端キャラになる） */
@@ -107,13 +119,13 @@ export type Cost =
   | { type: "placeSelfInEventArea" }
   /** 手札からカードN枚をデッキの下に置く（D03-002） */
   | { type: "handToDeckBottom"; count: number }
-  /** 手札からイベントカード1枚をイベントエリアに置く（技能不發動 Q337/Q344；D03-003/P02-003） */
-  | { type: "placeEventFromHand"; filter?: { affiliation?: string } }
+  /** 手札からイベントカード（或 filter 指定卡種/ポジション如 P04-074 ボール拾いのキャラカード）1枚をイベントエリアに置く（技能不發動 Q337/Q344/Q1913；D03-003/P02-003/P04-074） */
+  | { type: "placeEventFromHand"; filter?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT"; position?: string } }
   /** 指定エリア（可複數）から合計Nガッツ（D03-012「レシーブエリアから」／P01-045「トスとアタックから合計4」Q251）。
    *  perArea＝各エリアから count ずつ（P03-080/073「2ガッツずつ」；簡化：自動付各區前 count 枚） */
   | { type: "gutsFrom"; areas: CourtArea[]; count: number; perArea?: true }
-  /** デッキの上からN枚をドロップすれば（P01-051；棄的卡供 milledIs 判定） */
-  | { type: "millDeck"; count: number }
+  /** デッキの上からN枚（upTo＝N枚まで P04-039/045/095 Q1891）をドロップすれば（P01-051；棄的卡供 milledIs/milledCount 判定） */
+  | { type: "millDeck"; count: number; upTo?: true }
   /** 自分の指定キャラ1人をドロップすれば（P01-091「梟谷のブロックキャラ1人をドロップ」） */
   | { type: "dropChara"; area: CourtArea; filter?: CharaFilter }
   /** 「このカードを斜めにすれば使える」＝純物理動作、無遊戲狀態（Q375；P02-027） */
@@ -154,6 +166,10 @@ export interface DeployRestriction {
   banBaseParamMin?: { param: ParamName; value: number };
   /** 「スキルでカードを手札に加えられない」（P01-035；Q239~241：含技能/事件的抽牌與一切入手） */
   banHandAdd?: true;
+  /** 「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933：含レシーブドロー與技能入手） */
+  banDrawPhaseHandAdd?: true;
+  /** 禁止指定カード名のキャラ登場（P04-037「自分のレシーブエリアに『百沢 雄大』を登場させられない」） */
+  banNames?: string[];
   /** maxCount 只計「手札から」的登場（P02-020「手札からブロックキャラを2人まで」） */
   fromHandOnly?: true;
   /** 「相手のセンターブロッカーのブロックポイントは無いものとして扱う」（Q372~374；DP 不加算、效果不可參照；ワンタッチ仍可用；P02-027） */
@@ -170,13 +186,15 @@ export interface DeployRestriction {
   disableSkills?: CharaFilter;
   /** 禁止 play 具有指定時機的事件卡 */
   banEventTimings?: PhaseIcon[];
+  /** [Codex 2026-10-27] 指定play時機的事件技能無效，仍可play（†6-1／Q1814）。 */
+  negateEventTimings?: PhaseIcon[];
   /** 該玩家擁有的 OP 不可被減少 */
   preventOpDecrease?: true;
   /** 「相手のブロックのDPがN以下の場合、相手はブロックに失敗する」（追加判定失敗條件 †5-15-3；P02-039；Q393 判定時點） */
   blockFailIfDpMax?: number;
 }
 
-export type KeywordName = "ドシャット" | "ワンタッチ" | "フェイント" | "ブロックアウト" | "ターン1" | "Aパス" | "ツーアタック" | "バックアタック";
+export type KeywordName = "ドシャット" | "ワンタッチ" | "フェイント" | "ブロックアウト" | "ターン1" | "Aパス" | "ツーアタック" | "バックアタック" | "同時多発位置差攻撃";
 
 export type Action =
   /** 抽牌；upTo＝「N枚まで引く」可選擇不抽（P01-088）。技能抽牌受「手札に加えられない」禁止（Q241） */
@@ -184,8 +202,9 @@ export type Action =
   /** 「手札がN枚になるようにカードを引く」（P02-058） */
   | { op: "drawToHandSize"; size: number }
   /** 從自己棄牌區把符合條件的卡加入手牌（P01-086 強制 1／P02-056「まで」可 0；Q409 含剛付掉的 cost）。
-   *  distinctNames＝「カード名の異なる」N 種（P03-097；湊不齊整段不執行，比照 gutsToHand Q224/Q297） */
-  | { op: "dropToHand"; filter: CharaFilter; cardType?: "CHARACTER" | "EVENT"; count: number; upTo?: boolean; distinctNames?: true }
+   *  distinctNames＝「カード名の異なる」N 種（P03-097；湊不齊整段不執行，比照 gutsToHand Q224/Q297）。
+   *  fromMilled＝限本技能剛 mill 的卡（「その中の…」P04-062）；includeEventArea＝「イベントエリアかドロップエリアから」（P04-044） */
+  | { op: "dropToHand"; filter: CharaFilter; cardType?: "CHARACTER" | "EVENT"; count: number; upTo?: boolean; distinctNames?: true; fromMilled?: true; includeEventArea?: true }
   /** 「相手は手札からカードN枚をドロップする」（對手自選；P01-033/087/PR-025） */
   | { op: "forceDrop"; count: number }
   /** 數值修正（修正層 add，期限＝クリンナップ／對象非キャラ化即失效 †6-10-3）。param "choose"＝使用者選一種參數 */
@@ -193,9 +212,9 @@ export type Action =
   | { op: "if"; cond: Condition[]; then: Action[] }
   /** 「～ば使える」分歧：條件成立且 cost 付得出時，master 可選擇付出並執行 then；否則跳過 */
   | { op: "gate"; cond?: Condition[]; costs?: Cost[]; then: Action[]; else?: Action[] }
-  /** 公開牌組頂 1 張，名列 names 者可加入手牌（upTo 張，可 0），其餘置於牌組底（P01-006；Q280 比對目前卡名） */
-  | { op: "revealTopTutor"; names: string[]; upTo: number }
-  /** 看牌組頂 count 張，名列 names 者公開 upTo 張加入手牌，其餘置底（D02-012；不足時看到沒有為止 Q197；置底順序簡化為原順序）。
+  /** 公開牌組頂 1 張，名列 names 者可加入手牌（upTo 張，可 0；mandatory 時必須取），其餘置於牌組底（P01-006；Q280 比對目前卡名） */
+  | { op: "revealTopTutor"; names: string[]; upTo: number; mandatory?: true }
+  /** 看牌組頂 count 張，名列 names 者公開 upTo 張加入手牌，其餘置底（D02-012；不足時看到沒有為止 Q197；由技能使用者決定置底順序）。
    *  affiliationsAny＝所属 OR（「音駒か音駒中」P03-031／「条善寺か疑似ユース」P03-078；Q1497 所属需完全相符） */
   | { op: "lookTopTutor"; count: number; names?: string[]; affiliation?: string; affiliationsAny?: string[]; cardType?: "CHARACTER" | "EVENT"; upTo: number; addAll?: true }
   /** 「以下から1つを選んで使える」▶選項（†7-3-1；optional＝可不使用） */
@@ -209,10 +228,18 @@ export type Action =
   | { op: "millTop"; upTo: number; then?: Action[]; milledMatch?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT" } }
   /** 強制棄手牌（可能な限り †0-2-5-5；Q301） */
   | { op: "dropFromHand"; count: number }
-  /** 從自己棄牌區強制登場（Q303 強制、Q304 受同名/登場限制約束）；登場卡成為 lastTarget */
-  | { op: "deployFromDrop"; filter: CharaFilter; area: CourtArea; side?: true; then?: Action[] }
-  /** 從指定區把「キャラ」（頂牌；Q308 ガッツ不可）加入手牌，upTo 可選 0 */
-  | { op: "moveCharaToHand"; from: CourtArea | "court"; filter: CharaFilter; upTo: number }
+  /** 從自己棄牌區登場（Q303 強制、upTo＝1枚まで P04-002/058；Q304 受同名/登場限制約束）；登場卡成為 lastTarget */
+  | { op: "deployFromDrop"; filter: CharaFilter; area: CourtArea; side?: true; upTo?: true; then?: Action[] }
+  /** 從自己手牌登場（P04-083「自分の手札から『菅原 孝支』1枚までをトスエリアに登場させ」）；登場卡成為 lastTarget */
+  | { op: "deployFromHand"; filter: CharaFilter; area: CourtArea; upTo: number; then?: Action[] }
+  /** 把發生源從目前コート區域移到指定區登場（P04-022 金田一「このキャラをアタックエリアに登場させ」） */
+  | { op: "deploySelfToArea"; area: CourtArea }
+  /** 從自己棄牌區將符合條件的卡置入事件區（P04-076 星海 Q1916：技能不發動） */
+  | { op: "dropToEventArea"; filter: { affiliation?: string; cardType?: "CHARACTER" | "EVENT" }; upTo: number }
+  /** 從自己棄牌區將符合條件的角色卡放到指定區當 Guts（P04-082「ドロップエリアから『影山 飛雄』1枚までをトスエリアのガッツにし」） */
+  | { op: "dropToGuts"; filter: CharaFilter; area: CourtArea; upTo: number }
+  /** 從指定區把「キャラ」（頂牌；Q308 ガッツ不可）加入手牌，upTo 可選 0（min＝強制張數 P04-083） */
+  | { op: "moveCharaToHand"; from: CourtArea | "court"; filter: CharaFilter; upTo: number; min?: number }
   /** 自分のエリア1つからガッツ N 枚加入手牌（P01-076 同所属／P01-021 名異なる音駒；Q224/Q297 湊不齊整段不執行） */
   | { op: "gutsToHand"; count: number; sameAffiliation?: true; distinctNames?: true; affiliation?: string }
   /** 自分のイベントエリアから回收（不限頂牌 Q331/Q368）；then＝「加えた場合」分歧（D03-001/P02-024）。
@@ -231,13 +258,14 @@ export type Action =
   /** 「このターン中、このキャラの〇〇ポイントは－されない」（P03-064/041/057）。
    *  推一個 noDecrease 守衛 modifier（クリンナップで消える＝thisTurn；purgeModifiers でキャラ離場時も除去）。
    *  守衛只保護該 target 本人（Q1514：他のキャラの－は適用される）。
-   *  param "all"＝全パラメータ守衛（P03-041「このキャラのパラメータは－されない」） */
-  | { op: "preventParamDecrease"; target: Target; param: ParamName | "all" }
+   *  param "all"＝全パラメータ守衛（P03-041「このキャラのパラメータは－されない」）。
+   *  [Gemini 2026-10-28] affiliation＝「このターン中、自分の〇〇のキャラのパラメータは－されない」（P04-070 北 信介） */
+  | { op: "preventParamDecrease"; target?: Target; affiliation?: string; param: ParamName | "all" }
   /** デッキ頂 count 枚強制ドロップ；全部符合 match → then（P02-041；Q395 0枚不成立/Q396 可能な限り）。
    *  cardType＝milled 卡種限定（P03-063「伊達工業のキャラカードの場合」Q1512） */
   | { op: "millTopAll"; count: number; requireFull?: true; match?: { affiliation?: string; cardType?: "CHARACTER" | "EVENT" }; then?: Action[] }
-  /** 相手の指定エリアのガッツを upTo 枚までドロップ（P02-046；Q400 由 master 選） */
-  | { op: "dropOpponentGuts"; area: CourtArea; upTo: number }
+  /** 相手の指定エリア（area 未指定＝相手全エリア P04-073）のガッツを upTo 枚までドロップ（P02-046；Q400 由 master 選） */
+  | { op: "dropOpponentGuts"; area?: CourtArea; filter?: CharaFilter; upTo: number }
   /** コインを投げる（P02-048；Q402 任意隨機方式＝引擎內嵌 RNG） */
   | { op: "coinFlip"; heads: Action[]; tails: Action[] }
   /** 自分のガッツ1枚を指定エリアのガッツにする（P02-050；Q405 任意區來源） */
@@ -259,7 +287,7 @@ export type Action =
   /** 對手可從手牌將事件卡放到事件區；不做時執行 else */
   | { op: "opponentMayPlaceEvent"; else: Action[] }
   /** 關鍵字 †9（引擎展開） */
-  | { op: "keyword"; name: KeywordName; n?: number }
+  | { op: "keyword"; name: KeywordName; n?: number; affiliation?: string }
   /** 自分の OP を N にする（ドシャット解決） */
   | { op: "setOwnOp"; value: number }
   /** 相手のアタック OP に−N（ワンタッチ） */
@@ -268,10 +296,12 @@ export type Action =
   | { op: "skipToPhase"; phase: "draw" | "end" }
   /** 算出自分のアタック OP として N（ツーアタック） */
   | { op: "calcAttackOpAs"; value: number }
-  /** 相手にカードを N 枚引かせる（PR-063「相手はカード2枚を引いてもよい」；簡化：強制 N 枚） */
-  | { op: "drawOpponent"; count: number }
-  /** 2 エリアの filter 一致ガッツを 1 枚ずつ入れ替える（P03-083「レシーブとアタックのユースガッツ1枚ずつまで」；両方選べる時のみ実行、upTo＝0可 Q1527） */
-  | { op: "swapGuts"; areaA: CourtArea; areaB: CourtArea; filter?: CharaFilter }
+  /** 相手にカードを N 枚引かせる（upTo＝相手が自身で N 枚引くか引かないかを決定 P04-100 Q1948/Q1949） */
+  | { op: "drawOpponent"; count: number; upTo?: boolean }
+  /** 2 エリア（または hand と CourtArea P04-064）の filter 一致ガッツ／キャラカードを 1 枚ずつ入れ替える（P03-083／P04-064；両方選べる時のみ実行、upTo＝0可 Q1527/Q1906/Q1907） */
+  | { op: "swapGuts"; areaA: CourtArea | "hand"; areaB: CourtArea; filter?: CharaFilter }
+  /** デッキをシャッフルする（optional＝「シャッフルしてもよい」P04-094；returnZones＝指定領域の affiliation 一致カードすべてをデッキに戻してシャッフル P04-093 Q1937/Q1938） */
+  | { op: "shuffleDeck"; optional?: true; returnFromZones?: ("eventArea" | "drop")[]; affiliation?: string }
   /** 牌組頂 count 枚を見て 2 段検索（P03-079）：pick1（filter1）1枚まで→加えた場合 pick2（filter2、残りから）1枚まで→残りデッキ下 */
   | { op: "lookTopTwoPick"; count: number; pick1: CharaFilter; pick2: CharaFilter }
   /** バックアタック(N)（†後排攻擊；P03-020/033）：把發生源從目前區域移到アタックエリア（登場、疊在原攻擊手上＝原攻擊手被蓋成ガッツ），
@@ -287,8 +317,9 @@ export type Action =
 
 export type PassiveTrigger =
   /** 這張卡登場時（含效果登場 †6-6-2-3 領域移動誘發）。overNames＝「「X」の上に登場した時」；
-   *  overAffiliation＝「Xのキャラの上に登場していた場合」（所属比對；P03-072「白鳥沢のキャラの上に登場」） */
-  | { on: "deploy"; overNames?: string[]; overAffiliation?: string }
+   *  overAffiliation＝「Xのキャラの上に登場していた場合」（所属比對；P03-072「白鳥沢のキャラの上に登場」）；
+   *  overFilter＝複合條件（P04-005「烏野のSのキャラの上に登場していた場合」Q1856） */
+  | { on: "deploy"; overNames?: string[]; overAffiliation?: string; overFilter?: CharaFilter }
   /** 自分のキャラが登場した時（D02-004「自分のブロックキャラが登場した時」；發生源自身另在場上） */
   | { on: "allyDeploy"; area?: CourtArea[] }
   /** 這張卡被蓋（成為ガッツ）時觸發——「下にある場合」有效的技能 †1-2-15-2-1（P01-047；by＝蓋上來的卡的條件） */

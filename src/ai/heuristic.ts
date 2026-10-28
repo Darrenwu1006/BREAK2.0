@@ -1059,6 +1059,8 @@ function chooseEffectOption(db: CardDb, state: GameState, weights: HeuristicV2We
   const ctx = state.effectCtx;
   const aw = ctx?.awaiting;
   if (!ctx || !aw || aw.kind !== "option") return 0;
+  // [Codex 2026-10-28] 維持原 autoPickCards 的上限張數保底，不讀未公開的牌組卡。
+  if (aw.purpose === "millCost") return aw.labels.length - 1;
   if (aw.purpose === "param") {
     let bestIndex = 0;
     let bestScore = -Infinity;
