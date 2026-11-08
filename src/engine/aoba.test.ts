@@ -42,8 +42,9 @@ describe("青葉城西：登場被動", () => {
     if (s.pendingDecision?.type === "effect-cards") s = feed(s, { type: "effect-cards", uids: [s.pendingDecision.candidates![0]!] });
     expect(effParam(db, s, iwaizumi, "attack")).toBe(4); // 2+2
     s = feed(s, { type: "free", action: "pass" });
-    // P1 回合：接球軸
+    // P1 回合：接球軸（Q1156：ドローステップのレシーブドロー＝ルール処理なので P01-035「スキルで」制限を受けず 4→5 枚に増える）
     s = feed(s, { type: "defense-choice", choice: "receive" });
+    expect(s.players[1].hand.length).toBe(5);
     s = feed(s, { type: "free", action: "pass" }); // ドローステップ＝規則處理，不受禁（正常抽）
     s = feed(s, { type: "deploy-receive", uid: grab(s, 1, "HV-P01-011") }); // 西谷 r6 ≥ OP6
     s = feed(s, { type: "free", action: "pass" });

@@ -1171,6 +1171,8 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       });
       ctx.anyExecuted = true;
       if (a.restriction.preventOpDecrease) log(state, p, "下個對手回合中，自己的 OP 不會被降低");
+      else if (a.restriction.banHandAdd) log(state, p, "下個對手回合中，對手無法透過技能將卡片加入手牌");
+      else if (a.restriction.banDrawPhaseHandAdd) log(state, p, `${a.player === "self" ? "本回合" : "下個對手回合"}的抽牌階段中，${a.player === "self" ? "自己" : "對手"}無法將卡片加入手牌`);
       else log(state, p, "對手下回合的登場受到限制");
       break;
     }
@@ -1206,6 +1208,11 @@ function execAction(db: CardDb, state: GameState, ctx: EffectCtx, a: RtAction): 
       for (let i = target.deck.length - 1; i > 0; i--) {
         const j = Math.floor(nextRandom(state) * (i + 1));
         [target.deck[i], target.deck[j]] = [target.deck[j]!, target.deck[i]!];
+      }
+      if (banHandAddActive(state, who)) {
+        ctx.anyExecuted = true;
+        log(state, who, "手牌洗回牌組（「手札に加えられない」生效中，無法抽牌）");
+        break;
       }
       const n = drawCards(state, who, a.draw);
       ctx.anyExecuted = true;

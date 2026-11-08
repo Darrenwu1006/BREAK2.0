@@ -12,7 +12,7 @@ export { validateGameDeck } from "./deck-validation";
 export type { GameDeckValidationIssue } from "./deck-validation";
 import { nextRandom, shuffle } from "./rng";
 import { cardOf, charasOf, deployNames, effParam, log, nameOf, normName, other, removeFromHand, suppressLogsForState, topChara } from "./effect-helpers";
-import { banHandAddActive, blockDeployMax, canDeployTo, centerBlockNegated, deployLegality } from "./deploy-legality";
+import { banDrawPhaseRuleDrawActive, blockDeployMax, canDeployTo, centerBlockNegated, deployLegality } from "./deploy-legality";
 import {
   applyEffectDecision,
   cleanupTurn,
@@ -451,7 +451,7 @@ function runUntilDecision(db: CardDb, state: GameState): void {
 
       case "draw": // †5-8
         if (state.sub === 0) {
-          if (banHandAddActive(state, tp)) {
+          if (banDrawPhaseRuleDrawActive(state, tp)) {
             log(state, tp, "「手札に加えられない」生效中，無法進行接球抽牌"); // Q1933
           } else {
             const n = drawCards(state, tp, 1);

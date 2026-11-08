@@ -10,12 +10,19 @@ function restrictionsFor(state: GameState, p: PlayerId, area: CourtArea) {
   return state.restrictions.filter((r) => r.player === p && r.area === area && r.setNo === state.setNo && r.activeTurn === state.turnNo);
 }
 
-/** 「スキルでカードを手札に加えられない」（P01-035；Q239~241 含技能/事件抽牌）或「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933）生效中 */
+/** 「スキルでカードを手札に加えられない」（P01-035；Q239~241/Q1156~1158 含技能/事件抽牌）或「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933）於技能解決中生效 */
 export function banHandAddActive(state: GameState, p: PlayerId): boolean {
   return state.restrictions.some((r) =>
     r.player === p && r.setNo === state.setNo && r.activeTurn === state.turnNo && (
       r.banHandAdd || (r.banDrawPhaseHandAdd && state.phase === "draw")
     ),
+  );
+}
+
+/** 「ドローフェイズにカードを手札に加えられない」（P04-087 Q1933：連規則接球抽牌レシーブドロー也禁止；P01-035 僅限スキル故不擋規則抽牌 Q1156） */
+export function banDrawPhaseRuleDrawActive(state: GameState, p: PlayerId): boolean {
+  return state.phase === "draw" && state.restrictions.some((r) =>
+    r.player === p && r.setNo === state.setNo && r.activeTurn === state.turnNo && r.banDrawPhaseHandAdd,
   );
 }
 
