@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { createGame, applyDecision } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import type { Card } from "../data/types";
-import { heuristicAiDecision, heuristicProfileForDeckAxes, isImmediateOneTouchBlocker } from "./heuristic";
+import { heuristicAiDecision, heuristicProfileForDeckAxes, isImmediateOneTouchBlocker, scoreMulliganHand } from "./heuristic";
 import { enumerateCandidates, type CoachActionEstimate } from "./coach";
 import { __ismctsTest, rootDecisionPressureScore } from "./ismcts";
 import { randomAiDecision } from "./random";
@@ -133,6 +133,72 @@ describe("M5 Heuristic v2 決策品質", () => {
     if (d.type !== "mulligan") throw new Error(`expected mulligan, got ${d.type}`);
     expect(d.returnUids).toContain(uids[1]);
     expect(d.returnUids).not.toContain(uids[0]);
+  });
+
+  it("Phase M1：起手 3 張同名及川＋2 張高費事件＋1 張岩泉時，換掉多餘的 2 張及川與卡手事件，只留 1 張及川＋1 張岩泉", () => {
+    // 3x 及川 徹 (HV-P01-033, HV-P04-016, HV-P04-016) + 2x 攻擊/條件事件 (HV-P04-088, HV-D04-012) + 1x 岩泉 一 (HV-P04-021)
+    const { state, uids } = mulliganState(0, [
+      "HV-P01-033",
+      "HV-P04-016",
+      "HV-P04-016",
+      "HV-P04-088",
+      "HV-D04-012",
+      "HV-P04-021",
+    ]);
+    state.servingPlayer = 1; // 先接球視角（缺 R>=4 接球手）
+    const d = heuristicAiDecision(db, state);
+    if (d.type !== "mulligan") throw new Error(`expected mulligan, got ${d.type}`);
+    const keptUids = uids.filter((u) => !d.returnUids.includes(u));
+    expect(keptUids).toHaveLength(2);
+    expect(keptUids).toContain(uids[5]); // 保留唯一攻擊手岩泉
+    const keptOikawaCount = keptUids.filter((u) => [uids[0], uids[1], uids[2]].includes(u)).length;
+    expect(keptOikawaCount).toBe(1); // 3 張同名及川只留 1 張
+    expect(d.returnUids).toContain(uids[3]); // 換掉攻擊事件
+    expect(d.returnUids).toContain(uids[4]); // 換掉高費/條件事件
+    expect(d.returnUids).toHaveLength(4);
+  });
+
+  it("Phase M1：先接球起手已齊備「R5 渡 ＋ T2 及川 ＋ A3 岩泉」加上 3 張冗餘／同名廢牌時，穩定保留三件套並換掉冗餘牌", () => {
+    // R5 渡 (HV-P01-039) + T2 及川 (HV-P04-017) + A3 岩泉 (HV-P04-021) + 同名及川 (HV-P04-016) + 墓地回收事件 (HV-P01-086) + 低效卡 (HV-P02-011)
+    const { state, uids } = mulliganState(0, [
+      "HV-P01-039",
+      "HV-P04-017",
+      "HV-P04-021",
+      "HV-P04-016",
+      "HV-P01-086",
+      "HV-P02-011",
+    ]);
+    state.servingPlayer = 1; // Player 0 為先接球方
+    const d = heuristicAiDecision(db, state);
+    if (d.type !== "mulligan") throw new Error(`expected mulligan, got ${d.type}`);
+    // 完整三件套必須全數保留
+    expect(d.returnUids).not.toContain(uids[0]);
+    expect(d.returnUids).not.toContain(uids[1]);
+    expect(d.returnUids).not.toContain(uids[2]);
+    // 3 張冗餘／同名廢牌全數換掉
+    expect(d.returnUids).toEqual(expect.arrayContaining([uids[3], uids[4], uids[5]]));
+    expect(d.returnUids).toHaveLength(3);
+  });
+
+  it("Phase M1：enumerateCandidates 在 mulligan 時回傳的 Top-8 包含多張換牌的最佳角色鏈組合", () => {
+    const { state, uids } = mulliganState(0, [
+      "HV-P01-033",
+      "HV-P04-016",
+      "HV-P04-016",
+      "HV-P04-088",
+      "HV-D04-012",
+      "HV-P04-021",
+    ]);
+    state.servingPlayer = 1;
+    const fallback = heuristicAiDecision(db, state);
+    const candidates = enumerateCandidates(db, state, 8, fallback);
+    expect(candidates.length).toBeLessThanOrEqual(8);
+    const mulliganCandidates = candidates.filter((c): c is Extract<Decision, { type: "mulligan" }> => c.type === "mulligan");
+    // Top-8 必須包含換 3～4 張牌的多張換牌組合（克服舊版只取字典序前 8 截斷為 0～1 張換牌的盲點）
+    expect(mulliganCandidates.some((c) => c.returnUids.length >= 3)).toBe(true);
+    // 且首選組合之 scoreMulliganHand 分數顯著高於不換牌 ([])
+    const bestKept = uids.filter((u) => !mulliganCandidates[0]!.returnUids.includes(u));
+    expect(scoreMulliganHand(db, state, 0, bestKept)).toBeGreaterThan(scoreMulliganHand(db, state, 0, uids));
   });
 
   it("自由步驟不會在條件不成立時亂打事件，條件成立才使用", () => {

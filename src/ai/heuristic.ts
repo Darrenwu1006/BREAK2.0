@@ -5,9 +5,9 @@
 // - effect 子決策用同一套卡片價值排序，成本選便宜、收益選關鍵。
 // - 防守仍以活下來為第一優先，但把機會成本納入攔網/接球選擇。
 import type { Card } from "../data/types";
-import type { Action, CharaFilter, Condition, Cost, CourtArea, EffectDef, ParamName, SkillDef } from "../engine/dsl";
+import type { Action, CharaFilter, Condition, Cost, CourtArea, EffectDef, ParamName, PhaseIcon, SkillDef } from "../engine/dsl";
 import type { Awaiting, CardDb, Decision, GameState, PendingItem, PlayerId } from "../engine/types";
-import { autoPickCards, blockDeployMax, canChooseBlock, charasOf, deployableUids, effParam, freeOptions, topChara } from "../engine/engine";
+import { autoPickCards, blockDeployMax, canChooseBlock, charasOf, deployableUids, deployNames, effParam, freeOptions, nameOf, normName, topChara } from "../engine/engine";
 import { isSkillInvalid } from "../engine/conditions";
 import { pickDeployName } from "./util";
 
@@ -357,12 +357,22 @@ function phaseParamDemand(state: GameState, p: PlayerId, param: ParamName, weigh
 }
 
 function timingMatches(card: Card, param: ParamName): boolean {
-  return card.timing.some((x) => x.includes(TIMING_LABEL[param]));
+  if (card.timing.some((x) => x.includes(TIMING_LABEL[param]))) return true;
+  const eff = effectOf(card);
+  if (!eff) return false;
+  return eff.skills.some((s) => {
+    if ("phaseIcons" in s && s.phaseIcons?.includes(param)) return true;
+    if ("areaIcons" in s && s.areaIcons?.includes(param)) return true;
+    return false;
+  });
 }
 
 function phaseTimingMatches(card: Card, phase: string): boolean {
   const label = PHASE_TIMING_LABEL[phase];
-  return !!label && card.timing.some((x) => x.includes(label));
+  if (label && card.timing.some((x) => x.includes(label))) return true;
+  const eff = effectOf(card);
+  if (!eff) return false;
+  return eff.skills.some((s) => "phaseIcons" in s && s.phaseIcons?.includes(phase as PhaseIcon));
 }
 
 function skillBonus(card: Card, weights: HeuristicV2Weights, param?: ParamName): number {
@@ -423,42 +433,343 @@ function setupCardValue(db: CardDb, state: GameState, p: PlayerId, uid: number, 
   return role + coverage + skillBonus(card, weights, serving ? "serve" : "receive");
 }
 
-function chooseMulligan(db: CardDb, state: GameState, p: PlayerId, weights: HeuristicV2Weights): number[] {
-  const serving = p === state.servingPlayer;
-  const hand = state.players[p].hand;
-  const scored = hand
-    .map((uid) => ({ uid, score: setupCardValue(db, state, p, uid, serving, weights), card: cardOf(db, state, uid) }))
-    .sort((a, b) => a.score - b.score);
+function candidateNamesForUid(db: CardDb, state: GameState, uid: number): string[] {
+  const names = deployNames(db, state, uid);
+  if (names && names.length > 0) return names.map(normName);
+  return [normName(cardOf(db, state, uid).nameJa)];
+}
 
-  const hasPrimary = scored.some((x) => {
-    if (x.card.type !== "CHARACTER") return false;
-    return serving ? (x.card.params?.serve ?? 0) >= 4 : (x.card.params?.receive ?? 0) >= 4;
-  });
-  const hasAttackLine = scored.some((x) => x.card.type === "CHARACTER" && (x.card.params?.attack ?? 0) >= 2);
-  const hasToss = scored.some((x) => x.card.type === "CHARACTER" && (x.card.params?.toss ?? 0) > 0);
-  const weakThreshold = (serving ? 4.2 : 4.6) + weights.mulliganWeakDelta;
-  const baseMaxReturns = hasPrimary && (serving || hasAttackLine || hasToss) ? 2 : 3;
-  const maxReturns = Math.max(1, Math.min(4, baseMaxReturns + weights.mulliganReturnDelta));
-  const keepAtLeast = 3;
-  const returns: number[] = [];
-
-  for (const item of scored) {
-    if (returns.length >= maxReturns || hand.length - returns.length <= keepAtLeast) break;
-    const pms = item.card.params;
-    const primaryValue = serving ? pms?.serve ?? 0 : pms?.receive ?? 0;
-    const isUsefulEvent = item.card.type === "EVENT" && item.score >= weakThreshold + 0.6;
-    if (item.score < weakThreshold && primaryValue < 3 && !isUsefulEvent) returns.push(item.uid);
-  }
-
-  if (!hasPrimary && returns.length < maxReturns) {
-    for (const item of scored) {
-      if (returns.includes(item.uid) || hand.length - returns.length <= keepAtLeast) continue;
-      const primaryValue = serving ? item.card.params?.serve ?? 0 : item.card.params?.receive ?? 0;
-      if (primaryValue < 3) returns.push(item.uid);
-      if (returns.length >= maxReturns) break;
+function canPairNames(namesA: readonly string[], namesB: readonly string[]): boolean {
+  for (const a of namesA) {
+    for (const b of namesB) {
+      if (a !== b) return true;
     }
   }
-  return returns;
+  return false;
+}
+
+function actionsContainOp(actions: readonly Action[] | undefined, ops: ReadonlySet<Action["op"]>, includeIf = true): boolean {
+  for (const act of actions ?? []) {
+    if (ops.has(act.op)) return true;
+    if (act.op === "gate" && actionsContainOp(act.then, ops, includeIf)) return true;
+    if (includeIf && act.op === "if" && actionsContainOp(act.then, ops, includeIf)) return true;
+    if (act.op === "chooseOne" && act.options.some((o) => actionsContainOp(o.actions, ops, includeIf))) return true;
+  }
+  return false;
+}
+
+const TUTOR_OPS: ReadonlySet<Action["op"]> = new Set(["lookTopTutor", "revealTopTutor", "lookTopTwoPick"]);
+const DRAW_OPS: ReadonlySet<Action["op"]> = new Set(["draw", "drawToHandSize"]);
+const DROP_DEPEND_OPS: ReadonlySet<Action["op"]> = new Set(["dropToHand", "deployFromDrop", "dropToGuts", "dropToEventArea"]);
+const CUMULATIVE_RETURN_EV = [0, 10.5, 20.7, 30.3, 38.5, 45.0, 49.0] as const;
+
+function hasAttackDeployBoost(card: Card): boolean {
+  const eff = effectOf(card);
+  if (!eff) return false;
+  return eff.skills.some(
+    (s) =>
+      s.kind === "passive" &&
+      s.trigger.on === "deploy" &&
+      s.areaIcons?.includes("attack") &&
+      actionsContainOp(s.actions, new Set(["addParam", "setParam"])),
+  );
+}
+
+function classifyOpeningEvent(card: Card, serving: boolean): "tutor" | "early-draw-defense" | "dead" | "other" {
+  const eff = effectOf(card);
+  if (!eff) return "other";
+  const playableEarly =
+    phaseTimingMatches(card, "draw") ||
+    timingMatches(card, "receive") ||
+    timingMatches(card, "block") ||
+    (serving && timingMatches(card, "serve"));
+
+  const hasTutor = eff.skills.some((s) => "actions" in s && actionsContainOp(s.actions, TUTOR_OPS));
+  if (hasTutor && playableEarly) return "tutor";
+
+  const hasDraw = eff.skills.some((s) => "actions" in s && actionsContainOp(s.actions, DRAW_OPS));
+  const hasDropDepend = eff.skills.some((s) => "actions" in s && actionsContainOp(s.actions, DROP_DEPEND_OPS));
+  if (hasDropDepend && !hasDraw && !hasTutor) return "dead";
+
+  if (hasDraw && playableEarly) return "early-draw-defense";
+  return "other";
+}
+
+interface MulliganCharaInfo {
+  uid: number;
+  card: Card;
+  names: string[];
+  primaryName: string;
+  s: number;
+  b: number;
+  r: number;
+  t: number;
+  a: number;
+  isLowVanillaAttacker: boolean;
+}
+
+/**
+ * [Gemini 2026-11-17] Phase M1：評估起手保留子集 `keptUids`（搭配換掉 `hand.length - keptUids.length` 張牌的補位期望）之組合價值。
+ * - 先接球追求「接 (R>=4) + 舉 (T>=1) + 異名攻 (A>=2)」三件套；先發球兼顧強發球手 (S>=4) 與防反三件套。
+ * - 對同名重複角色施加冗餘懲罰，並在缺件時果斷換掉多餘同位置卡與卡手事件（最多可換 4～5 張）。
+ */
+export function scoreMulliganHand(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  keptUids: readonly number[],
+  profile: HeuristicV2ProfileId | HeuristicV2Weights = "heuristic-v2",
+): number {
+  const weights = profileOf(profile);
+  const hand = state.players[p].hand;
+  const serving = p === state.servingPlayer;
+  const returnCount = Math.max(0, hand.length - keptUids.length);
+  const drawEv = 10.0 - weights.mulliganReturnDelta * 0.35 + weights.mulliganWeakDelta * 0.5;
+
+  const charas: MulliganCharaInfo[] = [];
+  const events: Card[] = [];
+
+  for (const uid of keptUids) {
+    const card = cardOf(db, state, uid);
+    if (card.type === "CHARACTER" && card.params) {
+      const s = card.params.serve ?? 0;
+      const b = card.params.block ?? 0;
+      const r = card.params.receive ?? 0;
+      const t = card.params.toss ?? 0;
+      const a = card.params.attack ?? 0;
+      const isLowVanillaAttacker =
+        a === 2 && r < 4 && s < 4 && b < 3 && t === 0 && (card.effectStatus === "vanilla" || card.effectStatus === "todo");
+      charas.push({
+        uid,
+        card,
+        names: candidateNamesForUid(db, state, uid),
+        primaryName: normName(card.nameJa),
+        s,
+        b,
+        r,
+        t,
+        a,
+        isLowVanillaAttacker,
+      });
+    } else if (card.type === "EVENT") {
+      events.push(card);
+    }
+  }
+
+  const rCandidates: (MulliganCharaInfo | null)[] = [null, ...charas.filter((c) => c.r >= 4)];
+  const tCandidates: (MulliganCharaInfo | null)[] = [null, ...charas.filter((c) => c.t >= 1)];
+  const aCandidates: (MulliganCharaInfo | null)[] = [null, ...charas.filter((c) => c.a >= 2 && !c.isLowVanillaAttacker)];
+
+  let bestChainScore = -Infinity;
+  let bestAssignment: {
+    uR: MulliganCharaInfo | null;
+    uT: MulliganCharaInfo | null;
+    uA: MulliganCharaInfo | null;
+    rolesFilled: number;
+  } = { uR: null, uT: null, uA: null, rolesFilled: 0 };
+
+  for (const uR of rCandidates) {
+    for (const uT of tCandidates) {
+      if (uR && uT && (uR.uid === uT.uid || !canPairNames(uR.names, uT.names))) continue;
+      for (const uA of aCandidates) {
+        if (uA && ((uR && uA.uid === uR.uid) || (uT && uA.uid === uT.uid))) continue;
+        if (uT && uA && !canPairNames(uT.names, uA.names)) continue;
+        // 註：規則僅限制 トス≠レシーブ 與 アタック≠トス，レシーブ與アタック可為同名不同張卡（如 R5 岩泉 → T2 及川 → A3 岩泉）；
+        // 若異名則給予微幅加成以保留場上彈性。
+        const distinctRA = !uR || !uA || canPairNames(uR.names, uA.names);
+
+        let score = 0;
+        let rolesFilled = 0;
+        if (uR) {
+          rolesFilled++;
+          score +=
+            14.2 +
+            (uR.r - 4) * 2.4 * weights.futureDefenseValue +
+            skillBonus(uR.card, weights, "receive") * 1.1 +
+            (uR.b >= 3 ? 0.8 * weights.futureBlockValue : 0) +
+            (serving && uR.s >= 4 ? 1.5 * weights.futureServeValue : 0);
+        }
+        if (uT) {
+          rolesFilled++;
+          const isTrueSetter =
+            uT.card.positions.includes("S") || uT.t >= 2 || timingMatches(uT.card, "toss") || uT.r >= 3;
+          score +=
+            (isTrueSetter ? 16.6 : 12.2) +
+            (uT.t - 1) * 2.8 +
+            (uT.card.positions.includes("S") ? 1.8 : 0) +
+            skillBonus(uT.card, weights, "toss") * 1.4 +
+            (serving && uT.s >= 4 ? 1.8 * weights.futureServeValue : 0);
+        }
+        if (uA) {
+          rolesFilled++;
+          score +=
+            14.0 +
+            (uA.a - 2) * 2.6 * weights.futureAttackValue +
+            skillBonus(uA.card, weights, "attack") * 1.3 +
+            (serving && uA.s >= 4 ? 1.5 * weights.futureServeValue : 0) +
+            (uA.r >= 4 ? 1.0 * weights.futureDefenseValue : 0);
+        }
+
+        if (distinctRA && uR && uA) score += 0.6;
+
+        if (rolesFilled === 3) {
+          score += 20.0 + (uR!.r >= 5 ? 1.5 : 0) + (uT!.t + uA!.a >= 4 ? 1.5 : 0);
+        } else if (rolesFilled === 2) {
+          score += 6.5;
+        } else if (rolesFilled === 1) {
+          score += 1.5;
+        }
+
+        if (score > bestChainScore) {
+          bestChainScore = score;
+          bestAssignment = { uR, uT, uA, rolesFilled };
+        }
+      }
+    }
+  }
+
+  const { uR, uT, uA, rolesFilled } = bestAssignment;
+  const assignedUids = new Set<number>();
+  const nameCounts = new Map<string, number>();
+  for (const assigned of [uR, uT, uA]) {
+    if (assigned) {
+      assignedUids.add(assigned.uid);
+      nameCounts.set(assigned.primaryName, (nameCounts.get(assigned.primaryName) ?? 0) + 1);
+    }
+  }
+
+  let totalScore = bestChainScore + returnCount * drawEv;
+  if (keptUids.length === 0) totalScore -= 2.5;
+
+  // 先發球時，優先確保 1 張強發球手 (S >= 4)
+  if (serving) {
+    const assignedHasServe4 = (uR && uR.s >= 4) || (uT && uT.s >= 4) || (uA && uA.s >= 4);
+    const serveCandidates = charas
+      .filter(
+        (c) =>
+          !assignedUids.has(c.uid) &&
+          !nameCounts.has(c.primaryName) &&
+          (c.s >= 4 || (c.s >= 3 && timingMatches(c.card, "serve"))),
+      )
+      .sort((a, b) => b.s + skillBonus(b.card, weights, "serve") - (a.s + skillBonus(a.card, weights, "serve")));
+    const bestS = serveCandidates[0];
+    if (bestS && (!assignedHasServe4 || rolesFilled === 3)) {
+      assignedUids.add(bestS.uid);
+      nameCounts.set(bestS.primaryName, (nameCounts.get(bestS.primaryName) ?? 0) + 1);
+      totalScore +=
+        (assignedHasServe4 ? 12.0 : 13.8) +
+        Math.max(0, bestS.s - 4) * 1.8 * weights.futureServeValue +
+        skillBonus(bestS.card, weights, "serve") * 1.2;
+    }
+  }
+
+  // 評估其餘未指派角色
+  let keptComboAttacker = false;
+  for (const c of charas) {
+    if (assignedUids.has(c.uid)) continue;
+    const prevCount = nameCounts.get(c.primaryName) ?? 0;
+    nameCounts.set(c.primaryName, prevCount + 1);
+
+    if (rolesFilled < 3) {
+      // 若缺攻擊手但手上有與舉球手連動的低基數強攻手（如木葉 T1 + 猿杙 A1+4），保留 1 張保底進攻線，其餘換掉找正編 A>=2
+      if (
+        !keptComboAttacker &&
+        prevCount === 0 &&
+        uA === null &&
+        uT !== null &&
+        hasAttackDeployBoost(c.card)
+      ) {
+        keptComboAttacker = true;
+        totalScore += 10.3;
+      } else {
+        // 尚未湊齊 R+T+A 三件套時：所有同名重複與多餘同位置角色一律換掉，最大化補齊三件套的抽牌數
+        totalScore += prevCount > 0 ? 1.5 : 5.2;
+      }
+    } else {
+      // 已湊齊 R+T+A 三件套時：
+      // 1. 淘汰第 3 張同名、第 2 張同名舉球手、第 2 張純自由球員／低覆蓋同名卡、以及低效香草卡
+      const isDupSetter = uT !== null && c.primaryName === uT.primaryName;
+      const isPureSecondSetter = c.t >= 1 && c.r < 3 && c.a < 2 && c.b < 3 && c.s < 4;
+      const isPureReceiverOrLowDup =
+        prevCount > 0 &&
+        (c.card.params?.serve === null ||
+          (c.a === 0 && c.b === 0) ||
+          (c.r <= 4 && c.a <= 2 && c.b <= 2 && c.s <= 2));
+      if (prevCount >= 2 || isDupSetter || isPureSecondSetter || isPureReceiverOrLowDup || c.isLowVanillaAttacker) {
+        totalScore += 2.0;
+      } else {
+        const singleVal = setupCardValue(db, state, p, c.uid, serving, weights);
+        const hasGoodRole =
+          c.r >= 3 || c.b >= 3 || c.a >= 2 || c.s >= 4 || hasAttackDeployBoost(c.card) || c.card.effectStatus !== "vanilla";
+        totalScore += hasGoodRole && singleVal >= 5.0 ? 10.6 + Math.min(1.8, singleVal * 0.1) : 5.5;
+      }
+    }
+  }
+
+  // 評估事件卡（缺件時優先換牌抽角色以補齊三件套；僅在已齊備或先接只缺 1 環時留 1 張檢索／防守抽濾事件）
+  let keptGoodEvent = false;
+  const seenEventNames = new Set<string>();
+  for (const ev of events) {
+    const evName = normName(ev.nameJa);
+    if (seenEventNames.has(evName) || keptGoodEvent) {
+      totalScore += 2.0;
+      continue;
+    }
+    seenEventNames.add(evName);
+    const kind = classifyOpeningEvent(ev, serving);
+    if (kind === "dead") {
+      totalScore += 1.5;
+    } else if (kind === "tutor") {
+      if (rolesFilled === 3 || (!serving && rolesFilled === 2)) {
+        keptGoodEvent = true;
+        totalScore += 10.9 * weights.setupEventValue;
+      } else {
+        totalScore += 6.8;
+      }
+    } else if (kind === "early-draw-defense") {
+      if (rolesFilled === 3) {
+        keptGoodEvent = true;
+        totalScore += 10.5 * weights.setupEventValue;
+      } else {
+        totalScore += 6.0;
+      }
+    } else {
+      totalScore += rolesFilled === 3 && serving && timingMatches(ev, "serve") ? 10.3 * weights.setupEventValue : 2.5;
+    }
+  }
+
+  // 微量位置偏好：同名卡優先保留在手牌前段（使回傳的 returnUids 穩定挑後段重複卡）
+  for (let i = 0; i < hand.length; i++) {
+    if (keptUids.includes(hand[i]!)) {
+      totalScore += (hand.length - i) * 0.001;
+    }
+  }
+
+  return totalScore;
+}
+
+function chooseMulligan(db: CardDb, state: GameState, p: PlayerId, weights: HeuristicV2Weights): number[] {
+  const hand = state.players[p].hand;
+  const n = hand.length;
+  let bestScore = -Infinity;
+  let bestReturns: number[] = [];
+
+  const totalMasks = 1 << n;
+  for (let mask = 0; mask < totalMasks; mask++) {
+    const keptUids: number[] = [];
+    const returnUids: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if ((mask & (1 << i)) !== 0) keptUids.push(hand[i]!);
+      else returnUids.push(hand[i]!);
+    }
+    const score = scoreMulliganHand(db, state, p, keptUids, weights);
+    if (score > bestScore) {
+      bestScore = score;
+      bestReturns = returnUids;
+    }
+  }
+
+  return bestReturns;
 }
 
 function nameForBlock(db: CardDb, state: GameState, p: PlayerId, uid: number, used: Set<string>): string | null {
@@ -1007,8 +1318,20 @@ function chooseByValue(db: CardDb, state: GameState, p: PlayerId, aw: Extract<Aw
   const sorted = aw.candidates
     .slice()
     .sort((a, b) => (order === "high" ? cardSortValue(db, state, p, b, aw.purpose, weights) - cardSortValue(db, state, p, a, aw.purpose, weights) : cardSortValue(db, state, p, a, aw.purpose, weights) - cardSortValue(db, state, p, b, aw.purpose, weights)));
-  const targetCount = Math.min(aw.max, Math.max(aw.min, sorted.filter((uid) => cardSortValue(db, state, p, uid, aw.purpose, weights) > 1.1).length));
-  return takeSorted(sorted, targetCount);
+  const pool: number[] = [];
+  if (aw.distinctNames) {
+    const usedNames = new Set<string>();
+    for (const uid of sorted) {
+      const n = nameOf(db, state, uid);
+      if (usedNames.has(n)) continue;
+      usedNames.add(n);
+      pool.push(uid);
+    }
+  } else {
+    pool.push(...sorted);
+  }
+  const targetCount = Math.min(aw.max, Math.max(aw.min, pool.filter((uid) => cardSortValue(db, state, p, uid, aw.purpose, weights) > 1.1).length));
+  return takeSorted(pool, targetCount);
 }
 
 function chooseEffectCards(db: CardDb, state: GameState, weights: HeuristicV2Weights): number[] {

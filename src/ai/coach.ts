@@ -4,7 +4,7 @@ import { describeDecision } from "../shared/decisionLabels";
 import { cloneStateForSearch } from "../engine/search-clone";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import type { CourtArea } from "../engine/dsl";
-import { heuristicAiDecision, isImmediateOneTouchBlocker } from "./heuristic";
+import { heuristicAiDecision, isImmediateOneTouchBlocker, scoreMulliganHand } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
 import { evaluateStateValue, explainValue, type ValueExplanation } from "./rollout-value";
@@ -312,14 +312,27 @@ export function enumerateCandidates(db: CardDb, state: GameState, limit: number,
     case "serve-rights":
       decisions.push({ type: "serve-rights", take: true }, { type: "serve-rights", take: false });
       break;
-    case "mulligan":
-      decisions.push({ type: "mulligan", returnUids: [] });
-      for (let size = 1; size <= state.players[p].hand.length; size++) {
-        for (const combo of combinations(state.players[p].hand, size, 80)) {
-          decisions.push({ type: "mulligan", returnUids: combo });
+    case "mulligan": {
+      const hand = state.players[p].hand;
+      const allCombos: { returnUids: number[]; score: number }[] = [{ returnUids: [], score: scoreMulliganHand(db, state, p, hand) }];
+      for (let size = 1; size <= hand.length; size++) {
+        for (const combo of combinations(hand, size, 80)) {
+          const returnSet = new Set(combo);
+          const keptUids = hand.filter((uid) => !returnSet.has(uid));
+          allCombos.push({ returnUids: combo, score: scoreMulliganHand(db, state, p, keptUids) });
         }
       }
+      allCombos.sort((a, b) => b.score - a.score);
+      // 保留 fallback 與最佳角色鏈換牌組合於前段，並放入不換 ([]) 作為基準對照
+      for (const item of allCombos.slice(0, Math.max(2, limit - 1))) {
+        decisions.push({ type: "mulligan", returnUids: item.returnUids });
+      }
+      decisions.push({ type: "mulligan", returnUids: [] });
+      for (const item of allCombos) {
+        decisions.push({ type: "mulligan", returnUids: item.returnUids });
+      }
       break;
+    }
     case "defense-choice":
       decisions.push({ type: "defense-choice", choice: "receive" });
       if (canChooseBlock(state)) decisions.push({ type: "defense-choice", choice: "block" });
