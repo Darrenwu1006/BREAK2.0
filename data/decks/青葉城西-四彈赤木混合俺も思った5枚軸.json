@@ -1,0 +1,20 @@
+{
+ "name": "青葉城西-四彈赤木混合俺も思った5枚軸",
+ "school": "青葉城西",
+ "source": "decks/青葉城西/四彈赤木混合俺も思った5枚軸.csv",
+ "cards": [
+  { "id": "HV-P01-039", "count": 3 },
+  { "id": "HV-P02-058", "count": 2 },
+  { "id": "HV-P03-046", "count": 2 },
+  { "id": "HV-P04-025", "count": 2 },
+  { "id": "HV-P04-027", "count": 3 },
+  { "id": "HV-P01-033", "count": 6 },
+  { "id": "HV-P04-015", "count": 2 },
+  { "id": "HV-PR-024", "count": 2 },
+  { "id": "HV-P01-035", "count": 7 },
+  { "id": "HV-P04-022", "count": 3 },
+  { "id": "HV-P01-086", "count": 1 },
+  { "id": "HV-P01-087", "count": 5 },
+  { "id": "HV-PR-051", "count": 2 }
+ ]
+}

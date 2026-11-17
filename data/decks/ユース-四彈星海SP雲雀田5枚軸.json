@@ -1,0 +1,17 @@
+{
+ "name": "ユース-四彈星海SP雲雀田5枚軸",
+ "school": "ユース",
+ "source": "decks/ユース/四彈星海SP雲雀田5枚軸.csv",
+ "cards": [
+  { "id": "HV-P03-021", "count": 4 },
+  { "id": "HV-P03-023", "count": 4 },
+  { "id": "HV-P03-024", "count": 4 },
+  { "id": "HV-P03-029", "count": 4 },
+  { "id": "HV-P03-030", "count": 2 },
+  { "id": "HV-P04-075", "count": 6 },
+  { "id": "HV-P04-077", "count": 4 },
+  { "id": "HV-PR-081", "count": 4 },
+  { "id": "HV-P03-084", "count": 5 },
+  { "id": "HV-P03-085", "count": 3 }
+ ]
+}

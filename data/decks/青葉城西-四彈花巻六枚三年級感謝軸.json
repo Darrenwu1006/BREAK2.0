@@ -1,0 +1,19 @@
+{
+ "name": "青葉城西-四彈花巻六枚三年級感謝軸",
+ "school": "青葉城西",
+ "source": "decks/青葉城西/四彈花巻六枚三年級感謝軸.csv",
+ "cards": [
+  { "id": "HV-P01-033", "count": 6 },
+  { "id": "HV-P01-035", "count": 6 },
+  { "id": "HV-P04-016", "count": 3 },
+  { "id": "HV-P04-021", "count": 5 },
+  { "id": "HV-P04-023", "count": 3 },
+  { "id": "HV-P04-025", "count": 6 },
+  { "id": "HV-P04-027", "count": 3 },
+  { "id": "HV-P01-086", "count": 1 },
+  { "id": "HV-P03-090", "count": 1 },
+  { "id": "HV-P04-087", "count": 1 },
+  { "id": "HV-P04-089", "count": 3 },
+  { "id": "HV-D04-013", "count": 2 }
+ ]
+}

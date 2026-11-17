@@ -1,0 +1,102 @@
+{
+ "name": "烏野-和久谷南戰緣下代理主將軸",
+ "school": "烏野",
+ "source": "decks/烏野/和久谷南戰緣下代理主將軸.csv",
+ "cards": [
+  {
+   "id": "HV-P01-014",
+   "count": 2,
+   "printing": "R"
+  },
+  {
+   "id": "HV-P01-016",
+   "count": 3,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P01-012",
+   "count": 3,
+   "printing": "R"
+  },
+  {
+   "id": "HV-P01-013",
+   "count": 3,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P02-009",
+   "count": 2,
+   "printing": "R"
+  },
+  {
+   "id": "HV-P01-006",
+   "count": 3,
+   "printing": "S"
+  },
+  {
+   "id": "HV-D01-002",
+   "count": 1,
+   "printing": "D"
+  },
+  {
+   "id": "HV-P01-015",
+   "count": 2,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P01-003",
+   "count": 3,
+   "printing": "R"
+  },
+  {
+   "id": "HV-P01-002",
+   "count": 2,
+   "printing": "I"
+  },
+  {
+   "id": "HV-P01-008",
+   "count": 2,
+   "printing": "S"
+  },
+  {
+   "id": "HV-P01-009",
+   "count": 2,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P01-010",
+   "count": 2,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P02-011",
+   "count": 1,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P01-011",
+   "count": 3,
+   "printing": "S"
+  },
+  {
+   "id": "HV-P01-075",
+   "count": 2,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P02-080",
+   "count": 1,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P03-095",
+   "count": 1,
+   "printing": "N"
+  },
+  {
+   "id": "HV-P01-078",
+   "count": 2,
+   "printing": "N"
+  }
+ ]
+}
