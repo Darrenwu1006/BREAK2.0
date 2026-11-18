@@ -779,7 +779,7 @@ function nameForBlock(db: CardDb, state: GameState, p: PlayerId, uid: number, us
   return used.has(key) ? null : name;
 }
 
-interface BlockPlan {
+export interface BlockPlan {
   uids: number[];
   center: number;
   nameChoices: Record<number, string>;
@@ -794,7 +794,14 @@ function blockPlanCost(db: CardDb, state: GameState, p: PlayerId, uids: number[]
   return sideCost * weights.blockSideCost * weights.blockSideFutureCost + centerCost + excess * 0.45 * weights.blockExcessCost + uids.length * 0.35 * weights.blockDeployCountCost;
 }
 
-function bestBlockPlan(db: CardDb, state: GameState, p: PlayerId, minDp: number, weights: HeuristicV2Weights): BlockPlan | null {
+export function bestBlockPlan(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  minDp: number,
+  profile: HeuristicV2ProfileId | HeuristicV2Weights = "heuristic-v2",
+): BlockPlan | null {
+  const weights = profileOf(profile);
   const maxN = Math.min(3, blockDeployMax(state, p));
   if (maxN <= 0) return null;
   const deployable = deployableUids(db, state, p, "block");
@@ -847,6 +854,392 @@ function bestBlockPlan(db: CardDb, state: GameState, p: PlayerId, minDp: number,
 
   visit(0, [], new Set(), {});
   return best;
+}
+
+interface NextSetCoreProtection {
+  protectedUids: Set<number>;
+  protectedNames: Set<string>;
+  rolesFilled: number;
+  hasSetter: boolean;
+}
+
+function findNextSetCoreProtection(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  weights: HeuristicV2Weights,
+): NextSetCoreProtection {
+  const hand = state.players[p].hand;
+  const charas: MulliganCharaInfo[] = [];
+  const nameTotalCounts = new Map<string, number>();
+
+  for (const uid of hand) {
+    const card = cardOf(db, state, uid);
+    if (card.type === "CHARACTER" && card.params) {
+      const s = card.params.serve ?? 0;
+      const b = card.params.block ?? 0;
+      const r = card.params.receive ?? 0;
+      const t = card.params.toss ?? 0;
+      const a = card.params.attack ?? 0;
+      const isLowVanillaAttacker =
+        a === 2 && r < 4 && s < 4 && b < 3 && t === 0 && (card.effectStatus === "vanilla" || card.effectStatus === "todo");
+      const primaryName = normName(card.nameJa);
+      nameTotalCounts.set(primaryName, (nameTotalCounts.get(primaryName) ?? 0) + 1);
+      charas.push({
+        uid,
+        card,
+        names: candidateNamesForUid(db, state, uid),
+        primaryName,
+        s,
+        b,
+        r,
+        t,
+        a,
+        isLowVanillaAttacker,
+      });
+    }
+  }
+
+  const rCandidates: (MulliganCharaInfo | null)[] = [null, ...charas.filter((c) => c.r >= 4)];
+  const tCandidates: (MulliganCharaInfo | null)[] = [null, ...charas.filter((c) => c.t >= 1)];
+  const aCandidates: (MulliganCharaInfo | null)[] = [
+    null,
+    ...charas.filter((c) => (c.a >= 2 || hasAttackDeployBoost(c.card)) && !c.isLowVanillaAttacker),
+  ];
+
+  let bestScore = -Infinity;
+  let bestAssignment: {
+    uR: MulliganCharaInfo | null;
+    uT: MulliganCharaInfo | null;
+    uA: MulliganCharaInfo | null;
+    rolesFilled: number;
+  } = { uR: null, uT: null, uA: null, rolesFilled: 0 };
+
+  for (const uR of rCandidates) {
+    for (const uT of tCandidates) {
+      if (uR && uT && (uR.uid === uT.uid || !canPairNames(uR.names, uT.names))) continue;
+      for (const uA of aCandidates) {
+        if (uA && ((uR && uA.uid === uR.uid) || (uT && uA.uid === uT.uid))) continue;
+        if (uT && uA && !canPairNames(uT.names, uA.names)) continue;
+        const distinctRA = !uR || !uA || canPairNames(uR.names, uA.names);
+
+        let score = 0;
+        let rolesFilled = 0;
+        if (uR) {
+          rolesFilled++;
+          score +=
+            14.2 +
+            (uR.r - 4) * 2.5 * weights.futureDefenseValue +
+            skillBonus(uR.card, weights, "receive") * 1.1 +
+            (uR.b >= 3 ? 0.8 * weights.futureBlockValue : 0);
+        }
+        if (uT) {
+          rolesFilled++;
+          const isTrueSetter =
+            uT.card.positions.includes("S") || uT.t >= 2 || timingMatches(uT.card, "toss") || uT.r >= 3;
+          score +=
+            (isTrueSetter ? 16.6 : 12.2) +
+            (uT.t - 1) * 2.8 +
+            (uT.card.positions.includes("S") ? 1.8 : 0) +
+            skillBonus(uT.card, weights, "toss") * 1.4;
+        }
+        if (uA) {
+          rolesFilled++;
+          const effAtk = hasAttackDeployBoost(uA.card) ? Math.max(uA.a, 3) : uA.a;
+          score +=
+            14.0 +
+            (effAtk - 2) * 2.6 * weights.futureAttackValue +
+            skillBonus(uA.card, weights, "attack") * 1.3 +
+            (uA.r >= 4 ? 1.0 * weights.futureDefenseValue : 0);
+        }
+        if (distinctRA && uR && uA) score += 0.6;
+        if (rolesFilled === 3) score += 20.0;
+        else if (rolesFilled === 2) score += 6.5;
+        else if (rolesFilled === 1) score += 1.5;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestAssignment = { uR, uT, uA, rolesFilled };
+        }
+      }
+    }
+  }
+
+  const protectedUids = new Set<number>();
+  const protectedNames = new Set<string>();
+  for (const assigned of [bestAssignment.uR, bestAssignment.uT, bestAssignment.uA]) {
+    if (assigned) {
+      protectedUids.add(assigned.uid);
+      protectedNames.add(assigned.primaryName);
+    }
+  }
+
+  // 若無正編 A>=2 攻擊手，保護 1 張低基數連動強攻手或 A>=2 香草卡避免斷攻
+  if (!bestAssignment.uA) {
+    const fallbackAtk = charas
+      .filter((c) => !protectedUids.has(c.uid) && (c.a >= 2 || hasAttackDeployBoost(c.card)))
+      .sort((a, b) => b.a - a.a)[0];
+    if (fallbackAtk) {
+      protectedUids.add(fallbackAtk.uid);
+      protectedNames.add(fallbackAtk.primaryName);
+    }
+  }
+
+  for (const c of charas) {
+    if (protectedUids.has(c.uid)) continue;
+    // 保護立即 One Touch 攔網手與手牌發動技能卡（如茂庭 PR、山本 PR 後排攻擊等 [=手札] 技能卡）
+    const hasHandSkill =
+      c.card.skillJa?.includes("[=手札]") ||
+      effectOf(c.card)?.skills.some((s) => "areaIcons" in s && s.areaIcons?.includes("hand"));
+    if (isImmediateOneTouchBlocker(db, state, p, c.uid) || hasHandSkill) {
+      protectedUids.add(c.uid);
+      protectedNames.add(c.primaryName);
+      continue;
+    }
+    // 保護非同名重複的高接球主力 (R >= 5)
+    if (c.r >= 5 && !protectedNames.has(c.primaryName)) {
+      protectedUids.add(c.uid);
+      protectedNames.add(c.primaryName);
+      continue;
+    }
+    // 當手牌僅 5 張且已湊齊三件套時，若第 4、5 張為非同名重複的高價值攻守兼備主力 (R>=4 且 A>=3 或 B>=3 或 T>=1)，予以保護（改走接球抽 1）
+    if (
+      hand.length <= 5 &&
+      bestAssignment.rolesFilled === 3 &&
+      !protectedNames.has(c.primaryName) &&
+      (nameTotalCounts.get(c.primaryName) ?? 0) === 1 &&
+      c.r >= 4 &&
+      (c.a >= 3 || c.b >= 3 || c.t >= 1)
+    ) {
+      protectedUids.add(c.uid);
+      protectedNames.add(c.primaryName);
+    }
+  }
+
+  return {
+    protectedUids,
+    protectedNames,
+    rolesFilled: bestAssignment.rolesFilled,
+    hasSetter: bestAssignment.uT !== null,
+  };
+}
+
+function hasDropRecoverySynergy(db: CardDb, state: GameState, p: PlayerId): boolean {
+  const ps = state.players[p];
+  const visibleUids = [
+    ...ps.hand,
+    ...ps.eventArea,
+    ...charasOf(state, p).map((c) => c.uid),
+  ];
+  for (const uid of visibleUids) {
+    const eff = effectOf(cardOf(db, state, uid));
+    if (eff?.skills.some((s) => "actions" in s && actionsContainOp(s.actions, DROP_DEPEND_OPS))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * [Gemini 2026-11-18] Phase M2：評估手牌中的角色 `uid` 在必敗防守局是否適合透過攔網登場濾除（換取 Interval 補牌＋留 Guts／堆棄牌）。
+ * - 正分（> 0）：代表值得濾除的同名冗餘卡、下局先接球用不到的低接球／次要角色、或跨 Set 墓地／Guts 預備卡。
+ * - 負分（<= 0）：代表下個 Set 的接舉攻核心主力或唯一防守強卡，嚴禁當廢牌消耗。
+ */
+export function cyclingCandidateScore(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  uid: number,
+  profile: HeuristicV2ProfileId | HeuristicV2Weights = "heuristic-v2",
+): number {
+  const weights = profileOf(profile);
+  if (state.players[p].setArea.length === 0) return -100;
+  const deployable = deployableUids(db, state, p, "block");
+  if (!deployable.includes(uid)) return -100;
+
+  const { protectedUids, protectedNames, rolesFilled, hasSetter } = findNextSetCoreProtection(db, state, p, weights);
+  if (protectedUids.has(uid)) return -100;
+
+  const card = cardOf(db, state, uid);
+  if (card.type !== "CHARACTER" || !card.params || card.params.block === null) return -100;
+
+  const hand = state.players[p].hand;
+  const pName = normName(card.nameJa);
+  let sameNameCount = 0;
+  for (const u of hand) {
+    if (normName(cardOf(db, state, u).nameJa) === pName) sameNameCount++;
+  }
+
+  const isDupName = protectedNames.has(pName) || sameNameCount >= 2;
+  const r = card.params.receive ?? 0;
+  const t = card.params.toss ?? 0;
+  const a = card.params.attack ?? 0;
+
+  // 高接球主力 (R >= 5)、非同名的攻守兼備主攻手 (R >= 3 且 A >= 3)、或 5 張手牌以內的非同名主力攻擊/舉球手，絕不當作廢牌消耗
+  if (r >= 5) return -100;
+  if (!isDupName && r >= 3 && a >= 3) return -100;
+  if (!isDupName && hand.length <= 5 && (a >= 3 || hasAttackDeployBoost(card) || t >= 2)) return -100;
+
+  let score = 0;
+  if (isDupName) {
+    score += 6.8 + Math.max(0, sameNameCount - 2) * 1.6;
+  }
+  if (t >= 1 && hasSetter) {
+    score += 4.2;
+  }
+  if (card.effectStatus === "vanilla" || card.effectStatus === "todo") {
+    score += 3.2;
+  }
+  if (rolesFilled < 3) {
+    // 尚缺下個 Set 的接／舉／攻組件時，積極濾除未受保護的次要卡以最大化 Interval 補牌找齊三件套的機率
+    if (r <= 3) score += 4.8 + (3 - r) * 0.6;
+    else if (r === 4) score += 3.5;
+  } else {
+    // 已齊備下個 Set 的 R+T+A 三件套時：只濾除同名重複、低接球 (R<=2) 或低攻擊次要卡 (R=3, A<=2)
+    if (r <= 2) {
+      score += 4.2 + (2 - r) * 0.6;
+    } else if (r === 3 && a <= 2) {
+      score += 3.2;
+    }
+  }
+  if (state.players[p].blockCenter.length === 0 && score > 0) {
+    score += 0.8;
+  }
+  if (hasDropRecoverySynergy(db, state, p) && score > 0) {
+    score += 1.2;
+  }
+
+  const fVal = futureCardValue(db, state, p, uid, weights);
+  score -= fVal * 0.35;
+
+  return score;
+}
+
+/**
+ * [Gemini 2026-11-18] Phase M2：當確定無法守住當前攻擊 OP（接球與攔網皆無法過線）且非賽末點時，
+ * 規劃登場 1～2 張可濾廢牌／同名冗餘卡進行戰術性攔網濾牌（使手牌降至 < 6 張以在 Interval 免費補新牌，並留中央 Guts／側邊進棄牌區）。
+ */
+export function bestTacticalLostBlockPlan(
+  db: CardDb,
+  state: GameState,
+  p: PlayerId,
+  minDp: number,
+  profile: HeuristicV2ProfileId | HeuristicV2Weights = "heuristic-v2",
+): BlockPlan | null {
+  const weights = profileOf(profile);
+  // 對手 OP <= 5 時，選接球進 draw 階段抽 1 張有相當機率直接抽到 R>=OP 守住本局，故僅在 minDp >= 6（或已在 block 階段且必敗）時啟動必敗濾牌
+  if (minDp <= 0) return null;
+  if (state.phase !== "block" && minDp < 6) return null;
+  // 賽末點禁區：Set 區剩 0 張時絕不走必敗濾牌
+  if (state.players[p].setArea.length === 0) return null;
+  const hand = state.players[p].hand;
+  // 手牌 <= 4 張時，選接球抽 1 張後仍 <= 5 張，Interval 一樣能補滿 6 張，不需犧牲手牌攔網
+  if (hand.length < 5) return null;
+  const maxN = Math.min(2, blockDeployMax(state, p));
+  if (maxN <= 0) return null;
+
+  // 生存優先鐵則：只要攔網或接球有存活路線，絕不觸發戰術性必敗濾牌
+  if (bestBlockPlan(db, state, p, minDp, weights) !== null) return null;
+  if (state.phase !== "block" && chooseDeployUid(db, state, p, "receive", weights) !== null) return null;
+
+  // 若手牌中的角色卡總數 <= 3 張（其餘為事件卡），不犧牲僅存的角色卡去攔網濾牌
+  const charaCount = hand.filter((u) => cardOf(db, state, u).type === "CHARACTER").length;
+  if (charaCount <= 3) return null;
+
+  const { rolesFilled } = findNextSetCoreProtection(db, state, p, weights);
+  const deployable = deployableUids(db, state, p, "block");
+  const candidates = deployable
+    .map((uid) => ({ uid, cycleScore: cyclingCandidateScore(db, state, p, uid, weights) }))
+    .filter((x) => x.cycleScore > 0)
+    .sort((a, b) => b.cycleScore - a.cycleScore);
+
+  if (candidates.length === 0) return null;
+
+  const dropSynergy = hasDropRecoverySynergy(db, state, p);
+  let bestPlan: BlockPlan | null = null;
+  let bestUtility = -Infinity;
+
+  // 評估單張濾牌 (k = 1)
+  for (const c1 of candidates) {
+    if (hand.length - 1 >= 6) continue; // 確保登場後手牌 < 6 能觸發 Interval 補牌
+    // 當手牌為 6 張時，單張攔網濾牌 (Interval 補 1) 與接球抽 1 的抽牌數相同，僅在該卡確屬高優先廢牌／同名卡或缺件時採用
+    if (hand.length === 6 && c1.cycleScore < 2.2 && rolesFilled === 3) continue;
+    const used = new Set<string>();
+    const name1 = nameForBlock(db, state, p, c1.uid, used);
+    if (!name1) continue;
+    const dp = paramOf(db, state, c1.uid, "block");
+    if (dp >= minDp) continue;
+    const nameChoices: Record<number, string> = {};
+    if (name1 !== cardOf(db, state, c1.uid).nameJa) nameChoices[c1.uid] = name1;
+    const intervalDraws = Math.max(0, 6 - (hand.length - 1));
+    // 手牌 5 張時，單張放中央攔網既能讓 Interval 補 2 張（比接球多看 1 張），又不會把第 2 張送進棄牌區耗損牌庫
+    const fiveCardSingleBonus = hand.length === 5 ? 3.5 : 0;
+    const utility = c1.cycleScore + intervalDraws * 2.5 + 1.5 + fiveCardSingleBonus;
+    if (utility > bestUtility) {
+      bestUtility = utility;
+      bestPlan = {
+        uids: [c1.uid],
+        center: c1.uid,
+        nameChoices,
+        dp,
+        cost: -utility,
+      };
+    }
+  }
+
+  // 評估雙張濾牌 (k = 2)
+  if (maxN >= 2 && candidates.length >= 2) {
+    const secondMinScore = hand.length >= 6 ? 1.2 : 4.2;
+    for (let i = 0; i < candidates.length; i++) {
+      const c1 = candidates[i]!;
+      for (let j = i + 1; j < candidates.length; j++) {
+        const c2 = candidates[j]!;
+        if (c2.cycleScore < secondMinScore) continue;
+        if (hand.length - 2 >= 6) continue;
+        const used = new Set<string>();
+        const name1 = nameForBlock(db, state, p, c1.uid, used);
+        if (!name1) continue;
+        used.add(name1.trim().toLowerCase());
+        const name2 = nameForBlock(db, state, p, c2.uid, used);
+        if (!name2) continue;
+        const dp = paramOf(db, state, c1.uid, "block") + paramOf(db, state, c2.uid, "block");
+        if (dp >= minDp) continue;
+
+        const nameChoices: Record<number, string> = {};
+        if (name1 !== cardOf(db, state, c1.uid).nameJa) nameChoices[c1.uid] = name1;
+        if (name2 !== cardOf(db, state, c2.uid).nameJa) nameChoices[c2.uid] = name2;
+
+        // 決定誰放中央（留作下局 Guts）、誰放側邊（結束進棄牌區）
+        const f1 = futureCardValue(db, state, p, c1.uid, weights);
+        const f2 = futureCardValue(db, state, p, c2.uid, weights);
+        let center = c1.uid;
+        if (dropSynergy) {
+          // 有墓地回收需求時，優先把三年級或回收目標送去 side（棄牌區），另一張留 center 當 Guts
+          const g1 = cardOf(db, state, c1.uid).grades.some((g) => g.includes("3")) ? 1 : 0;
+          const g2 = cardOf(db, state, c2.uid).grades.some((g) => g.includes("3")) ? 1 : 0;
+          if (g1 !== g2) center = g1 > g2 ? c2.uid : c1.uid;
+          else center = f1 >= f2 ? c1.uid : c2.uid;
+        } else {
+          center = f1 >= f2 ? c1.uid : c2.uid;
+        }
+
+        const intervalDraws = Math.max(0, 6 - (hand.length - 2));
+        const utility = c1.cycleScore + c2.cycleScore + intervalDraws * 2.5 + (dropSynergy ? 2.0 : 0.8);
+        if (utility > bestUtility) {
+          bestUtility = utility;
+          bestPlan = {
+            uids: [c1.uid, c2.uid],
+            center,
+            nameChoices,
+            dp,
+            cost: -utility,
+          };
+        }
+      }
+    }
+  }
+
+  return bestPlan;
 }
 
 function chooseDeployUid(db: CardDb, state: GameState, p: PlayerId, area: Exclude<Area, "block">, weights: HeuristicV2Weights): number | null {
@@ -1202,6 +1595,56 @@ function actionsScore(db: CardDb, state: GameState, p: PlayerId, actions: Action
   return (actions ?? []).reduce((sum, action) => sum + actionScore(db, state, p, action, weights), 0);
 }
 
+function currentBlockDp(db: CardDb, state: GameState, p: PlayerId): number {
+  const ps = state.players[p];
+  const centerTop = topChara(ps.blockCenter);
+  const negated = state.restrictions.some(
+    (r) => r.player === p && r.negateCenterBlock && r.setNo === state.setNo && r.activeTurn === state.turnNo,
+  );
+  const centerVal = centerTop !== null && !negated ? effParamOf(db, state, centerTop, "block") : 0;
+  const sideVal = ps.blockSides.reduce((sum, u) => sum + effParamOf(db, state, u, "block"), 0);
+  return centerVal + sideVal;
+}
+
+function maxBlockGainFromActions(actions: readonly Action[] | undefined): number {
+  let gain = 0;
+  for (const action of actions ?? []) {
+    switch (action.op) {
+      case "addParam":
+        if ((action.param === "block" || action.param === "choose") && action.amount > 0) gain += action.amount;
+        break;
+      case "setParam":
+        if (action.param === "block" && action.value > 0) gain += action.value;
+        break;
+      case "addOpponentOp":
+        if (action.amount < 0) gain += -action.amount;
+        break;
+      case "deployFromDrop":
+      case "deployFromGuts":
+        if (action.area === "block") gain += 4 + maxBlockGainFromActions(action.then);
+        break;
+      case "keyword":
+        if (action.name === "ワンタッチ" || action.name === "ドシャット") gain += 99;
+        break;
+      case "lostOpponent":
+        gain += 99;
+        break;
+      case "gate":
+        gain += Math.max(maxBlockGainFromActions(action.then), maxBlockGainFromActions(action.else));
+        break;
+      case "if":
+        gain += maxBlockGainFromActions(action.then);
+        break;
+      case "chooseOne":
+        gain += Math.max(0, ...action.options.map((o) => maxBlockGainFromActions(o.actions)));
+        break;
+      default:
+        break;
+    }
+  }
+  return gain;
+}
+
 function freeSkillScore(db: CardDb, state: GameState, p: PlayerId, uid: number, skillIndex: number, weights: HeuristicV2Weights): number {
   const skill = skillOf(cardOf(db, state, uid), skillIndex);
   if (!skill || skill.kind !== "active") return -Infinity;
@@ -1216,6 +1659,26 @@ function freeEventScore(db: CardDb, state: GameState, p: PlayerId, uid: number, 
 
 function chooseFreeAction(db: CardDb, state: GameState, p: PlayerId, weights: HeuristicV2Weights): Decision {
   const fo = freeOptions(db, state);
+  // [Gemini 2026-11-18] Phase M2：當處於必敗攔網（即使開盡所有可用攔網技能/事件仍 DP < OP，且無 One Touch / ドシャット）時，
+  // 直接 pass 讓判定自然失敗進入 Interval 補牌，不白花 Guts 與事件卡去救必敗的球。
+  if (state.phase === "block") {
+    const op = incomingOp(state, p);
+    const dp = currentBlockDp(db, state, p);
+    if (op > 0 && dp < op) {
+      let maxGain = 0;
+      for (const e of fo.events) {
+        const skill = effectOf(cardOf(db, state, e.uid))?.skills.find((s): s is Extract<SkillDef, { kind: "event" }> => s.kind === "event");
+        if (skill) maxGain += maxBlockGainFromActions(skill.actions);
+      }
+      for (const s of fo.skills) {
+        const skill = skillOf(cardOf(db, state, s.uid), s.skillIndex);
+        if (skill && "actions" in skill) maxGain += maxBlockGainFromActions(skill.actions);
+      }
+      if (dp + maxGain < op) {
+        return { type: "free", action: "pass" };
+      }
+    }
+  }
   const eventChoices = fo.events.map((e) => ({ type: "event" as const, uid: e.uid, score: freeEventScore(db, state, p, e.uid, weights) }));
   const skillChoices = fo.skills.map((s) => ({ type: "skill" as const, uid: s.uid, skillIndex: s.skillIndex, score: freeSkillScore(db, state, p, s.uid, s.skillIndex, weights) }));
   const best = [...eventChoices, ...skillChoices].sort((a, b) => b.score - a.score)[0];
@@ -1227,6 +1690,14 @@ function chooseFreeAction(db: CardDb, state: GameState, p: PlayerId, weights: He
 function gateAcceptScore(db: CardDb, state: GameState, p: PlayerId, aw: Extract<Awaiting, { kind: "confirm" }>, weights: HeuristicV2Weights): number {
   if (aw.what === "draw") return (aw.count ?? 1) * 1.8 * weights.drawValue - deckRisk(state, p, weights);
   if (aw.what === "mill") return actionsScore(db, state, p, aw.then, weights) - 1.2 * weights.costValue;
+  if (state.phase === "block" && (aw.costs?.length ?? 0) > 0 && aw.then.length > 0 && aw.then.every((a) => a.op === "addParam")) {
+    const op = incomingOp(state, p);
+    const dp = currentBlockDp(db, state, p);
+    if (op > 0 && dp < op) {
+      const gain = maxBlockGainFromActions(aw.then);
+      if (dp + gain < op) return -Infinity;
+    }
+  }
   const immediatePointGain = immediatePointGainScore(state, aw.then, weights);
   return actionsScore(db, state, p, aw.then, weights) + immediatePointGain - costsScore(aw.costs, weights);
 }
@@ -1448,6 +1919,9 @@ export function heuristicAiDecision(db: CardDb, state: GameState, profile: Heuri
       const blockCost = block ? block.cost - weights.blockChoiceBias : Infinity;
       if (receiveUid !== null && (!block || receiveCost <= blockCost + 1.5)) return { type: "defense-choice", choice: "receive" };
       if (block) return { type: "defense-choice", choice: "block" };
+      if (canChooseBlock(state) && bestTacticalLostBlockPlan(db, state, p, op, weights)) {
+        return { type: "defense-choice", choice: "block" };
+      }
       return { type: "defense-choice", choice: "receive" };
     }
 
@@ -1469,7 +1943,8 @@ export function heuristicAiDecision(db: CardDb, state: GameState, profile: Heuri
     }
 
     case "deploy-block": {
-      const plan = bestBlockPlan(db, state, p, incomingOp(state, p), weights);
+      const op = incomingOp(state, p);
+      const plan = bestBlockPlan(db, state, p, op, weights) ?? bestTacticalLostBlockPlan(db, state, p, op, weights);
       if (!plan) return { type: "deploy-block", uids: null };
       return { type: "deploy-block", uids: plan.uids, center: plan.center, nameChoices: plan.nameChoices };
     }

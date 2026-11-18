@@ -4,7 +4,7 @@ import { describeDecision } from "../shared/decisionLabels";
 import { cloneStateForSearch } from "../engine/search-clone";
 import type { CardDb, Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import type { CourtArea } from "../engine/dsl";
-import { heuristicAiDecision, isImmediateOneTouchBlocker, scoreMulliganHand } from "./heuristic";
+import { bestTacticalLostBlockPlan, cyclingCandidateScore, heuristicAiDecision, isImmediateOneTouchBlocker, scoreMulliganHand } from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import { seededRnd } from "./benchmark";
 import { evaluateStateValue, explainValue, type ValueExplanation } from "./rollout-value";
@@ -360,6 +360,8 @@ export function enumerateCandidates(db: CardDb, state: GameState, limit: number,
       for (let index = 0; index < state.players[p].setArea.length; index++) decisions.push({ type: "pick-set-card", index });
       break;
     case "deploy-block": {
+      const op = state.op && state.op.owner !== p ? state.op.value : 0;
+      const tacticalPlan = bestTacticalLostBlockPlan(db, state, p, op);
       const allOpts = deployableUids(db, state, p, "block")
         .slice()
         .sort((a, b) => cardParam(db, state, b, "block") - cardParam(db, state, a, "block"));
@@ -370,6 +372,23 @@ export function enumerateCandidates(db: CardDb, state: GameState, limit: number,
         .filter((uid) => isImmediateOneTouchBlocker(db, state, p, uid))
         .map((uid): Decision => ({ type: "deploy-block", uids: [uid], center: uid, nameChoices: blockNameChoices(db, state, p, [uid]) ?? {} }));
       decisions.unshift(...leanOneTouch);
+      if (tacticalPlan) {
+        decisions.push({
+          type: "deploy-block",
+          uids: tacticalPlan.uids,
+          center: tacticalPlan.center,
+          nameChoices: tacticalPlan.nameChoices,
+        });
+        if (tacticalPlan.uids.length > 1) {
+          const singleChoices = blockNameChoices(db, state, p, [tacticalPlan.center]) ?? {};
+          decisions.push({
+            type: "deploy-block",
+            uids: [tacticalPlan.center],
+            center: tacticalPlan.center,
+            nameChoices: singleChoices,
+          });
+        }
+      }
       decisions.push({ type: "deploy-block", uids: null });
       const maxN = Math.min(3, blockDeployMax(state, p));
       for (let size = 1; size <= maxN; size++) {

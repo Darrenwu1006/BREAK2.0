@@ -4,6 +4,8 @@ import type { Action, EffectDef, ParamName, SkillDef } from "../src/engine/dsl";
 import type { CardDb, Decision, GameState, PlayerId } from "../src/engine/types";
 import { benchmarkDb, findBenchmarkDeck, type BenchmarkDeck } from "../src/ai/benchmark-fixtures";
 import {
+  bestBlockPlan,
+  bestTacticalLostBlockPlan,
   HEURISTIC_V2_PROFILES,
   heuristicAiDecision,
   heuristicProfileForDeckAxes,
@@ -11,6 +13,7 @@ import {
   type HeuristicV2ProfileId,
   type HeuristicV2Weights,
 } from "../src/ai/heuristic";
+import { createIsmctsReport } from "../src/ai/ismcts";
 import { numberArg } from "../src/shared/argv";
 
 export const TARGET_DECK_NAMES = [
@@ -138,12 +141,34 @@ function sanitizeEffectCardsDecision(db: CardDb, state: GameState, d: Decision):
   return { type: "effect-cards", uids: chosen };
 }
 
+function legacyPreM2DefenseDecision(db: CardDb, state: GameState, profile: HeuristicV2ProfileId = "heuristic-v2"): Decision {
+  const pd = state.pendingDecision;
+  if (pd?.type === "defense-choice") {
+    const p = pd.player;
+    const op = state.op && state.op.owner !== p ? state.op.value : 0;
+    const canR = deployableUids(db, state, p, "receive").some((u) => (cardOf(db, state, u).params?.receive ?? 0) >= op);
+    const canB = canChooseBlock(state) ? bestBlockPlan(db, state, p, op, profile) !== null : false;
+    if (!canR && !canB) return { type: "defense-choice", choice: "receive" };
+  }
+  if (pd?.type === "deploy-block") {
+    const p = pd.player;
+    const op = state.op && state.op.owner !== p ? state.op.value : 0;
+    const plan = bestBlockPlan(db, state, p, op, profile);
+    if (!plan) return { type: "deploy-block", uids: null };
+  }
+  return sanitizeEffectCardsDecision(db, state, heuristicAiDecision(db, state, profile));
+}
+
 export function legacyM0AiDecision(db: CardDb, state: GameState, profile: HeuristicV2ProfileId = "heuristic-v2"): Decision {
   if (state.pendingDecision?.type === "mulligan") {
     const p = state.pendingDecision.player;
     return { type: "mulligan", returnUids: legacyM0ChooseMulligan(db, state, p, HEURISTIC_V2_PROFILES[profile]) };
   }
-  return sanitizeEffectCardsDecision(db, state, heuristicAiDecision(db, state, profile));
+  return legacyPreM2DefenseDecision(db, state, profile);
+}
+
+export function legacyM1AiDecision(db: CardDb, state: GameState, profile: HeuristicV2ProfileId = "heuristic-v2"): Decision {
+  return legacyPreM2DefenseDecision(db, state, profile);
 }
 
 function candidateNamesForUid(db: CardDb, state: GameState, uid: number): string[] {
@@ -479,10 +504,12 @@ export interface HeadToHeadResult {
   byDeckMirror: { deckName: string; m1Wins: number; m0Wins: number; winRate: number }[];
 }
 
-export function runM1VsM0HeadToHead(
+export function runHeadToHead(
   db: CardDb,
   decks: readonly BenchmarkDeck[],
   seedsPerDeckPair: number,
+  candidateFn: (db: CardDb, state: GameState, profile: HeuristicV2ProfileId) => Decision,
+  baselineFn: (db: CardDb, state: GameState, profile: HeuristicV2ProfileId) => Decision,
 ): HeadToHeadResult {
   let m1Wins = 0;
   let m0Wins = 0;
@@ -490,7 +517,7 @@ export function runM1VsM0HeadToHead(
   let mirrorM0Wins = 0;
   const byDeckMirror: { deckName: string; m1Wins: number; m0Wins: number; winRate: number }[] = [];
 
-  // 1. Same-deck mirror (40 seed pairs per deck = 80 games per deck, 480 games total)
+  // 1. Same-deck mirror
   const mirrorSeeds = Math.max(20, seedsPerDeckPair * 5);
   for (let i = 0; i < decks.length; i++) {
     const deck = decks[i]!;
@@ -503,7 +530,7 @@ export function runM1VsM0HeadToHead(
         let s = createGame(db, { seed, decks: [deck.ids, deck.ids] });
         for (let step = 0; step < 4000 && s.phase !== "gameOver"; step++) {
           const p = s.pendingDecision!.player;
-          const rawD = p === m1Seat ? heuristicAiDecision(db, s, prof) : legacyM0AiDecision(db, s, prof);
+          const rawD = p === m1Seat ? candidateFn(db, s, prof) : baselineFn(db, s, prof);
           const d = sanitizeEffectCardsDecision(db, s, rawD);
           s = applyDecision(db, s, d);
         }
@@ -537,12 +564,12 @@ export function runM1VsM0HeadToHead(
         for (const m1Seat of [0, 1] as const) {
           let s = createGame(db, {
             seed,
-            decks: m1Seat === 0 ? [deckA.ids, deckB.ids] : [deckB.ids, deckA.ids],
+            decks: [deckA.ids, deckB.ids],
           });
           for (let step = 0; step < 4000 && s.phase !== "gameOver"; step++) {
             const p = s.pendingDecision!.player;
-            const prof = m1Seat === 0 ? (p === 0 ? profA : profB) : (p === 0 ? profB : profA);
-            const rawD = p === m1Seat ? heuristicAiDecision(db, s, prof) : legacyM0AiDecision(db, s, prof);
+            const prof = p === 0 ? profA : profB;
+            const rawD = p === m1Seat ? candidateFn(db, s, prof) : baselineFn(db, s, prof);
             const d = sanitizeEffectCardsDecision(db, s, rawD);
             s = applyDecision(db, s, d);
           }
@@ -571,16 +598,73 @@ export function runM1VsM0HeadToHead(
   };
 }
 
+export function runM1VsM0HeadToHead(
+  db: CardDb,
+  decks: readonly BenchmarkDeck[],
+  seedsPerDeckPair: number,
+): HeadToHeadResult {
+  return runHeadToHead(db, decks, seedsPerDeckPair, heuristicAiDecision, legacyM0AiDecision);
+}
+
+export function runIsmctsMirrorAb(
+  db: CardDb,
+  decks: readonly BenchmarkDeck[],
+  iterations: number = 48,
+): { totalGames: number; m3Wins: number; baseWins: number; winRate: number } {
+  let m3Wins = 0;
+  let baseWins = 0;
+  // 20 seed pairs across the 6 fourth-expansion decks = 40 mirror games
+  for (let pairIdx = 0; pairIdx < 20; pairIdx++) {
+    const deck = decks[pairIdx % decks.length]!;
+    const prof = heuristicProfileForDeckAxes(deck.axes);
+    const seed = 18000 + pairIdx * 37;
+    for (const m3Seat of [0, 1] as const) {
+      let s = createGame(db, { seed, decks: [deck.ids, deck.ids] });
+      for (let step = 0; step < 3000 && s.phase !== "gameOver"; step++) {
+        const pd = s.pendingDecision!;
+        const p = pd.player;
+        let rawD: Decision;
+        const mctsSeed = seed + s.setNo * 1009 + s.turnNo * 37 + s.sub * 7 + p * 3;
+        if (p === m3Seat) {
+          rawD = createIsmctsReport(db, s, {
+            perspectivePlayer: p,
+            knownDecks: [deck.ids, deck.ids],
+            iterations,
+            rolloutPolicy: prof,
+            enablePhaseM3: true,
+            seed: mctsSeed,
+          }).bestAction.decision;
+        } else {
+          rawD = createIsmctsReport(db, s, {
+            perspectivePlayer: p,
+            knownDecks: [deck.ids, deck.ids],
+            iterations,
+            rolloutPolicy: prof,
+            enablePhaseM3: false,
+            seed: mctsSeed,
+          }).bestAction.decision;
+        }
+        const d = sanitizeEffectCardsDecision(db, s, rawD);
+        s = applyDecision(db, s, d);
+      }
+      if (s.winner === m3Seat) m3Wins++;
+      else if (s.winner !== null) baseWins++;
+    }
+  }
+  const totalGames = m3Wins + baseWins;
+  return { totalGames, m3Wins, baseWins, winRate: totalGames > 0 ? m3Wins / totalGames : 0 };
+}
+
 function pct(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
 function runMain() {
   const seedsPerRole = Math.max(10, Math.floor(numberArg("seeds", 200)));
-  const h2hSeeds = Math.max(2, Math.floor(numberArg("h2h-seeds", 10)));
+  const h2hSeeds = Math.max(2, Math.floor(numberArg("h2h-seeds", 4)));
   const decks = TARGET_DECK_NAMES.map((name) => findBenchmarkDeck(name));
 
-  console.log(`=== M8 Phase M0 / M1 Evaluation (seedsPerRole=${seedsPerRole}, totalOpenings=${decks.length * seedsPerRole * 2}) ===\n`);
+  console.log(`=== M8 Phase M0 / M1 / M2 / M3 Evaluation (seedsPerRole=${seedsPerRole}, totalOpenings=${decks.length * seedsPerRole * 2}) ===\n`);
 
   const m0Stats = decks.map((d) => evaluateDeckOpenings(benchmarkDb, d, seedsPerRole, legacyM0AiDecision));
   const curStats = decks.map((d) => evaluateDeckOpenings(benchmarkDb, d, seedsPerRole, heuristicAiDecision));
@@ -619,22 +703,38 @@ function runMain() {
   );
 
   const hopelessM0 = evaluateHopelessDefenseCycling(benchmarkDb, decks, 20, legacyM0AiDecision);
+  const hopelessM1 = evaluateHopelessDefenseCycling(benchmarkDb, decks, 20, legacyM1AiDecision);
+  const hopelessCur = evaluateHopelessDefenseCycling(benchmarkDb, decks, 20, heuristicAiDecision);
   console.log(
-    `\n--- Hopeless Defense Cycling Baseline (M0) ---\n` +
-      `  Hopeless Attack Opportunities (hand>=5, DP<OP): ${hopelessM0.opportunities}\n` +
-      `  Block Cycled (1~2 cards): ${hopelessM0.blockCycled} (${pct(hopelessM0.cyclingRate)})\n` +
-      `  Receive Draw 1 then Lost: ${hopelessM0.receiveDrawnThenLost} (${hopelessM0.opportunities > 0 ? pct(hopelessM0.receiveDrawnThenLost / hopelessM0.opportunities) : "0.0%"})\n` +
-      `  Wasted / Empty Block Lost: ${hopelessM0.emptyOrWasted}`,
+    `\n--- Hopeless Defense Cycling (M0 vs M1 vs Current M2) ---\n` +
+      `  [M0 Baseline] Opportunities: ${hopelessM0.opportunities} | Block Cycled: ${hopelessM0.blockCycled} (${pct(hopelessM0.cyclingRate)}) | Receive Draw 1 Lost: ${hopelessM0.receiveDrawnThenLost} (${hopelessM0.opportunities > 0 ? pct(hopelessM0.receiveDrawnThenLost / hopelessM0.opportunities) : "0.0%"}) | Wasted: ${hopelessM0.emptyOrWasted}\n` +
+      `  [M1 Baseline] Opportunities: ${hopelessM1.opportunities} | Block Cycled: ${hopelessM1.blockCycled} (${pct(hopelessM1.cyclingRate)}) | Receive Draw 1 Lost: ${hopelessM1.receiveDrawnThenLost} (${hopelessM1.opportunities > 0 ? pct(hopelessM1.receiveDrawnThenLost / hopelessM1.opportunities) : "0.0%"}) | Wasted: ${hopelessM1.emptyOrWasted}\n` +
+      `  [Current M2]  Opportunities: ${hopelessCur.opportunities} | Block Cycled: ${hopelessCur.blockCycled} (${pct(hopelessCur.cyclingRate)}) | Receive Draw 1 Lost: ${hopelessCur.receiveDrawnThenLost} (${hopelessCur.opportunities > 0 ? pct(hopelessCur.receiveDrawnThenLost / hopelessCur.opportunities) : "0.0%"}) | Wasted: ${hopelessCur.emptyOrWasted}`,
   );
 
-  const h2h = runM1VsM0HeadToHead(benchmarkDb, decks, h2hSeeds);
+  const h2hVsM0 = runHeadToHead(benchmarkDb, decks, h2hSeeds, heuristicAiDecision, legacyM0AiDecision);
   console.log(
-    `\n--- Head-to-Head Match Win Rate (Current M1 vs M0 Baseline) ---\n` +
-      `  Same-Deck Mirror (${h2h.mirrorGames} games): M1 ${h2h.mirrorM1Wins} - ${h2h.mirrorM0Wins} M0 (${pct(h2h.mirrorM1WinRate)})\n` +
-      `  All-vs-All Matrix (${h2h.totalGames} games): M1 ${h2h.m1Wins} - ${h2h.m0Wins} M0 (${pct(h2h.m1WinRate)})`,
+    `\n--- Head-to-Head Match Win Rate (Current M1+M2 vs M0 Baseline) ---\n` +
+      `  Same-Deck Mirror (${h2hVsM0.mirrorGames} games): M1+M2 ${h2hVsM0.mirrorM1Wins} - ${h2hVsM0.mirrorM0Wins} M0 (${pct(h2hVsM0.mirrorM1WinRate)})\n` +
+      `  All-vs-All Matrix (${h2hVsM0.totalGames} games): M1+M2 ${h2hVsM0.m1Wins} - ${h2hVsM0.m0Wins} M0 (${pct(h2hVsM0.m1WinRate)})`,
   );
-  for (const row of h2h.byDeckMirror) {
-    console.log(`  [Mirror] ${row.deckName}: ${row.m1Wins}-${row.m0Wins} (${pct(row.winRate)})`);
+
+  const h2hVsM1 = runHeadToHead(benchmarkDb, decks, h2hSeeds, heuristicAiDecision, legacyM1AiDecision);
+  console.log(
+    `\n--- Head-to-Head Match Win Rate (Current M1+M2 vs M1 Baseline) ---\n` +
+      `  Same-Deck Mirror (${h2hVsM1.mirrorGames} games): M1+M2 ${h2hVsM1.mirrorM1Wins} - ${h2hVsM1.mirrorM0Wins} M1 (${pct(h2hVsM1.mirrorM1WinRate)})\n` +
+      `  All-vs-All Matrix (${h2hVsM1.totalGames} games): M1+M2 ${h2hVsM1.m1Wins} - ${h2hVsM1.m0Wins} M1 (${pct(h2hVsM1.m1WinRate)})`,
+  );
+  for (const row of h2hVsM1.byDeckMirror) {
+    console.log(`  [M1+M2 vs M1 Mirror] ${row.deckName}: ${row.m1Wins}-${row.m0Wins} (${pct(row.winRate)})`);
+  }
+
+  if (numberArg("skip-ismcts", 0) === 0) {
+    const ismctsAb = runIsmctsMirrorAb(benchmarkDb, decks, 48);
+    console.log(
+      `\n--- SO-ISMCTS Mirror A/B (${ismctsAb.totalGames} games, M1+M2+M3 vs M0 Baseline) ---\n` +
+        `  M1+M2+M3 SO-ISMCTS ${ismctsAb.m3Wins} - ${ismctsAb.baseWins} Baseline SO-ISMCTS (${pct(ismctsAb.winRate)})`,
+    );
   }
 }
 

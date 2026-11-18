@@ -1,6 +1,12 @@
-import { applyDecision, deployableUids, effParam, freeOptions } from "../engine/engine";
+import { applyDecision, canChooseBlock, deployableUids, effParam, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
-import { heuristicAiDecision, isImmediateOneTouchBlocker } from "./heuristic";
+import {
+  bestTacticalLostBlockPlan,
+  cyclingCandidateScore,
+  heuristicAiDecision,
+  isImmediateOneTouchBlocker,
+  scoreMulliganHand,
+} from "./heuristic";
 import type { HeuristicV2ProfileId } from "./heuristic";
 import {
   determinizeHiddenState,
@@ -117,6 +123,8 @@ export interface IsmctsOptions {
    *     僅當對手本身會搜尋/對抗時才正確；對固定 heuristic 對手有害（見 WORKLOG 2026-06-23 G2 診斷）。
    */
   opponentModel?: "heuristic" | "adversarial";
+  /** [Gemini 2026-11-18] Phase M3：啟用起手角色鏈與必敗局跨 Set 戰術濾牌 tie-break 對齊（預設 true；A/B 對照可設 false）。 */
+  enablePhaseM3?: boolean;
   seed?: number;
 }
 
@@ -348,6 +356,11 @@ export function rootDecisionPressureScore(
   perspective: PlayerId,
   options: { pairAware?: boolean; defenseSkillEffectScoring?: boolean } = {},
 ): number {
+  if (decision.type === "mulligan") {
+    const returnSet = new Set(decision.returnUids);
+    const keptUids = state.players[perspective].hand.filter((u) => !returnSet.has(u));
+    return scoreMulliganHand(db, state, perspective, keptUids) * 0.01;
+  }
   let score = 0;
   try {
     const next = applyDecision(db, state, decisionWithDefaultNameChoice(db, state, decision));
@@ -406,6 +419,7 @@ function decisionImmediatelyLosesSetOrMatch(
   decision: Decision,
   perspective: PlayerId,
 ): boolean {
+  if (decision.type === "mulligan") return false;
   try {
     const next = applyDecision(db, state, decisionWithDefaultNameChoice(db, state, decision));
     if (next.winner !== null) return next.winner !== perspective;
@@ -417,7 +431,66 @@ function decisionImmediatelyLosesSetOrMatch(
 }
 
 /**
- * [Claude 2026-07-22] Fix D（D1，診斷見 reports/27 §D、WORKLOG 2026-07-21）：這條 defense-choice lane
+ * [Gemini 2026-11-18] Phase M3：當所有防守候選皆無法守住當前 OP（全員必失本 Set 進入 Interval）時，
+ * 評估決策進入下一局 Interval 補滿 6 張後的手牌戰力與場上保留 Guts／濾牌收益，避免被未進 Interval 前的暫時手牌差誤導。
+ */
+function hopelessDefenseTieBreakScore(
+  db: CardDb,
+  state: GameState,
+  decision: Decision,
+  perspective: PlayerId,
+  rolloutPolicy?: HeuristicV2ProfileId,
+): number {
+  const op = state.op && state.op.owner !== perspective ? state.op.value : 0;
+  const hand = state.players[perspective].hand;
+  const tacticalPlan = bestTacticalLostBlockPlan(db, state, perspective, op, rolloutPolicy);
+
+  if (decision.type === "defense-choice") {
+    if (decision.choice === "block") {
+      if (!canChooseBlock(state) || !tacticalPlan) return -0.05;
+      return hopelessDefenseTieBreakScore(
+        db,
+        state,
+        {
+          type: "deploy-block",
+          uids: tacticalPlan.uids,
+          center: tacticalPlan.center,
+          nameChoices: tacticalPlan.nameChoices,
+        },
+        perspective,
+        rolloutPolicy,
+      );
+    }
+    const receiveNewDraws = 1 + Math.max(0, 5 - hand.length);
+    return 0.04 * receiveNewDraws;
+  }
+
+  if (decision.type === "deploy-block") {
+    if (decision.uids === null || decision.uids.length === 0) {
+      const intervalDraws = Math.max(0, 6 - hand.length);
+      return 0.04 * intervalDraws;
+    }
+    const uids = decision.uids;
+    const cycleScores = uids.map((u) => cyclingCandidateScore(db, state, perspective, u, rolloutPolicy));
+    if (cycleScores.some((s) => s <= 0)) {
+      return -0.5;
+    }
+    const intervalDraws = Math.max(0, 6 - (hand.length - uids.length));
+    if (intervalDraws <= 0) return -0.02;
+    const totalCycleScore = cycleScores.reduce((a, b) => a + b, 0);
+    const matchesBestPlan =
+      tacticalPlan !== null &&
+      tacticalPlan.center === decision.center &&
+      tacticalPlan.uids.length === uids.length &&
+      tacticalPlan.uids.every((u) => uids.includes(u));
+    return 0.06 * intervalDraws + 0.04 + totalCycleScore * 0.015 + (matchesBestPlan ? 0.03 : 0);
+  }
+
+  return 0;
+}
+
+/**
+ * [Claude 2026-07-22] Fix D（D1，診斷見 reports/27 §D、WORKLOG 2026-07-21）：這條 defense-choice / deploy-block lane
  * 是否「能通過當前這次 OP 判定」。單步 decisionImmediatelyLosesSetOrMatch 看不到「選了接球 lane、兩步後
  * 才不登場 Lost」；此處用 heuristic 把該 lane 打到判定結算為止，直接看有沒有守下這球。
  *   FAILED ⟺ playout 中 lostBy 變成 perspective（judge 失敗會 declareLost）或直接被判負。
@@ -432,7 +505,9 @@ function defenseChoiceSurvivesCurrentOp(
   perspective: PlayerId,
   rolloutPolicy?: HeuristicV2ProfileId,
 ): boolean {
-  if (decision.type !== "defense-choice") return true;
+  if (decision.type !== "defense-choice" && decision.type !== "deploy-block") {
+    return true;
+  }
   if (!state.op || state.op.owner === perspective) return true; // 無來襲 OP → 不適用
   const baseSetLen = state.players[perspective].setArea.length;
   try {
@@ -465,14 +540,45 @@ function chooseRootTieBreakBest(
   rolloutPolicy?: HeuristicV2ProfileId,
   defenseChoiceSurvivalTieBreak: boolean = true,
   defenseSkillEffectScoring: boolean = true,
+  enablePhaseM3: boolean = true,
 ): CoachActionEstimate | null {
   if (winRateDelta <= 0 || recommendations.length <= 1) return null;
   const robustBest = recommendations[0]!;
   const minVisits = Math.max(1, Math.floor(robustBest.sampleCount * ROOT_TIE_BREAK_MIN_VISIT_RATIO));
-  let close = recommendations.filter(
-    (item) => item.sampleCount >= minVisits && Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
+  const visitedCandidates = recommendations.filter((item) => item.sampleCount >= minVisits);
+
+  // [Gemini 2026-11-18] Phase M3：當處於必敗防守（所有合法 defense-choice 或 deploy-block 候選皆無法守住當前 OP，
+  // 且 bestTacticalLostBlockPlan 存在可濾廢牌方案）且非賽末點時，統一以跨 Set Interval 後收益（hopelessDefenseTieBreakScore）評分。
+  if (
+    enablePhaseM3 &&
+    defenseChoiceSurvivalTieBreak &&
+    state.players[perspective].setArea.length > 0 &&
+    recommendations.length > 1 &&
+    recommendations.some((item) => item.decision.type === "deploy-block" || item.decision.type === "defense-choice")
+  ) {
+    const op = state.op && state.op.owner !== perspective ? state.op.value : 0;
+    const tacticalPlan = canChooseBlock(state) ? bestTacticalLostBlockPlan(db, state, perspective, op, rolloutPolicy) : null;
+    if (tacticalPlan !== null) {
+      const allSurvivors = recommendations.filter((item) =>
+        defenseChoiceSurvivesCurrentOp(db, state, item.decision, perspective, rolloutPolicy),
+      );
+      if (allSurvivors.length === 0) {
+        return recommendations
+          .map((item) => ({
+            item,
+            cycleScore: hopelessDefenseTieBreakScore(db, state, item.decision, perspective, rolloutPolicy),
+          }))
+          .sort((a, b) => b.cycleScore - a.cycleScore || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+      }
+    }
+  }
+
+  const rawClose = visitedCandidates.filter(
+    (item) => Math.abs(item.winRate - robustBest.winRate) <= winRateDelta,
   );
-  if (close.length <= 1) return null;
+  if (rawClose.length <= 1) return null;
+
+  let close = rawClose;
   // [Claude 2026-07-19] AI 提前 Lost 窄修（診斷見 reports/26 與 WORKLOG 2026-07-19）：資源壓力分數會因
   // Lost／不登場保留手牌而偏高，曾把勝率落後的終局候選反轉成首選（Match 10 比賽點 Lost 0% 壓過福永
   // 3.99%）。邊界依報告定案：robust best 為非終局時，「立即輸掉 Set 或比賽」的候選不參與 tie-break；
@@ -485,8 +591,7 @@ function chooseRootTieBreakBest(
   }
   // [Claude 2026-07-22] Fix D（D1）：defense-choice 生存優先。close-set 內若同時存在「能通過當前 OP 判定」
   // 與「不能通過」的 defense-choice lane，收斂到能生存的 lane——避免接球 lane 因抽牌 handDiff↑ 讓壓力
-  // 分數反轉、選到兩步後才不登場 Lost 的放棄型防守（reports/27 §D 決勝局）。全員都守不住＝真的守不住
-  // 這球，維持原行為（尊重 MCTS 放 Set／資源保全）。
+  // 分數反轉、選到兩步後才不登場 Lost 的放棄型防守（reports/27 §D 決勝局）。
   if (defenseChoiceSurvivalTieBreak && close.some((item) => item.decision.type === "defense-choice")) {
     const survivors = close.filter((item) =>
       defenseChoiceSurvivesCurrentOp(db, state, item.decision, perspective, rolloutPolicy),
@@ -741,6 +846,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
   const rootConservationWinRateThreshold = options.rootConservationWinRateThreshold ?? DEFAULT_ROOT_CONSERVATION_WIN_RATE_THRESHOLD;
   const defenseSkillEffectScoring = options.defenseSkillEffectScoring ?? true;
   const defenseChoiceSurvivalTieBreak = options.defenseChoiceSurvivalTieBreak ?? true;
+  const enablePhaseM3 = options.enablePhaseM3 ?? true;
   const enableConvergenceEarlyStop = options.enableConvergenceEarlyStop ?? true;
   const baseSeed = options.seed ?? state.rngState ?? 1;
   // [Claude 2026-06-23] iterations 顯式給＝用它；否則有 timeLimitMs 就讓「時間」綁定（高上限當安全網）、
@@ -830,6 +936,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     rolloutPolicy,
     defenseChoiceSurvivalTieBreak,
     defenseSkillEffectScoring,
+    enablePhaseM3,
   );
   if (tieBreakBest) {
     const index = recommendations.indexOf(tieBreakBest);
@@ -862,6 +969,7 @@ export const __ismctsTest = {
   chooseRootTieBreakBest,
   decisionImmediatelyLosesSetOrMatch,
   defenseChoiceSurvivesCurrentOp,
+  hopelessDefenseTieBreakScore,
   defensiveConfirmEffectScore,
   gateDeclaredGutsCost,
   shouldStopForRootConvergence,

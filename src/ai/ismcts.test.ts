@@ -319,3 +319,111 @@ describe("M8 Phase H H5 certainty-conditioned 資源節省 tie-break", () => {
     expect(on.bestAction.decision).toMatchObject(off.bestAction.decision);
   });
 });
+
+describe("M8 Phase M3 SO-ISMCTS 必敗局戰術濾牌對齊與生存防線", () => {
+  function buildHopelessDefenseState(seed: number, opValue: number) {
+    const handCards = ["HV-P01-039", "HV-P04-017", "HV-P04-021", "HV-P01-033", "HV-P02-011", "HV-P02-011"];
+    const deck0 = [...handCards, ...Array(40 - handCards.length).fill("HV-D01-006")];
+    const deck1 = Array(40).fill("HV-D01-006");
+    let state = createGame(benchmarkDb, { seed, decks: [deck0, deck1], skipDeckValidation: true });
+    state = applyDecision(benchmarkDb, state, { type: "serve-rights", take: state.pendingDecision!.player === 0 });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+    state = applyDecision(benchmarkDb, state, { type: "mulligan", returnUids: [] });
+
+    const used = new Set<number>();
+    const uids = handCards.map((id) => h5MoveToHand(state, 0, id, used));
+    h5KeepOnlyHand(state, 0, uids);
+
+    state.turnPlayer = 0;
+    state.op = { owner: 1, value: opValue, source: "attack" };
+    state.dp = null;
+    state.defenseChoice = null;
+    state.effectCtx = null;
+    state.pendingQueue = [];
+    return { state, uids, decks: [deck0, deck1] as const };
+  }
+
+  it("M3-1（SO-ISMCTS 必敗濾牌決策）：必敗防守 OP=8、手牌 6 張含 2 張廢牌時，createIsmctsReport 在 defense-choice 選 block、在 deploy-block 登場廢牌而非空手放棄", () => {
+    const { state, uids, decks } = buildHopelessDefenseState(980, 8);
+    const [watariUid, oikawaT2Uid, iwaizumiUid, dupOikawaUid, waste1Uid, waste2Uid] = uids as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+
+    // 1. defense-choice 推薦並選出 block
+    state.phase = "start";
+    state.sub = 1;
+    state.pendingDecision = { player: 0, type: "defense-choice" };
+    const reportChoice = createIsmctsReport(benchmarkDb, state, {
+      perspectivePlayer: 0,
+      knownDecks: decks,
+      seed: 981,
+      iterations: 120,
+      candidateLimit: 6,
+    });
+    expect(reportChoice.bestAction.decision).toEqual({ type: "defense-choice", choice: "block" });
+
+    // 2. deploy-block 推薦並選出登場 1~2 張廢牌，而非 uids: null 空手放棄，且保護三件套
+    state.phase = "block";
+    state.sub = 0;
+    state.defenseChoice = "block";
+    state.pendingDecision = { player: 0, type: "deploy-block" };
+    const reportBlock = createIsmctsReport(benchmarkDb, state, {
+      perspectivePlayer: 0,
+      knownDecks: decks,
+      seed: 982,
+      iterations: 120,
+      candidateLimit: 6,
+    });
+    expect(reportBlock.bestAction.decision.type).toBe("deploy-block");
+    if (reportBlock.bestAction.decision.type !== "deploy-block") throw new Error("expected deploy-block");
+    expect(reportBlock.bestAction.decision.uids).not.toBeNull();
+    expect(reportBlock.bestAction.decision.uids!.length).toBeGreaterThanOrEqual(1);
+    expect(reportBlock.bestAction.decision.uids!.length).toBeLessThanOrEqual(2);
+    expect(reportBlock.bestAction.decision.uids).not.toContain(watariUid);
+    expect(reportBlock.bestAction.decision.uids).not.toContain(oikawaT2Uid);
+    expect(reportBlock.bestAction.decision.uids).not.toContain(iwaizumiUid);
+    for (const u of reportBlock.bestAction.decision.uids!) {
+      expect([dupOikawaUid, waste1Uid, waste2Uid]).toContain(u);
+    }
+  });
+
+  it("M3-2（SO-ISMCTS Fix D 生存優先與 Leakage 不退化）：可守盤面 100% 選存活路線，且必敗盤面翻轉對手隱藏區 recommendations 完全不變", () => {
+    // 1. 可守盤面（OP=5，手上有 R5 渡 親治可接住，但攔網最高僅 DP=3 無法過線）：必須 100% 選 receive 存活，絕不走必敗攔網濾牌
+    const { state: survivable, uids, decks } = buildHopelessDefenseState(983, 5);
+    // 將手牌調整為僅 R5 渡 + 2 張 B1 廢牌（使攔網最大 DP=1 < 5，唯獨接球 R5 >= 5 能存活）
+    h5KeepOnlyHand(survivable, 0, [uids[0]!, uids[4]!, uids[5]!]);
+    survivable.phase = "start";
+    survivable.sub = 1;
+    survivable.pendingDecision = { player: 0, type: "defense-choice" };
+    const surviveReport = createIsmctsReport(benchmarkDb, survivable, {
+      perspectivePlayer: 0,
+      knownDecks: decks,
+      seed: 984,
+      iterations: 120,
+      candidateLimit: 6,
+    });
+    expect(surviveReport.bestAction.decision).toEqual({ type: "defense-choice", choice: "receive" });
+
+    // 2. 必敗盤面 hidden-information leakage hard gate：翻轉對手 hand/setArea/deck 後 recommendations 與 bestAction 完全一致
+    const { state: hopeless } = buildHopelessDefenseState(985, 8);
+    hopeless.phase = "block";
+    hopeless.sub = 0;
+    hopeless.defenseChoice = "block";
+    hopeless.pendingDecision = { player: 0, type: "deploy-block" };
+    const hiddenFlipped = structuredClone(hopeless);
+    hiddenFlipped.players[1].hand.reverse();
+    hiddenFlipped.players[1].setArea.reverse();
+    hiddenFlipped.players[1].deck.reverse();
+
+    const opts = { perspectivePlayer: 0 as const, knownDecks: decks, seed: 986, iterations: 120, candidateLimit: 6 };
+    const r1 = createIsmctsReport(benchmarkDb, hopeless, opts);
+    const r2 = createIsmctsReport(benchmarkDb, hiddenFlipped, opts);
+    expect(r2.recommendations).toEqual(r1.recommendations);
+    expect(r2.bestAction).toEqual(r1.bestAction);
+  });
+});

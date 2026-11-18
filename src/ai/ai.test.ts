@@ -549,6 +549,85 @@ describe("M5 Heuristic v2 決策品質", () => {
     expect(heuristicAiDecision(db, s, "heuristic-v2-burst")).toEqual({ type: "effect-confirm", accept: true });
   });
 
+  it("Phase M2-1（攔網濾牌）：必敗防守 OP=8 且手牌 6 張含三件套＋2 張重複/低點數廢牌時，選 block 並登場廢牌濾牌（保護三件套）", () => {
+    // 手牌 6 張：渡 親治 (HV-P01-039, R5) + 及川 徹 (HV-P04-017, T2) + 岩泉 一 (HV-P04-021, A3) + 多餘同名及川 (HV-P01-033) + 2x 低點數廢牌 (HV-P02-011)
+    const s = bareState(["HV-P01-039", "HV-P04-017", "HV-P04-021", "HV-P01-033", "HV-P02-011", "HV-P02-011"]);
+    s.players[0].setArea = s.players[0].deck.splice(0, 2); // 非賽末點（Set 區尚有 2 張）
+    const [watariUid, oikawaT2Uid, iwaizumiUid, dupOikawaUid, waste1Uid, waste2Uid] = s.players[0].hand as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+    s.turnPlayer = 0;
+    s.op = { owner: 1, value: 8, source: "attack" };
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+
+    // 1. defense-choice 選擇 block 走戰術性攔網濾牌
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "defense-choice", choice: "block" });
+
+    // 2. deploy-block 登場 1~2 張廢牌，且絕不消耗渡 (R5)、T2 及川、A3 岩泉三件套
+    s.phase = "block";
+    s.sub = 0;
+    s.pendingDecision = { player: 0, type: "deploy-block" };
+    const blockDec = heuristicAiDecision(db, s);
+    expect(blockDec.type).toBe("deploy-block");
+    if (blockDec.type !== "deploy-block") throw new Error("expected deploy-block");
+    expect(blockDec.uids).not.toBeNull();
+    expect(blockDec.uids!.length).toBeGreaterThanOrEqual(1);
+    expect(blockDec.uids!.length).toBeLessThanOrEqual(2);
+    expect(blockDec.uids).not.toContain(watariUid);
+    expect(blockDec.uids).not.toContain(oikawaT2Uid);
+    expect(blockDec.uids).not.toContain(iwaizumiUid);
+    for (const u of blockDec.uids!) {
+      expect([dupOikawaUid, waste1Uid, waste2Uid]).toContain(u);
+    }
+
+    // 3. 賽末點禁區（setArea 為空）：絕不走戰術性攔網濾牌放棄
+    s.players[0].setArea = [];
+    s.phase = "start";
+    s.sub = 1;
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "defense-choice", choice: "receive" });
+  });
+
+  it("Phase M2-2（接球抽濾保護主力）：必敗防守 OP=8 且手牌 5 張全為核心主力（無重複廢牌）時，選 receive 抽 1 張且不白白消耗接球手", () => {
+    // 手牌 5 張：渡 親治 (R5) + 及川 徹 (T2) + 岩泉 一 (A3) + 花巻 貴大 (R5) + 溝口 貞幸 (教練事件)
+    const s = bareState(["HV-P01-039", "HV-P04-017", "HV-P04-021", "HV-P04-025", "HV-P04-085"]);
+    s.players[0].setArea = s.players[0].deck.splice(0, 2);
+    s.turnPlayer = 0;
+    s.op = { owner: 1, value: 8, source: "attack" };
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+
+    // 1. 無廢牌可濾 → 選 receive 先抽 1 張
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "defense-choice", choice: "receive" });
+
+    // 2. 抽完後進 receive 階段仍接不住 OP=8 → deploy-receive 回傳 uid: null，保護 R5 主力接球手
+    s.phase = "receive";
+    s.sub = 0;
+    s.pendingDecision = { player: 0, type: "deploy-receive" };
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "deploy-receive", uid: null });
+  });
+
+  it("Phase M2-3（生存優先防線）：來球 OP=5 且手牌可合法接住或攔住時，100% 正常存活防守，絕不誤觸必敗濾牌", () => {
+    // 手牌含 R5 渡 親治 + 2 張廢牌，來球 OP=5 可由渡直接接住
+    const s = bareState(["HV-P01-039", "HV-P04-017", "HV-P04-021", "HV-P01-033", "HV-P02-011", "HV-P02-011"]);
+    s.players[0].setArea = s.players[0].deck.splice(0, 2);
+    const watariUid = s.players[0].hand[0]!;
+    s.turnPlayer = 0;
+    s.op = { owner: 1, value: 5, source: "attack" };
+    s.pendingDecision = { player: 0, type: "defense-choice" };
+
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "defense-choice", choice: "receive" });
+
+    s.phase = "receive";
+    s.sub = 0;
+    s.pendingDecision = { player: 0, type: "deploy-receive" };
+    expect(heuristicAiDecision(db, s)).toEqual({ type: "deploy-receive", uid: watariUid });
+  });
+
   it("現存牌組皆可用 heuristic v2 跑完整場且維持 40 張不變量", () => {
     for (let i = 0; i < allDecks.length; i++) {
       const a = allDecks[i]!;
