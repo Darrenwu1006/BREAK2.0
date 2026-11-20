@@ -377,6 +377,27 @@ function printReport(path: string, session: ReplaySession, options: CliOptions):
     console.log("");
     console.log(`主軸覆盤: 找不到 ${session.decks[options.player].label} 對應的 gameplan profile`);
   }
+
+  const thoughtEntries = session.entries.filter((entry) => entry.aiThought !== undefined);
+  if (thoughtEntries.length > 0) {
+    let keyCount = 0;
+    let strongCount = 0;
+    let heuristicCount = 0;
+    let tieBreakCount = 0;
+    for (const entry of thoughtEntries) {
+      const thought = entry.aiThought!;
+      if (thought.isKeyDecision) keyCount++;
+      if (thought.engine === "strong") strongCount++;
+      else heuristicCount++;
+      if (thought.tieBreakReason) tieBreakCount++;
+    }
+    console.log("");
+    console.log("AI 思維紀錄");
+    console.log(
+      `  已記錄 ${thoughtEntries.length} 筆（關鍵決策 ${keyCount} 筆｜strong ${strongCount} / heuristic ${heuristicCount}｜觸發 tie-break ${tieBreakCount} 次）`,
+    );
+    console.log("  使用 --board=<步> 或 --board=a-b 可逐手檢視詳情。");
+  }
 }
 
 const TRIAGE_GROUP_LABEL: Record<TriageCategory, string> = {

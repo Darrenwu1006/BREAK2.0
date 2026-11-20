@@ -4,7 +4,8 @@
 // 各區疊放、nameOverrides），不自行重算 → 對齊接地契約（spec §2）。
 
 import type { Card } from "../data/types";
-import type { CardDb, Decision, GameState, PlayerId, PointValue, Stack } from "../engine/types";
+import type { CardDb, GameState, PlayerId, PointValue, Stack } from "../engine/types";
+import type { AiThoughtRecord } from "../shared/aiThought";
 import { replayEntryLogs, type ReplayEntry, type ReplaySession } from "../shared/replayHistory";
 import { describeDecision } from "../shared/decisionLabels";
 
@@ -59,6 +60,69 @@ function pointStr(pv: PointValue | null): string {
   return pv ? `${pv.value}（owner P${pv.owner}, source ${pv.source}）` : "－";
 }
 
+function formatPct(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatNum(value: number): string {
+  return Number.isFinite(value) ? String(Number(value.toFixed(2))) : "-";
+}
+
+function formatKnownCard(db: CardDb, cardId: string): string {
+  const card = db.get(cardId);
+  if (!card) return `??(${cardId})`;
+  return `${displayName(card, cardId)}(${cardId})`;
+}
+
+function renderAiThoughtLines(db: CardDb, thought: AiThoughtRecord): string[] {
+  const lines: string[] = [];
+  const metaParts: string[] = [
+    `engine=${thought.engine}`,
+    thought.isKeyDecision ? "關鍵步" : "過場步",
+    `samples=${thought.completedSamples}`,
+  ];
+  if (thought.chosenWinRate !== undefined) {
+    metaParts.push(`chosenWinRate=${formatPct(thought.chosenWinRate)}`);
+  }
+  if (thought.tieBreakReason) {
+    metaParts.push(`tieBreakReason=${thought.tieBreakReason}`);
+  }
+  lines.push(`AI 思維：${metaParts.join("｜")}`);
+  if (thought.dialogue.spoiler) {
+    lines.push(`  spoiler：${thought.dialogue.spoiler}`);
+  }
+  if (thought.topCandidates.length > 0) {
+    lines.push("  topCandidates：");
+    for (const candidate of thought.topCandidates) {
+      const mark = candidate.isChosen ? "★ " : "";
+      lines.push(
+        `    - ${mark}${candidate.label} (${candidate.decisionType})｜勝率 ${formatPct(candidate.winRate)}｜樣本 ${candidate.sampleCount}`,
+      );
+    }
+  }
+  if (thought.valueFactors.length > 0) {
+    lines.push("  valueFactors：");
+    for (const factor of thought.valueFactors) {
+      const sign = factor.contribution >= 0 ? "+" : "";
+      lines.push(
+        `    - ${factor.label} (${factor.feature}, ${factor.direction})：${sign}${formatNum(factor.contribution)}`,
+      );
+    }
+  }
+  if (thought.belief) {
+    const knownHand =
+      thought.belief.knownOppHandCardIds.length > 0
+        ? thought.belief.knownOppHandCardIds.map((id) => formatKnownCard(db, id)).join("、")
+        : "－";
+    const reducedTags =
+      thought.belief.reducedTags.length > 0 ? thought.belief.reducedTags.join("、") : "－";
+    lines.push(`  belief：已知對手手牌：${knownHand}`);
+    lines.push(
+      `    oppGuts=${formatNum(thought.belief.oppGuts)}｜oppRemainingHighReceive=${formatNum(thought.belief.oppRemainingHighReceive)}｜oppRemainingDefEvent=${formatNum(thought.belief.oppRemainingDefEvent)}｜reducedTags=${reducedTags}`,
+    );
+  }
+  return lines;
+}
 
 /** 渲染單一 entry 的盤面（用 before 狀態＝決策當下面對的局面）＋實際決策＋該步 log。 */
 export function renderEntry(db: CardDb, entry: ReplayEntry): string {
@@ -84,6 +148,9 @@ export function renderEntry(db: CardDb, entry: ReplayEntry): string {
   }
   lines.push(`OP：${pointStr(s.op)}｜DP：${pointStr(s.dp)}`);
   lines.push(`決策：${describeDecision(db, s, entry.decision, "verbose")}`);
+  if (entry.aiThought) {
+    lines.push(...renderAiThoughtLines(db, entry.aiThought));
+  }
   const logs = replayEntryLogs(entry);
   if (logs.length) {
     lines.push(`log[${entry.logStart}..${entry.logEnd}]：`);

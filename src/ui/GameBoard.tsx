@@ -33,12 +33,16 @@ interface InspectHandlers {
   onInspect: (uid: number) => void;
 }
 
-interface GameBoardProps extends InspectHandlers {
+export interface GameBoardProps extends InspectHandlers {
   db: CardDb;
   state: GameState;
   deckMeta: [DeckMeta, DeckMeta];
   /** 賽後覆盤屬全觀資訊，每一步都公開該時點的對手手牌。 */
   revealOpponentHand?: boolean;
+  /** AI 對手真人語氣心聲（2D 右上對話框，過場步保留上一句）。 */
+  aiThoughtText?: string | null;
+  /** 是否為測試暴雷模式（顯示具體候選與勝率）。 */
+  aiThoughtSpoiler?: boolean;
   canPickSet: boolean;
   deployArea: CourtArea | null;
   activeGutsKey: string | null;
@@ -319,6 +323,7 @@ export function GameBoard(props: GameBoardProps) {
   const p0 = state.players[0];
   const p1 = state.players[1];
   const revealOpponentHand = props.revealOpponentHand === true || state.phase === "gameOver";
+  const aiThoughtText = props.aiThoughtText?.trim() ? props.aiThoughtText : null;
 
   // [Claude 2026-07-03] net info 歸屬：有 DP → 防守方側（判定在防守方結算）；否則 OP 持有方（攻擊方）側。
   // 兩個錨點同一時間只 render 一側（wireframe 需求：我方/對方 net info 不同時出現）。
@@ -384,6 +389,24 @@ export function GameBoard(props: GameBoardProps) {
             ))}
           </div>
           <strong>{p1.hand.length}</strong>
+        </div>
+        <div className="ai-thought-slot">
+          {!revealOpponentHand && aiThoughtText && (
+            <aside
+              className={`ai-thought-bubble${props.aiThoughtSpoiler ? " is-spoiler" : ""}`}
+              aria-live="polite"
+              aria-atomic="true"
+              aria-label="電腦對手心聲"
+            >
+              <div className="ai-thought-head">
+                <span className="ai-thought-speaker">對手心聲</span>
+                {props.aiThoughtSpoiler && <span className="ai-thought-badge">測試暴雷</span>}
+              </div>
+              <p className="ai-thought-text" title={aiThoughtText}>
+                {aiThoughtText}
+              </p>
+            </aside>
+          )}
         </div>
         <SetPileGroup db={props.db} state={state} player={1} meta={props.deckMeta[1]} canPickSet={false} onPickSet={props.onPickSet} onHover={props.onHover} onInspect={inspect} />
       </div>

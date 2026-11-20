@@ -179,4 +179,84 @@ describe("createSearchController", () => {
       timeLimitMs: 1200,
     });
   });
+
+  it("⑥ requestOpponentMoveWithReport：heuristic 回傳 actualEngine=heuristic、report=null、fellBack=false", async () => {
+    const { backend, calls } = deferredBackend();
+    const search = createSearchController({ backend, heuristic: fakeHeuristic });
+
+    const query = search.requestOpponentMoveWithReport(dummyState, opponentCtx("heuristic"));
+
+    expect(calls).toHaveLength(0);
+    await expect(query.promise).resolves.toEqual({
+      decision: HEURISTIC_DECISION,
+      report: null,
+      actualEngine: "heuristic",
+      fellBack: false,
+    });
+  });
+
+  it("⑥ requestOpponentMoveWithReport：strong 成功回傳 report、actualEngine=strong、fellBack=false", async () => {
+    const { backend, calls } = deferredBackend();
+    const search = createSearchController({ backend, heuristic: fakeHeuristic });
+    const decision: Decision = { type: "serve-rights", take: true };
+    const report = { ...reportWith(decision), tieBreakReason: "pressure-tiebreak" } as CoachReport;
+
+    const query = search.requestOpponentMoveWithReport(dummyState, opponentCtx("strong"));
+    expect(calls).toHaveLength(1);
+    calls[0]!.resolve(report);
+
+    const res = await query.promise;
+    expect(res.decision).toEqual(decision);
+    expect(res.report).toBe(report);
+    expect(res.actualEngine).toBe("strong");
+    expect(res.fellBack).toBe(false);
+  });
+
+  it("⑥ requestOpponentMoveWithReport：strong 失敗（非取消）觸發 onFallback 並回傳 fellBack=true、actualEngine=heuristic、report=null", async () => {
+    const { backend, calls } = deferredBackend();
+    const search = createSearchController({ backend, heuristic: fakeHeuristic });
+    const reasons: string[] = [];
+
+    const query = search.requestOpponentMoveWithReport(dummyState, {
+      ...opponentCtx("strong"),
+      onFallback: (reason) => reasons.push(reason),
+    });
+    calls[0]!.reject(new Error("search timeout"));
+
+    await expect(query.promise).resolves.toEqual({
+      decision: HEURISTIC_DECISION,
+      report: null,
+      actualEngine: "heuristic",
+      fellBack: true,
+    });
+    expect(reasons).toEqual(["search timeout"]);
+  });
+
+  it("⑥ requestOpponentMoveWithReport 與 requestOpponentMove 共用同一取消槽（互相取消／取代）", async () => {
+    const { backend, calls } = deferredBackend();
+    const search = createSearchController({ backend, heuristic: fakeHeuristic });
+    const reasons: string[] = [];
+
+    // requestOpponentMove -> 被 requestOpponentMoveWithReport 取消取代
+    const q1 = search.requestOpponentMove(dummyState, opponentCtx("strong"));
+    const q2 = search.requestOpponentMoveWithReport(dummyState, {
+      ...opponentCtx("strong"),
+      onFallback: (reason) => reasons.push(reason),
+    });
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(calls[1]!.signal.aborted).toBe(false);
+
+    // requestOpponentMoveWithReport -> 被 requestOpponentMove 取消取代
+    const decision3: Decision = { type: "serve-rights", take: false };
+    const q3 = search.requestOpponentMove(dummyState, opponentCtx("strong"));
+    expect(calls[1]!.signal.aborted).toBe(true);
+    expect(calls[2]!.signal.aborted).toBe(false);
+
+    calls[2]!.resolve(reportWith(decision3));
+
+    await expect(q1.promise).rejects.toSatisfy(isSearchCancelled);
+    await expect(q2.promise).rejects.toSatisfy(isSearchCancelled);
+    await expect(q3.promise).resolves.toEqual(decision3);
+    expect(reasons).toEqual([]);
+  });
 });

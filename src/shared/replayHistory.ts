@@ -1,3 +1,4 @@
+import { clampAiThoughtRecord, type AiThoughtRecord } from "./aiThought";
 import type { DeckMeta } from "./deckMeta";
 import type { Decision, GameEvent, GameState, LogEntry, Phase, PlayerId } from "../engine/types";
 
@@ -21,6 +22,7 @@ export interface ReplayEntry {
   after: GameState;
   logStart: number;
   logEnd: number;
+  aiThought?: AiThoughtRecord;
 }
 
 /**
@@ -119,6 +121,7 @@ export function appendReplayEntry(
   decision: Decision,
   after: GameState,
   source: ReplayDecisionSource,
+  aiThought?: AiThoughtRecord,
 ): ReplaySession {
   const pending = before.pendingDecision;
   if (!pending) return session;
@@ -139,6 +142,7 @@ export function appendReplayEntry(
         after: structuredClone(after) as GameState,
         logStart: before.log.length,
         logEnd: after.log.length,
+        ...(aiThought ? { aiThought: clampAiThoughtRecord(aiThought) } : {}),
       },
     ],
   };

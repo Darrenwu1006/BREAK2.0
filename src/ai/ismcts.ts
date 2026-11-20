@@ -529,7 +529,12 @@ function defenseChoiceSurvivesCurrentOp(
   return false;
 }
 
-function chooseRootTieBreakBest(
+interface RootTieBreakResult {
+  best: CoachActionEstimate;
+  reason: string;
+}
+
+function chooseRootTieBreak(
   db: CardDb,
   state: GameState,
   recommendations: CoachActionEstimate[],
@@ -541,7 +546,7 @@ function chooseRootTieBreakBest(
   defenseChoiceSurvivalTieBreak: boolean = true,
   defenseSkillEffectScoring: boolean = true,
   enablePhaseM3: boolean = true,
-): CoachActionEstimate | null {
+): RootTieBreakResult | null {
   if (winRateDelta <= 0 || recommendations.length <= 1) return null;
   const robustBest = recommendations[0]!;
   const minVisits = Math.max(1, Math.floor(robustBest.sampleCount * ROOT_TIE_BREAK_MIN_VISIT_RATIO));
@@ -563,12 +568,15 @@ function chooseRootTieBreakBest(
         defenseChoiceSurvivesCurrentOp(db, state, item.decision, perspective, rolloutPolicy),
       );
       if (allSurvivors.length === 0) {
-        return recommendations
-          .map((item) => ({
-            item,
-            cycleScore: hopelessDefenseTieBreakScore(db, state, item.decision, perspective, rolloutPolicy),
-          }))
-          .sort((a, b) => b.cycleScore - a.cycleScore || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+        return {
+          best: recommendations
+            .map((item) => ({
+              item,
+              cycleScore: hopelessDefenseTieBreakScore(db, state, item.decision, perspective, rolloutPolicy),
+            }))
+            .sort((a, b) => b.cycleScore - a.cycleScore || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item,
+          reason: "hopeless-defense-cycling",
+        };
       }
     }
   }
@@ -599,7 +607,7 @@ function chooseRootTieBreakBest(
     if (survivors.length >= 1 && survivors.length < close.length) {
       close = survivors;
       // 唯一生存者：直接回傳促成它上位；不可回 null，否則會退回可能是放棄型的 robustBest。
-      if (close.length <= 1) return close[0]!;
+      if (close.length <= 1) return { best: close[0]!, reason: "defense-survival" };
     }
   }
   const isOneTouchDeployment = (item: CoachActionEstimate): boolean =>
@@ -611,17 +619,20 @@ function chooseRootTieBreakBest(
   if (isOneTouchDeployment(robustBest)) {
     const oneTouchClose = close.filter(isOneTouchDeployment);
     if (oneTouchClose.length > 1) {
-      return oneTouchClose
-        .slice()
-        .sort((a, b) => {
-          const aDecision = a.decision as Extract<Decision, { type: "deploy-block" }>;
-          const bDecision = b.decision as Extract<Decision, { type: "deploy-block" }>;
-          const countDelta = (aDecision.uids?.length ?? Infinity) - (bDecision.uids?.length ?? Infinity);
-          if (countDelta !== 0) return countDelta;
-          const aCenterIsSource = aDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, aDecision.center) ? 1 : 0;
-          const bCenterIsSource = bDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, bDecision.center) ? 1 : 0;
-          return bCenterIsSource - aCenterIsSource || b.sampleCount - a.sampleCount || b.winRate - a.winRate;
-        })[0]!;
+      return {
+        best: oneTouchClose
+          .slice()
+          .sort((a, b) => {
+            const aDecision = a.decision as Extract<Decision, { type: "deploy-block" }>;
+            const bDecision = b.decision as Extract<Decision, { type: "deploy-block" }>;
+            const countDelta = (aDecision.uids?.length ?? Infinity) - (bDecision.uids?.length ?? Infinity);
+            if (countDelta !== 0) return countDelta;
+            const aCenterIsSource = aDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, aDecision.center) ? 1 : 0;
+            const bCenterIsSource = bDecision.uids !== null && isImmediateOneTouchBlocker(db, state, perspective, bDecision.center) ? 1 : 0;
+            return bCenterIsSource - aCenterIsSource || b.sampleCount - a.sampleCount || b.winRate - a.winRate;
+          })[0]!,
+        reason: "one-touch-lean",
+      };
     }
   }
   // [Claude 2026-07-02] Phase H H5 v2：贏面已近乎確定（robust best winRate 達門檻）時，「近似平手」的
@@ -639,18 +650,54 @@ function chooseRootTieBreakBest(
   if (conservationActive) {
     const attackClose = close.filter((item) => item.decision.type === "deploy-attack");
     if (attackClose.length > 1) {
-      return attackClose
-        .map((item) => ({
-          item,
-          spent: item.decision.type === "deploy-attack" && item.decision.uid !== null ? effParam(db, state, item.decision.uid, "attack") ?? 0 : 0,
-        }))
-        .sort((a, b) => a.spent - b.spent || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+      return {
+        best: attackClose
+          .map((item) => ({
+            item,
+            spent: item.decision.type === "deploy-attack" && item.decision.uid !== null ? effParam(db, state, item.decision.uid, "attack") ?? 0 : 0,
+          }))
+          .sort((a, b) => a.spent - b.spent || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item,
+        reason: "conservation-attack",
+      };
     }
     // 非 deploy-attack（或只有 1 個可比候選）：conservation 不適用，回退 H4 原行為。
   }
-  return close
-    .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware, defenseSkillEffectScoring }) }))
-    .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item;
+  return {
+    best: close
+      .map((item) => ({ item, pressure: rootDecisionPressureScore(db, state, item.decision, perspective, { pairAware, defenseSkillEffectScoring }) }))
+      .sort((a, b) => b.pressure - a.pressure || b.item.sampleCount - a.item.sampleCount || b.item.winRate - a.item.winRate)[0]!.item,
+    reason: "pressure-tiebreak",
+  };
+}
+
+function chooseRootTieBreakBest(
+  db: CardDb,
+  state: GameState,
+  recommendations: CoachActionEstimate[],
+  perspective: PlayerId,
+  winRateDelta: number,
+  pairAware: boolean,
+  conservationWinRateThreshold?: number,
+  rolloutPolicy?: HeuristicV2ProfileId,
+  defenseChoiceSurvivalTieBreak: boolean = true,
+  defenseSkillEffectScoring: boolean = true,
+  enablePhaseM3: boolean = true,
+): CoachActionEstimate | null {
+  return (
+    chooseRootTieBreak(
+      db,
+      state,
+      recommendations,
+      perspective,
+      winRateDelta,
+      pairAware,
+      conservationWinRateThreshold,
+      rolloutPolicy,
+      defenseChoiceSurvivalTieBreak,
+      defenseSkillEffectScoring,
+      enablePhaseM3,
+    )?.best ?? null
+  );
 }
 
 /**
@@ -925,7 +972,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     (a, b) => b.sampleCount - a.sampleCount || b.winRate - a.winRate || b.confidence - a.confidence,
   );
 
-  const tieBreakBest = chooseRootTieBreakBest(
+  const tieBreakResult = chooseRootTieBreak(
     db,
     state,
     recommendations,
@@ -938,11 +985,20 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     defenseSkillEffectScoring,
     enablePhaseM3,
   );
-  if (tieBreakBest) {
-    const index = recommendations.indexOf(tieBreakBest);
+  let tieBreakReason: string | undefined;
+  if (tieBreakResult) {
+    const index = recommendations.indexOf(tieBreakResult.best);
     if (index > 0) {
       recommendations.splice(index, 1);
-      recommendations.unshift(tieBreakBest);
+      recommendations.unshift(tieBreakResult.best);
+    }
+    if (
+      index > 0 ||
+      tieBreakResult.reason === "hopeless-defense-cycling" ||
+      tieBreakResult.reason === "one-touch-lean" ||
+      tieBreakResult.reason === "conservation-attack"
+    ) {
+      tieBreakReason = tieBreakResult.reason;
     }
   }
   const bestAction = recommendations[0] ?? fallbackEstimate(db, state, fallbackDecision);
@@ -960,6 +1016,7 @@ export function createIsmctsReport(db: CardDb, state: GameState, options: Ismcts
     bestAction,
     recommendations,
     valueExplanation: explainValue(state, perspective, undefined, db, knownDecks),
+    ...(tieBreakReason !== undefined ? { tieBreakReason } : {}),
   };
 }
 

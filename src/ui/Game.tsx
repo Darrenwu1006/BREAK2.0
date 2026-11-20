@@ -4,7 +4,9 @@ import type { CourtArea } from "../engine/dsl";
 import { canChooseBlock, canDeployTo, deployNames, deployableUids, freeOptions } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
 import { heuristicAiDecision, heuristicProfileForDeckText } from "../ai/heuristic";
-import { createSearchController, createWorkerSearchBackend, isSearchCancelled, type CancelableQuery } from "../ai/ai-search";
+import { createSearchController, createWorkerSearchBackend, isSearchCancelled, type CancelableQuery, type OpponentMoveResult } from "../ai/ai-search";
+import { buildAiThoughtRecord } from "../ai/thought-narrator";
+import type { AiThoughtRecord } from "../shared/aiThought";
 import { describeDecisionShort } from "../shared/decisionLabels";
 import type { CoachReport } from "../ai/coach";
 import { estimateThinkBudgetMs } from "../ai/think-budget";
@@ -68,6 +70,24 @@ function initialSfx(): boolean {
   return localStorage.getItem("breaktcg-sfx") !== "off";
 }
 
+function initialAiThoughtSpoiler(): boolean {
+  try {
+    return localStorage.getItem("breaktcg-ai-thought-spoiler") === "true";
+  } catch {
+    return false;
+  }
+}
+
+function latestKeyAiThought(entries: readonly ReplayEntry[]): AiThoughtRecord | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry?.source === "ai" && entry.aiThought?.isKeyDecision) {
+      return entry.aiThought;
+    }
+  }
+  return null;
+}
+
 // [Claude 2026-07-03] Readability V2：手牌卡寬依視窗高自適應（84–108px），
 // 取代固定畫布時代的定值；矮視窗自動縮，避免手牌吃掉球場垂直預算。
 function handCardFor(viewportHeight: number): number {
@@ -121,8 +141,10 @@ function SideMeta(props: {
 function SettingsPanel(props: {
   engine: OpponentEngine;
   sfxEnabled: boolean;
+  aiThoughtSpoiler: boolean;
   onEngineChange: (engine: OpponentEngine) => void;
   onToggleSfx: () => void;
+  onToggleAiThoughtSpoiler: () => void;
   onExit: () => void;
 }) {
   return (
@@ -145,10 +167,23 @@ function SettingsPanel(props: {
       </section>
       <section className="settings-section">
         <b>演出</b>
-        <label className="settings-check">
-          <input type="checkbox" checked={props.sfxEnabled} onChange={props.onToggleSfx} />
+        <label className="settings-check" htmlFor="setting-sfx-enabled">
+          <input id="setting-sfx-enabled" type="checkbox" checked={props.sfxEnabled} onChange={props.onToggleSfx} />
           擬音字
         </label>
+      </section>
+      <section className="settings-section">
+        <b>電腦心聲</b>
+        <label className="settings-check" htmlFor="setting-ai-thought-spoiler">
+          <input
+            id="setting-ai-thought-spoiler"
+            type="checkbox"
+            checked={props.aiThoughtSpoiler}
+            onChange={props.onToggleAiThoughtSpoiler}
+          />
+          顯示具體候選（測試暴雷）
+        </label>
+        <p className="settings-hint">預設只顯示不暴雷的真人語氣想法；勾選後會直接顯示候選動作與勝率評估。</p>
       </section>
       {/* [使用者 2026-07-03] 離開對戰收進設定，避免誤觸 */}
       <div className="settings-actions">
@@ -285,6 +320,7 @@ export function Game(props: {
   const [engine, setEngine] = useState<OpponentEngine>(initialEngine);
   const [scoreBanner, setScoreBanner] = useState<SplashBanner | null>(null);
   const [sfxEnabled, setSfxEnabled] = useState<boolean>(initialSfx);
+  const [aiThoughtSpoiler, setAiThoughtSpoiler] = useState<boolean>(initialAiThoughtSpoiler);
   const [sfx, setSfx] = useState<{ text: string; key: number } | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [replayMode, setReplayMode] = useState(!!props.loadedReplay);
@@ -294,7 +330,7 @@ export function Game(props: {
   const handRef = useRef<HTMLDivElement>(null);
   const coachQueryRef = useRef<CancelableQuery<CoachReport> | null>(null);
   // [Claude 2026-06-22] Phase F 塊2：強敵 PIMC 思考用的查詢 handle／思考提示狀態。
-  const aiQueryRef = useRef<CancelableQuery<Decision> | null>(null);
+  const aiQueryRef = useRef<CancelableQuery<OpponentMoveResult> | null>(null);
   const aiPaceTimerRef = useRef<number | null>(null);
   // [Claude 2026-07-24] 候選 A：搜尋門面（取消/取代/fallback/調參都在 module 內）。React 只留膠水。
   const search = useMemo(() => createSearchController({ backend: createWorkerSearchBackend() }), []);
@@ -328,6 +364,10 @@ export function Game(props: {
 
   const visibleInspection = hovered ?? inspected;
   const canUndo = !replayMode && !pendingSetFeedback && session.canUndo;
+  const activeAiThought = replayMode || state.phase === "gameOver" ? null : latestKeyAiThought(replay.entries);
+  const aiThoughtText = activeAiThought
+    ? (aiThoughtSpoiler ? activeAiThought.dialogue.spoiler : activeAiThought.dialogue.safe)
+    : null;
 
   function cardOf(uid: number): Card {
     return db.get(viewState.cards[uid]!)!;
@@ -404,6 +444,18 @@ export function Game(props: {
     });
   }
 
+  function toggleAiThoughtSpoiler() {
+    setAiThoughtSpoiler((on) => {
+      const next = !on;
+      try {
+        localStorage.setItem("breaktcg-ai-thought-spoiler", next ? "true" : "false");
+      } catch {
+        // 忽略無痕模式或受限環境 storage 失敗
+      }
+      return next;
+    });
+  }
+
   // [Claude 2026-06-22] Phase F 塊2：把 PIMC 接成電腦對手的「腦」。
   // 預設＝強敵：用 coach-worker 跑 SO-ISMCTS 搜尋（隱藏資訊抽樣，不偷看），思考預算由 estimateThinkBudgetMs
   // 依盤面自適應約 0.5–10 秒；瑣碎盤面快、決勝高壓盤面想滿。worker 失敗時退回 heuristic 不卡關。
@@ -418,33 +470,33 @@ export function Game(props: {
       return;
     }
 
-    function applyAiDecision(decision: Decision) {
+    function applyAiDecision(decision: Decision, thinkMs: number, aiThought: AiThoughtRecord) {
       setAiThinking(null);
       // session 是 mutable，出手前重讀權威狀態：搜尋期間盤面可能已被 undo／Set 回饋改動。
       if (pendingReplaySetFeedback(session.replay) || !session.awaitingOpponent || session.engine.phase === "gameOver") return;
-      session.decideOpponent(decision);
+      session.decideOpponent(decision, thinkMs, aiThought);
     }
 
     // [Claude 2026-06-22] 出手節奏下限：搜尋常在 1 秒內想完，會搶在出手動畫前推進、把動畫切掉。
     // 故設每手最小耗時，思考時間計入此下限——想得久就不額外等、想得快就補到下限讓動畫跑完。
     const startedAt = Date.now();
-    function applyAiDecisionPaced(decision: Decision) {
+    function applyAiDecisionPaced(decision: Decision, thinkMs: number, aiThought: AiThoughtRecord) {
       const remaining = AI_PACE_MS - (Date.now() - startedAt);
       if (remaining <= 0) {
-        applyAiDecision(decision);
+        applyAiDecision(decision, thinkMs, aiThought);
         return;
       }
       setAiThinking(null);
       aiPaceTimerRef.current = window.setTimeout(() => {
         aiPaceTimerRef.current = null;
-        applyAiDecision(decision);
+        applyAiDecision(decision, thinkMs, aiThought);
       }, remaining);
     }
 
     // 演出：strong 顯示思考中回饋＋180ms 前置延遲；heuristic 即時。決策來源（worker vs heuristic）由 search 決定。
     function askOpponent() {
-      // requestOpponentMove 內部：strong→worker(ismcts)；heuristic→同步；搜尋失敗（非取消）自動落 heuristic。
-      const query = search.requestOpponentMove(state, {
+      // requestOpponentMoveWithReport 內部：strong→worker(ismcts)；heuristic→同步；搜尋失敗（非取消）自動落 heuristic。
+      const query = search.requestOpponentMoveWithReport(state, {
         db,
         engine: engine === "heuristic" ? "heuristic" : "strong",
         perspectivePlayer: AI,
@@ -454,8 +506,32 @@ export function Game(props: {
         rolloutPolicy: aiProfile,
       });
       aiQueryRef.current = query;
-      query.promise.then(applyAiDecisionPaced).catch((err) => {
-        if (!isSearchCancelled(err)) applyAiDecisionPaced(heuristicAiDecision(db, state, aiProfile));
+      query.promise.then((result) => {
+        const thinkMs = result.actualEngine === "strong" ? Math.max(0, Date.now() - startedAt) : 0;
+        // 必須以搜尋當下的 before 盤面（state）與報告組裝思維，不可延遲到 timer 到期再取樣。
+        const aiThought = buildAiThoughtRecord({
+          db,
+          state,
+          perspectivePlayer: AI,
+          decision: result.decision,
+          engine: result.actualEngine,
+          report: result.report,
+          knownDecks: props.decks,
+        });
+        applyAiDecisionPaced(result.decision, thinkMs, aiThought);
+      }).catch((err) => {
+        if (isSearchCancelled(err)) return;
+        const decision = heuristicAiDecision(db, state, aiProfile);
+        const aiThought = buildAiThoughtRecord({
+          db,
+          state,
+          perspectivePlayer: AI,
+          decision,
+          engine: "heuristic",
+          report: null,
+          knownDecks: props.decks,
+        });
+        applyAiDecisionPaced(decision, 0, aiThought);
       });
     }
 
@@ -920,6 +996,8 @@ export function Game(props: {
           state={viewState}
           deckMeta={props.deckMeta}
           revealOpponentHand={replayMode}
+          aiThoughtText={aiThoughtText}
+          aiThoughtSpoiler={aiThoughtSpoiler}
           canPickSet={!replayMode && isMyDecision && pd?.type === "pick-set-card"}
           deployArea={replayMode ? null : deployArea}
           activeGutsKey={activeGutsKey}
@@ -1037,8 +1115,10 @@ export function Game(props: {
               <SettingsPanel
                 engine={engine}
                 sfxEnabled={sfxEnabled}
+                aiThoughtSpoiler={aiThoughtSpoiler}
                 onEngineChange={changeEngine}
                 onToggleSfx={toggleSfx}
+                onToggleAiThoughtSpoiler={toggleAiThoughtSpoiler}
                 onExit={props.onExit}
               />
             ) : state.phase === "gameOver" && !visibleInspection ? (

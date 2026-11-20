@@ -63,6 +63,7 @@ export interface CoachReport {
   recommendations: CoachActionEstimate[];
   gameplan?: GameplanStateReport;
   valueExplanation?: ValueExplanation;
+  tieBreakReason?: string;
 }
 
 interface MutableStats {

@@ -127,12 +127,24 @@ function buildCoachOptions(ctx: CoachReportCtx): PimcCoachOptions {
 
 // ---------- 控制器 ----------
 
+export interface OpponentMoveResult {
+  decision: Decision;
+  report: CoachReport | null;
+  actualEngine: "strong" | "heuristic";
+  fellBack: boolean;
+}
+
 export interface SearchController {
   /**
    * 問對手一手。strong 搜尋失敗（非取消）→ 落到 heuristic（保留現況行為，promise 不會因搜尋失敗 reject）。
    * 取消／被取代 → promise reject(SearchCancelledError)。
    */
   requestOpponentMove(state: GameState, ctx: OpponentMoveCtx): CancelableQuery<Decision>;
+  /**
+   * 同 requestOpponentMove，但一併回傳 strong 搜尋報告、實際執行引擎與是否觸發 fallback。
+   * 與 requestOpponentMove 共用同一取消槽（互相取消／取代）。
+   */
+  requestOpponentMoveWithReport(state: GameState, ctx: OpponentMoveCtx): CancelableQuery<OpponentMoveResult>;
   /**
    * 要一份教練報告。搜尋失敗（非取消）→ promise reject(真實 error)，呼叫端顯示錯誤態。
    * 取消／被取代 → promise reject(SearchCancelledError)。
@@ -175,31 +187,54 @@ export function createSearchController(deps: SearchControllerDeps): SearchContro
   let opponentSlot: AbortController | null = null;
   let coachSlot: AbortController | null = null;
 
-  function requestOpponentMove(state: GameState, ctx: OpponentMoveCtx): CancelableQuery<Decision> {
+  function requestOpponentMoveWithReport(state: GameState, ctx: OpponentMoveCtx): CancelableQuery<OpponentMoveResult> {
     opponentSlot?.abort();
     const ac = new AbortController();
     opponentSlot = ac;
     const { signal } = ac;
 
-    const promise = (async (): Promise<Decision> => {
+    const promise = (async (): Promise<OpponentMoveResult> => {
       // heuristic 快速路徑：同步決策，不碰 backend。
       if (ctx.engine === "heuristic") {
         if (signal.aborted) throw new SearchCancelledError();
-        return heuristic(ctx.db, state, ctx.rolloutPolicy);
+        return {
+          decision: heuristic(ctx.db, state, ctx.rolloutPolicy),
+          report: null,
+          actualEngine: "heuristic",
+          fellBack: false,
+        };
       }
       // strong：跑搜尋 backend；搜尋失敗（非取消）→ heuristic fallback。
       const request: SearchRequest = { state, engine: "ismcts", options: buildOpponentOptions(ctx) };
       try {
         const report = await runWithAbort(deps.backend, request, signal);
-        return report.bestAction.decision;
+        return {
+          decision: report.bestAction.decision,
+          report,
+          actualEngine: "strong",
+          fellBack: false,
+        };
       } catch (err) {
         if (signal.aborted || isSearchCancelled(err)) throw new SearchCancelledError();
         ctx.onFallback?.(err instanceof Error ? err.message : String(err));
-        return heuristic(ctx.db, state, ctx.rolloutPolicy);
+        return {
+          decision: heuristic(ctx.db, state, ctx.rolloutPolicy),
+          report: null,
+          actualEngine: "heuristic",
+          fellBack: true,
+        };
       }
     })();
 
     return { promise, cancel: () => ac.abort() };
+  }
+
+  function requestOpponentMove(state: GameState, ctx: OpponentMoveCtx): CancelableQuery<Decision> {
+    const query = requestOpponentMoveWithReport(state, ctx);
+    return {
+      promise: query.promise.then((res) => res.decision),
+      cancel: query.cancel,
+    };
   }
 
   function requestCoachReport(state: GameState, ctx: CoachReportCtx): CancelableQuery<CoachReport> {
@@ -221,7 +256,7 @@ export function createSearchController(deps: SearchControllerDeps): SearchContro
     return { promise, cancel: () => ac.abort() };
   }
 
-  return { requestOpponentMove, requestCoachReport };
+  return { requestOpponentMove, requestOpponentMoveWithReport, requestCoachReport };
 }
 
 // ---------- 正式 backend：包 coach-worker ----------

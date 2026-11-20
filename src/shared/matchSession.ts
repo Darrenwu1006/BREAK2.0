@@ -9,6 +9,7 @@
 import { heuristicAiDecision } from "../ai/heuristic";
 import { applyDecision, createGame } from "../engine/engine";
 import type { CardDb, Decision, GameState, PlayerId } from "../engine/types";
+import type { AiThoughtRecord } from "./aiThought";
 import type { DeckMeta } from "./deckMeta";
 import {
   appendReplayEntry,
@@ -33,6 +34,7 @@ export interface StepMeta {
   /** true＝人類的決策由 AI 代打（非人類親手） */
   auto: boolean;
   thinkMs?: number;
+  aiThought?: AiThoughtRecord;
 }
 
 export interface MatchSessionOptions {
@@ -165,9 +167,9 @@ export class MatchSession {
   }
 
   /** 對手決策回填（worker 搜尋結果／heuristic 快速決策）。 */
-  decideOpponent(decision: Decision, thinkMs?: number): void {
+  decideOpponent(decision: Decision, thinkMs?: number, aiThought?: AiThoughtRecord): void {
     if (!this.awaitingOpponent) throw new Error("目前不是對手決策");
-    this.step(decision, true, thinkMs);
+    this.step(decision, true, thinkMs, aiThought);
     this.advance();
     this.onChange?.();
   }
@@ -198,12 +200,27 @@ export class MatchSession {
     throw new Error("advance 超過步數上限（引擎疑似未收斂）");
   }
 
-  private step(decision: Decision, auto: boolean, thinkMs?: number): void {
+  private step(decision: Decision, auto: boolean, thinkMs?: number, aiThought?: AiThoughtRecord): void {
     const before = this.engine;
     const actor = before.pendingDecision!.player;
     const after = applyDecision(this.db, before, decision);
-    this.replay = appendReplayEntry(this.replay, before, decision, after, actor === HUMAN && !auto ? "player" : "ai");
+    this.replay = appendReplayEntry(
+      this.replay,
+      before,
+      decision,
+      after,
+      actor === HUMAN && !auto ? "player" : "ai",
+      aiThought,
+    );
     this.engine = after;
-    this.onStep?.({ before, after, actor, decision, auto, ...(thinkMs !== undefined ? { thinkMs } : {}) });
+    this.onStep?.({
+      before,
+      after,
+      actor,
+      decision,
+      auto,
+      ...(thinkMs !== undefined ? { thinkMs } : {}),
+      ...(aiThought !== undefined ? { aiThought } : {}),
+    });
   }
 }

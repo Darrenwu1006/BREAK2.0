@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Decision, GameState, PlayerId, PlayerState } from "../engine/types";
 import {
+  AI_THOUGHT_MAX_CANDIDATES,
+  AI_THOUGHT_MAX_FACTORS,
+  AI_THOUGHT_SCHEMA_VERSION,
+  type AiThoughtRecord,
+} from "./aiThought";
+import {
   appendReplayEntry,
   appendReplaySetFeedback,
   createReplaySession,
@@ -10,6 +16,7 @@ import {
   stateAtReplayStep,
   summarizeReplaySession,
   truncateReplaySession,
+  type ReplaySession,
 } from "./replayHistory";
 import type { DeckMeta } from "./deckMeta";
 
@@ -270,5 +277,112 @@ describe("replay history helpers", () => {
     const truncated = truncateReplaySession(skipped, 1);
     expect(truncated.entries).toHaveLength(1);
     expect(truncated.setFeedback).toEqual([]);
+  });
+
+  it("writes clamped aiThought without mutating input and omits key when absent", () => {
+    const initial = state("initial", 1);
+    const after = state("after", 0);
+    const pass: Decision = { type: "free", action: "pass" };
+    const thought: AiThoughtRecord = {
+      schemaVersion: AI_THOUGHT_SCHEMA_VERSION,
+      engine: "strong",
+      isKeyDecision: true,
+      pendingType: "free",
+      chosenLabel: "Pass",
+      chosenWinRate: 0.62,
+      completedSamples: 120,
+      tieBreakReason: "pressure-tiebreak",
+      topCandidates: [
+        { label: "c1", decisionType: "free", winRate: 0.62, sampleCount: 50, isChosen: true },
+        { label: "c2", decisionType: "free", winRate: 0.6, sampleCount: 40, isChosen: false },
+        { label: "c3", decisionType: "free", winRate: 0.55, sampleCount: 20, isChosen: false },
+        { label: "c4", decisionType: "free", winRate: 0.5, sampleCount: 10, isChosen: false },
+      ],
+      valueFactors: [
+        { feature: "f1", label: "因子1", contribution: 0.2, direction: "helps" },
+        { feature: "f2", label: "因子2", contribution: 0.15, direction: "helps" },
+        { feature: "f3", label: "因子3", contribution: -0.1, direction: "hurts" },
+        { feature: "f4", label: "因子4", contribution: 0.02, direction: "neutral" },
+      ],
+      belief: {
+        knownOppHandCardIds: ["HV-D01-001"],
+        reducedTags: ["high-receive"],
+        oppGuts: 3,
+        oppRemainingHighReceive: 2.5,
+        oppRemainingDefEvent: 1.25,
+      },
+      dialogue: { safe: "safe", spoiler: "spoiler" },
+    };
+
+    const withThought = appendReplayEntry(
+      createReplaySession(initial, decks, deckMeta),
+      initial,
+      pass,
+      after,
+      "ai",
+      thought,
+    );
+    const withoutThought = appendReplayEntry(withThought, state("next", 0), pass, state("next-after", 1), "player");
+
+    expect(thought.topCandidates).toHaveLength(4);
+    expect(thought.valueFactors).toHaveLength(4);
+
+    const savedThought = withThought.entries[0]?.aiThought;
+    expect(savedThought).toBeDefined();
+    expect(savedThought?.topCandidates).toHaveLength(AI_THOUGHT_MAX_CANDIDATES);
+    expect(savedThought?.valueFactors).toHaveLength(AI_THOUGHT_MAX_FACTORS);
+
+    savedThought!.topCandidates.push({ label: "extra", decisionType: "free", winRate: 0, sampleCount: 1, isChosen: false });
+    savedThought!.belief!.knownOppHandCardIds.push("HV-D01-002");
+    expect(thought.topCandidates).toHaveLength(4);
+    expect(thought.belief?.knownOppHandCardIds).toEqual(["HV-D01-001"]);
+
+    expect("aiThought" in withoutThought.entries[1]!).toBe(false);
+  });
+
+  it("keeps legacy ReplaySession without aiThought compatible across summarize/setResults/stateAtReplayStep", () => {
+    const initial = state("initial");
+    const pass: Decision = { type: "free", action: "pass" };
+    const setAfter = withLog(state("after-set"), "宣告 Lost", {
+      player: 0,
+      setNo: 1,
+      turnNo: 2,
+      text: "宣告 Lost",
+      event: { kind: "set-won", winner: 1, loser: 0, setNo: 1, loserSetRemaining: 1 },
+    });
+    const legacyJson = JSON.stringify(
+      appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, setAfter, "ai"),
+    );
+    const legacy = JSON.parse(legacyJson) as ReplaySession;
+
+    expect("aiThought" in legacy.entries[0]!).toBe(false);
+    expect(summarizeReplaySession(legacy).aiDecisions).toBe(1);
+    expect(replaySetResults(legacy)).toHaveLength(1);
+    expect(stateAtReplayStep(legacy, 0).log[0]?.text).toBe("initial");
+    expect(stateAtReplayStep(legacy, 1).log[1]?.text).toBe("宣告 Lost");
+  });
+
+  it("removes aiThought entries at or after truncation index on truncateReplaySession", () => {
+    const initial = state("initial", 0);
+    const pass: Decision = { type: "free", action: "pass" };
+    const thought: AiThoughtRecord = {
+      schemaVersion: AI_THOUGHT_SCHEMA_VERSION,
+      engine: "heuristic",
+      isKeyDecision: false,
+      pendingType: "free",
+      chosenLabel: "Pass",
+      completedSamples: 0,
+      topCandidates: [],
+      valueFactors: [],
+      dialogue: { safe: "s", spoiler: "sp" },
+    };
+
+    const one = appendReplayEntry(createReplaySession(initial, decks, deckMeta), initial, pass, state("one", 1), "player");
+    const two = appendReplayEntry(one, state("one", 1), pass, state("two", 0), "ai", thought);
+    expect(two.entries[1]?.aiThought).toBeDefined();
+
+    const truncated = truncateReplaySession(two, 1);
+    expect(truncated.entries).toHaveLength(1);
+    expect(truncated.entries.every((entry) => entry.aiThought === undefined)).toBe(true);
   });
 });

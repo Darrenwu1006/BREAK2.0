@@ -2866,3 +2866,112 @@ textarea { color: var(--cream); }
 .optimizer-section-title b { color: var(--cream); }
 
 .printing-sel { box-shadow: none; }
+
+/* Phase N1: 2D 右上 AI 心聲對話框與設定頁說明（置於 Official Style 尾段避免覆寫） */
+.bf-right-top {
+  gap: var(--sp-1);
+}
+.bf-right-top > .opponent-hand,
+.bf-right-top > .set-pile {
+  flex-shrink: 0;
+}
+
+.ai-thought-slot {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.ai-thought-bubble {
+  width: min(100%, 268px);
+  max-width: 100%;
+  max-height: clamp(0px, calc(100% - 5px), 116px);
+  margin: 2px 3px 3px 0;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--bg-panel);
+  color: var(--cream);
+  border: 1.5px solid var(--cream);
+  border-left: 3.5px solid var(--p-op);
+  border-radius: var(--radius-panel);
+  box-shadow: 2px 2px 0 rgba(20, 24, 28, .92);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.ai-thought-bubble.is-spoiler {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--bg-panel) 90%, var(--accent) 10%);
+}
+
+.ai-thought-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  line-height: 1.1;
+  flex-shrink: 0;
+}
+
+.ai-thought-speaker {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--p-op);
+  letter-spacing: 0.02em;
+}
+
+.ai-thought-bubble.is-spoiler .ai-thought-speaker {
+  color: var(--accent);
+}
+
+.ai-thought-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.ai-thought-text {
+  min-width: 0;
+  min-height: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: clip;
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.38;
+  color: var(--cream);
+}
+
+@media (max-height: 760px) {
+  .ai-thought-bubble {
+    padding: 5px 8px;
+    gap: 2px;
+  }
+  .ai-thought-text {
+    font-size: 11px;
+    line-height: 1.3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}

@@ -8,6 +8,7 @@ import nekomaDeck from "../../data/decks/音駒-音駒-三彈官方.json";
 import { heuristicAiDecision } from "../ai/heuristic";
 import type { Card } from "../data/types";
 import type { CardDb } from "../engine/types";
+import { AI_THOUGHT_SCHEMA_VERSION, type AiThoughtRecord } from "./aiThought";
 import { HUMAN, MatchSession, type StepMeta } from "./matchSession";
 
 interface DeckJson {
@@ -97,14 +98,60 @@ describe("MatchSession — 觀察者與安全性", () => {
     expect(steps.at(-1)!.after).toBe(s.engine);
   });
 
-  it("onStep 的 thinkMs 由 decideOpponent 帶入", () => {
+  it("onStep 的 thinkMs 由 decideOpponent 帶入，不傳 aiThought 時維持乾淨欄位", () => {
     const steps: StepMeta[] = [];
     const s = new MatchSession(db, decks, 11, { deferOpponent: true, onStep: (m) => steps.push(m) });
     let guard = 0;
     while (s.awaitingHuman && guard++ < 200) s.decide(heuristicAiDecision(db, s.engine));
     steps.length = 0;
+    const beforeCount = s.replay.entries.length;
     s.decideOpponent(heuristicAiDecision(db, s.engine), 456);
     expect(steps[0]!.thinkMs).toBe(456);
+    expect("aiThought" in steps[0]!).toBe(false);
+    expect("aiThought" in s.replay.entries[beforeCount]!).toBe(false);
+  });
+
+  it("decideOpponent 帶入 aiThought 會寫入 replay.entries 與 onStep，undo 會同步裁切", () => {
+    const steps: StepMeta[] = [];
+    const s = new MatchSession(db, decks, 11, { deferOpponent: true, onStep: (m) => steps.push(m) });
+    let guard = 0;
+    while (s.engine.pendingDecision && !(s.canUndo && s.awaitingOpponent) && guard++ < 200) {
+      if (s.awaitingHuman) s.decide(heuristicAiDecision(db, s.engine));
+      else if (s.awaitingOpponent) s.decideOpponent(heuristicAiDecision(db, s.engine));
+    }
+    expect(s.canUndo).toBe(true);
+    expect(s.awaitingOpponent).toBe(true);
+
+    const pendingType = s.engine.pendingDecision!.type;
+    const thought: AiThoughtRecord = {
+      schemaVersion: AI_THOUGHT_SCHEMA_VERSION,
+      engine: "strong",
+      isKeyDecision: true,
+      pendingType,
+      chosenLabel: "AI 決策",
+      chosenWinRate: 0.61,
+      completedSamples: 80,
+      topCandidates: [
+        { label: "AI 決策", decisionType: pendingType, winRate: 0.61, sampleCount: 50, isChosen: true },
+        { label: "備選", decisionType: pendingType, winRate: 0.52, sampleCount: 30, isChosen: false },
+      ],
+      valueFactors: [
+        { feature: "setLead", label: "局數領先", contribution: 0.18, direction: "helps" },
+      ],
+      dialogue: { safe: "穩紮穩打", spoiler: "AI 決策 61% > 備選 52%" },
+    };
+
+    steps.length = 0;
+    const aiEntryIndex = s.replay.entries.length;
+    s.decideOpponent(heuristicAiDecision(db, s.engine), 321, thought);
+
+    expect(steps[0]?.thinkMs).toBe(321);
+    expect(steps[0]?.aiThought).toEqual(thought);
+    expect(s.replay.entries[aiEntryIndex]?.aiThought).toEqual(thought);
+
+    expect(s.undo()).toBe(true);
+    expect(s.replay.entries.length).toBeLessThanOrEqual(aiEntryIndex);
+    expect(s.replay.entries.some((entry) => entry.aiThought !== undefined)).toBe(false);
   });
 
   it("onChange 於 decide／undo 後各觸發一次", () => {
